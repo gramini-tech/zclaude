@@ -22,6 +22,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y shellcheck
       - run: npm ci
       - run: npm run lint
+      - run: npm audit --omit=dev --audit-level=high
 
   test:
     strategy:
@@ -37,6 +38,7 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
-      - run: npm run test:coverage
+      # Coverage thresholds need Node 22.8+; Node 20 runs the same tests without the gate.
+      - run: ${{ matrix.node == '20' && 'npm test' || 'npm run test:coverage' }}
       - run: ./zclaude --help
       - run: npm pack --dry-run
