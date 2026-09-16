@@ -2,6 +2,7 @@
 
 import { CALLBACK_SCHEME, flag } from "../config.js";
 import { authError, InterruptedError, usageError } from "../errors.js";
+import { log } from "../logger.js";
 import { warn } from "../ui/log.js";
 import { createNativeReceiver } from "./darwin.js";
 import { promptForCallback } from "./paste.js";
@@ -18,6 +19,7 @@ async function setupNative({ wanted, pasteAvailable, createNative, env, platform
   try {
     return await createNative({ scheme: CALLBACK_SCHEME, env, platform });
   } catch (error) {
+    log.warn("callback", "native receiver unavailable", { error });
     warn(`Automatic ${CALLBACK_SCHEME}:// capture is unavailable (${error.message}).`);
     if (!pasteAvailable) throw error;
     warn("You will need to paste the redirect URL instead.");
@@ -99,6 +101,7 @@ export async function receiveCallback({
     );
   }
 
+  log.info("callback", "waiting for authorization", { native: Boolean(native), paste: pasteAvailable, timeoutMs });
   onReady({ native: Boolean(native), paste: pasteAvailable });
 
   const controller = new AbortController();
@@ -110,9 +113,13 @@ export async function receiveCallback({
   process.once("SIGTERM", onSignal);
 
   try {
-    return await Promise.race(racers);
+    const winner = await Promise.race(racers);
+    log.info("callback", "authorization received", { from: winner.from, length: String(winner.value).length });
+    return winner;
   } catch (error) {
-    throw translateFailure(error, controller, timeoutMs);
+    const failure = translateFailure(error, controller, timeoutMs);
+    log.warn("callback", "no authorization received", { error: failure });
+    throw failure;
   } finally {
     timeout.cancel();
     process.off("SIGINT", onSignal);

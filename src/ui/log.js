@@ -1,7 +1,10 @@
-// Minimal stderr logger. Colors only when writing to a terminal and the user
-// has not opted out through NO_COLOR or TERM=dumb.
+// Console output. Every line also goes to the run log (category "console").
+// Colors only when writing to a terminal and the user has not opted out
+// through NO_COLOR or TERM=dumb.
 
-const state = { verbose: false };
+import { log } from "../logger.js";
+
+const state = { verbose: false, quiet: false };
 
 export function setVerbose(value) {
   state.verbose = Boolean(value);
@@ -9,6 +12,11 @@ export function setVerbose(value) {
 
 export function isVerbose() {
   return state.verbose;
+}
+
+/** Quiet keeps warnings and errors on the terminal but drops info lines. */
+export function setQuiet(value) {
+  state.quiet = Boolean(value);
 }
 
 /** @typedef {{isTTY?: boolean, columns?: number}} StreamLike */
@@ -45,18 +53,18 @@ export function paint(text, style, stream = process.stderr, env = process.env) {
   return code ? `${code}${text}${CODES.reset}` : text;
 }
 
-function write(prefix, style, message) {
+function write(prefix, style, message, { level, show }) {
+  log[level]("console", message);
+  if (!show) return;
   const line = prefix ? `${paint(prefix, style)} ${message}` : message;
   process.stderr.write(`${line}\n`);
 }
 
-export const info = (message) => write("·", "cyan", message);
-export const success = (message) => write("✓", "green", message);
-export const warn = (message) => write("!", "yellow", message);
-export const error = (message) => write("✗", "red", message);
-export const debug = (message) => {
-  if (state.verbose) write("»", "grey", paint(message, "grey"));
-};
+export const info = (message) => write("·", "cyan", message, { level: "info", show: !state.quiet });
+export const success = (message) => write("✓", "green", message, { level: "info", show: !state.quiet });
+export const warn = (message) => write("!", "yellow", message, { level: "warn", show: true });
+export const error = (message) => write("✗", "red", message, { level: "error", show: true });
+export const debug = (message) => write("»", "grey", paint(message, "grey"), { level: "debug", show: state.verbose });
 
 /** Show only the last four characters of a secret. */
 export function mask(secret) {

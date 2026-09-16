@@ -4,7 +4,9 @@
 
 import { CONSOLE_KEYS_URL, TIMEOUTS } from "./config.js";
 import { authError, EXIT } from "./errors.js";
-import { registerSecret, requestEnvelope } from "./http.js";
+import { requestEnvelope } from "./http.js";
+import { log } from "./logger.js";
+import { registerSecret } from "./redact.js";
 
 const DEFAULT_ORG_HINT = "默认机构"; // "default organization" in Z.ai's Chinese UI
 const DEFAULT_PROJECT_HINT = "默认项目";
@@ -124,7 +126,10 @@ async function copySecret(authed, keysUrl, apiKeyId) {
 export async function mintApiKey(oauthAccessToken, config, { fetchImpl, signal, onProgress } = {}) {
   const token = str(oauthAccessToken);
   if (!token) throw authError("Cannot provision a key without an OAuth access token.");
-  const progress = typeof onProgress === "function" ? onProgress : () => {};
+  const progress = (step) => {
+    log.info("provision", step);
+    if (typeof onProgress === "function") onProgress(step);
+  };
   const base = { fetchImpl, signal, timeoutMs: TIMEOUTS.authMs };
 
   progress("Signing in to the Z.ai business API");
@@ -140,5 +145,12 @@ export async function mintApiKey(oauthAccessToken, config, { fetchImpl, signal, 
   progress("Fetching the key secret");
   const apiKey = `${apiKeyId}.${await copySecret(authed, keysUrl, apiKeyId)}`;
   registerSecret(apiKey);
+  log.info("provision", "api key ready", {
+    keyName: config.keyName,
+    created,
+    organizationId,
+    projectId,
+    keyId: apiKeyId,
+  });
   return { apiKey, keyName: config.keyName, created, organizationId, projectId };
 }

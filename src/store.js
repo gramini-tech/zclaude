@@ -8,7 +8,8 @@ import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path";
 
 import { flag, zclaudeHome } from "./config.js";
-import { registerSecret } from "./http.js";
+import { log } from "./logger.js";
+import { registerSecret } from "./redact.js";
 import { debug, warn } from "./ui/log.js";
 
 const KEYCHAIN_SERVICE = "zclaude";
@@ -155,16 +156,23 @@ export async function loadCredential({ env = process.env, platform = process.pla
       const secret = await keychainFind(security);
       if (secret) {
         registerSecret(secret);
+        log.info("store", "credential loaded", { source: "keychain", email: meta.email || null });
         return { apiKey: secret, source: "keychain", ...meta };
       }
+      log.debug("store", "no keychain item", { service: KEYCHAIN_SERVICE });
     } catch (error) {
+      log.warn("store", "keychain lookup failed", { error });
       warn(`Keychain lookup failed (${error.message}); falling back to the file store.`);
     }
   }
   const record = await readJson(storePaths(env).credentialsFile);
   const apiKey = typeof record?.apiKey === "string" ? record.apiKey.trim() : "";
-  if (!apiKey) return null;
+  if (!apiKey) {
+    log.debug("store", "no stored credential", { file: storePaths(env).credentialsFile });
+    return null;
+  }
   registerSecret(apiKey);
+  log.info("store", "credential loaded", { source: "file", email: record.email || null });
   return {
     apiKey,
     source: "file",
@@ -217,6 +225,7 @@ export async function saveCredential(
     { mode: 0o600 },
   );
   debug(`Credential saved to ${location}`);
+  log.info("store", "credential saved", { location, source, email: email || null, keyName: keyName || null });
   return { location };
 }
 
@@ -242,5 +251,6 @@ export async function deleteCredential({
     if (error?.code !== "ENOENT") warn(`Could not remove ${paths.credentialsFile}: ${error.message}`);
   }
   await rm(paths.profileFile, { force: true });
+  log.info("store", "credential deleted", { removed });
   return { removed };
 }

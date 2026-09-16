@@ -107,6 +107,45 @@ describe("end to end", () => {
     assert.doesNotMatch(result.stderr, new RegExp(GOOD_KEY, "u"), "key never printed");
   });
 
+  it("writes a redacted run log that a post-mortem can read back", async () => {
+    const result = await run(["--profile", "zai", "-p", "logged"], {
+      ...env,
+      ZAI_API_KEY: GOOD_KEY,
+      ZCLAUDE_LOG_LEVEL: "trace",
+    });
+    assert.equal(result.code, 0, result.stderr);
+    const shown = await run(["log"], env);
+    assert.equal(shown.code, 0, shown.stderr);
+    assert.match(shown.stdout, /run started/u);
+    assert.match(shown.stdout, /credential resolved.*"source":"env"/u);
+    assert.match(shown.stdout, /spawning claude/u);
+    assert.match(shown.stdout, /claude exited.*"code":0/u);
+    assert.match(shown.stdout, /http +response.*"status":200/u);
+    assert.doesNotMatch(shown.stdout, new RegExp(GOOD_KEY, "u"), "key never logged");
+    const json = await run(["log", "--json"], env);
+    const entries = JSON.parse(json.stdout);
+    assert.equal(entries[0].msg, "run started");
+    assert.deepEqual(entries[0].argv, ["--profile", "zai", "-p", "logged"]);
+    assert.ok(
+      entries.some((entry) => entry.cat === "http" && entry.msg === "request"),
+      "trace level captured requests",
+    );
+    const pathOnly = await run(["log", "--path"], env);
+    assert.match(pathOnly.stdout.trim(), /zclaude-\d{8}-\d{6}-\d{3}-\d+\.log$/u);
+    const failed = await run(["--profile", "zai"], { ...env, ZAI_API_KEY: "0123456789abcdef0123.badbadbadbadbadbad" });
+    assert.match(failed.stderr, /Run log: .*zclaude-.*\.log/u);
+    const quiet = await run(["--profile", "zai", "--quiet"], { ...env, ZAI_API_KEY: GOOD_KEY });
+    assert.equal(quiet.code, 0);
+    assert.doesNotMatch(quiet.stderr, /Launching claude/u);
+    const none = await run(["--profile", "zai", "--no-log"], {
+      ...env,
+      ZAI_API_KEY: GOOD_KEY,
+      ZCLAUDE_LOG_DIR: join(home.dir, "nologs"),
+    });
+    assert.equal(none.code, 0);
+    assert.equal((await run(["log"], { ...env, ZCLAUDE_LOG_DIR: join(home.dir, "nologs") })).code, 2);
+  });
+
   it("propagates claude's exit code", async () => {
     const result = await run(["--profile", "zai"], { ...env, ZAI_API_KEY: GOOD_KEY, ZC_EXIT: "7" });
     assert.equal(result.code, 7);

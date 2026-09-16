@@ -3,22 +3,16 @@
 // tell which hop failed without leaking the credential.
 
 import { networkError, ZclaudeError } from "./errors.js";
+import { log } from "./logger.js";
+import { redact } from "./redact.js";
 
-const secrets = new Set();
-
-/** Register a value that must never appear in error text. */
-export function registerSecret(value) {
-  if (typeof value === "string" && value.length >= 8) secrets.add(value);
-}
-
-export function redact(text) {
-  let out = String(text ?? "");
-  for (const secret of secrets) {
-    if (secret && out.includes(secret)) out = out.split(secret).join(`****${secret.slice(-4)}`);
+function describeUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return { host: parsed.host, path: parsed.pathname };
+  } catch {
+    return { host: String(url), path: "" };
   }
-  out = out.replaceAll(/(Bearer\s+)[\w.~+/=-]{8,}/giu, "$1****");
-  out = out.replaceAll(/\b([A-Za-z0-9]{16,})\.([A-Za-z0-9]{12,})\b/gu, (_, id) => `${id.slice(0, 4)}****`);
-  return out;
 }
 
 class HttpError extends ZclaudeError {
@@ -97,14 +91,30 @@ export async function request({
       init.body = typeof body === "string" ? body : JSON.stringify(body);
       init.headers["Content-Type"] = "application/json";
     }
+    const startedAt = Date.now();
+    const target = describeUrl(url);
+    log.trace("http", "request", {
+      method,
+      ...target,
+      headers: Object.keys(init.headers),
+      timeoutMs,
+      hasBody: body !== undefined,
+    });
     let response;
     try {
       response = await fetchImpl(url, init);
     } catch (error) {
-      if (signal?.aborted) throw signal.reason ?? error;
-      throw classifyNetworkError(controller.signal.reason ?? error, method, url);
+      const failure = signal?.aborted
+        ? (signal.reason ?? error)
+        : classifyNetworkError(controller.signal.reason ?? error, method, url);
+      log.warn("http", "request failed", { method, ...target, ms: Date.now() - startedAt, error: failure });
+      throw failure;
     }
     const text = await response.text();
+    const ms = Date.now() - startedAt;
+    log.debug("http", "response", { method, ...target, status: response.status, ms, bytes: text.length });
+    if (!response.ok)
+      log.debug("http", "response body", { method, ...target, status: response.status, body: text.slice(0, 500) });
     let json;
     if (text.trim()) {
       try {

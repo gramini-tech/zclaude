@@ -8,6 +8,7 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import { CALLBACK_SCHEME, TIMEOUTS } from "./config.js";
 import { authError, EXIT } from "./errors.js";
 import { requestEnvelope } from "./http.js";
+import { log } from "./logger.js";
 
 export function generateState() {
   return randomBytes(32).toString("hex");
@@ -144,6 +145,7 @@ export async function exchangeCode({ code, state }, config, { fetchImpl, signal 
     str(zai.access_token) || str(zai.accessToken) || str(record.access_token) || str(record.accessToken);
   if (!accessToken) throw authError("Token exchange succeeded but the response carried no access token.");
   const user = record.user && typeof record.user === "object" ? record.user : {};
+  log.info("auth", "token exchanged", { email: str(user.email).toLowerCase() || null, userId: str(user.id) || null });
   return {
     accessToken,
     email: str(user.email).toLowerCase(),

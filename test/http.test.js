@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { EXIT } from "../src/errors.js";
-import { redact, registerSecret, request, requestEnvelope } from "../src/http.js";
+import { request, requestEnvelope } from "../src/http.js";
+import { redact, registerSecret } from "../src/redact.js";
 import { jsonResponse, mockFetch } from "./helpers.js";
 
 describe("redact", () => {

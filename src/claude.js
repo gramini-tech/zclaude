@@ -7,6 +7,7 @@ import { delimiter, isAbsolute, join, resolve as resolvePath } from "node:path";
 
 import { contextWindowFor, formatModelForClaude } from "./config.js";
 import { EXIT, noClaudeError, ZclaudeError } from "./errors.js";
+import { log } from "./logger.js";
 
 const INSTALL_HINT = [
   "Install Claude Code first:",
@@ -120,6 +121,16 @@ export function exitCodeForSignal(signal) {
 export function runClaude(bin, args, env, { platform = process.platform } = {}) {
   return new Promise((resolve, reject) => {
     const useShell = platform === "win32" && /\.(cmd|bat)$/iu.test(bin);
+    const startedAt = Date.now();
+    log.info("claude", "spawning claude", {
+      bin,
+      args,
+      shell: useShell,
+      env: Object.keys(env)
+        .filter((key) => /^(ANTHROPIC_|CLAUDE_CODE_|API_TIMEOUT_MS)/u.test(key))
+        .toSorted((a, b) => a.localeCompare(b))
+        .map((key) => (key === "ANTHROPIC_AUTH_TOKEN" ? `${key}=<redacted>` : `${key}=${env[key]}`)),
+    });
     let child;
     try {
       child = spawn(bin, args, { stdio: "inherit", env, shell: useShell, windowsHide: false });
@@ -136,6 +147,7 @@ export function runClaude(bin, args, env, { platform = process.platform } = {}) 
     };
     child.on("error", (/** @type {NodeJS.ErrnoException} */ error) => {
       restore();
+      log.error("claude", "claude failed to start", { bin, error });
       if (error?.code === "ENOENT") {
         reject(noClaudeError(`claude disappeared from ${bin} before it could start.`, INSTALL_HINT));
         return;
@@ -144,6 +156,7 @@ export function runClaude(bin, args, env, { platform = process.platform } = {}) 
     });
     child.on("exit", (code, signal) => {
       restore();
+      log.info("claude", "claude exited", { code, signal, ms: Date.now() - startedAt });
       resolve(code ?? exitCodeForSignal(signal));
     });
   });

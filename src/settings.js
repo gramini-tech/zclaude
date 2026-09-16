@@ -6,6 +6,7 @@ import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { DEFAULT_MODELS, zclaudeHome } from "./config.js";
+import { log } from "./logger.js";
 
 export const MANAGED_KEYS = Object.freeze({
   primary: "ZCLAUDE_MODEL",
@@ -140,10 +141,20 @@ async function readSettingsFile(path) {
   try {
     text = await readFile(path, "utf8");
   } catch (error) {
-    if (error?.code === "ENOENT") return { path, exists: false, values: {}, warnings: [] };
+    if (error?.code === "ENOENT") {
+      log.debug("config", "settings file absent", { path });
+      return { path, exists: false, values: {}, warnings: [] };
+    }
+    log.warn("config", "settings file unreadable", { path, error });
     return { path, exists: true, values: {}, warnings: [`${path}: ${error.message}`] };
   }
-  return { path, exists: true, ...parseDotenv(text, { file: path }) };
+  const parsed = parseDotenv(text, { file: path });
+  log.info("config", "settings file read", {
+    path,
+    keys: Object.keys(parsed.values),
+    warnings: parsed.warnings.length,
+  });
+  return { path, exists: true, ...parsed };
 }
 
 const FILE_HEADER = [
@@ -169,6 +180,7 @@ export async function writeSettingsFile(path, updates) {
     // best effort
   }
   await rename(tmp, path);
+  log.info("config", "settings file written", { path, keys: Object.keys(updates) });
   return path;
 }
 

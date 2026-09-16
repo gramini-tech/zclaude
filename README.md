@@ -58,21 +58,24 @@ zclaude --reconfigure           re-run the model wizard
 
 All zclaude options go before any argument meant for `claude`.
 
-| Option                          | Effect                                                                   |
-| ------------------------------- | ------------------------------------------------------------------------ |
-| `--profile <claude\|zai\|name>` | skip the menu                                                            |
-| `--reconfigure`, `--customize`  | run the model wizard even when config exists                             |
-| `--login`                       | sign in to Z.ai again before launching                                   |
-| `--model <id>`                  | primary model for the Z.ai profile; forwarded to `claude` otherwise      |
-| `--subagent-model <id>`         | subagent model (`CLAUDE_CODE_SUBAGENT_MODEL`)                            |
-| `--fast-model <id>`             | haiku-class helper model                                                 |
-| `--no-store`                    | keep the key in memory for this session only                             |
-| `--no-browser`, `--paste`       | login: print the URL instead of opening a browser; always paste the code |
-| `--api-key`                     | login: paste a key from the Z.ai console instead of the browser flow     |
-| `--json`                        | status: machine-readable output                                          |
-| `--no-banner`                   | skip the splash                                                          |
-| `--verbose`                     | show each step (use `zclaude -- --verbose` to pass it to `claude`)       |
-| `--help`, `--version`           | zclaude help and versions (`zclaude -- --help` for claude's own)         |
+| Option                                  | Effect                                                                   |
+| --------------------------------------- | ------------------------------------------------------------------------ |
+| `--profile <claude\|zai\|name>`         | skip the menu                                                            |
+| `--reconfigure`, `--customize`          | run the model wizard even when config exists                             |
+| `--login`                               | sign in to Z.ai again before launching                                   |
+| `--model <id>`                          | primary model for the Z.ai profile; forwarded to `claude` otherwise      |
+| `--subagent-model <id>`                 | subagent model (`CLAUDE_CODE_SUBAGENT_MODEL`)                            |
+| `--fast-model <id>`                     | haiku-class helper model                                                 |
+| `--no-store`                            | keep the key in memory for this session only                             |
+| `--no-browser`, `--paste`               | login: print the URL instead of opening a browser; always paste the code |
+| `--api-key`                             | login: paste a key from the Z.ai console instead of the browser flow     |
+| `--json`                                | status: machine-readable output                                          |
+| `--no-banner`                           | skip the splash                                                          |
+| `--verbose`                             | show each step (use `zclaude -- --verbose` to pass it to `claude`)       |
+| `--quiet`                               | terminal shows only warnings and errors                                  |
+| `--log-level`, `--log-file`, `--no-log` | run-log controls, see "Run logs" below                                   |
+| `--path`                                | `zclaude log`: print only the log file path                              |
+| `--help`, `--version`                   | zclaude help and versions (`zclaude -- --help` for claude's own)         |
 
 ### First Z.ai launch
 
@@ -88,6 +91,38 @@ All zclaude options go before any argument meant for `claude`.
    Z.ai leaks into your other Claude Code sessions.
 
 Later launches skip straight from the menu to `claude`.
+
+## Run logs (post-mortem)
+
+Every invocation writes a structured JSON-lines log to `~/.zclaude/logs/zclaude-<date>-<time>-<pid>.log`
+(the 30 newest are kept). It records the run header (version, Node, arguments, which relevant variables
+were set), every settings file read, the profile and models chosen, the credential source and its
+validation result, each HTTP call with status and timing, the browser callback mode, the exact `claude`
+spawn with its environment variable names, and claude's exit code. Secrets are redacted before anything
+is written; the key only ever appears as `****xxxx`.
+
+```
+zclaude log            # latest run, one line per entry
+zclaude log --json     # the same as JSON
+zclaude log --path     # just the file path
+zclaude status         # also shows the current run's log file
+```
+
+Levels are `error`, `warn`, `info`, `debug` (default) and `trace` (adds request headers and bodies).
+Categories are `cli`, `config`, `profile`, `auth`, `callback`, `provision`, `store`, `zai`, `http`,
+`claude` and `console` (everything printed to the terminal).
+
+| Control                                           | Effect                                                                |
+| ------------------------------------------------- | --------------------------------------------------------------------- |
+| `--log-level <level>`, `ZCLAUDE_LOG_LEVEL`        | detail written to the file; `off` disables it                         |
+| `ZCLAUDE_LOG_CATEGORIES`                          | `auth,http` keeps only those; `-console,-http` drops those; forms mix |
+| `--log-file <path>`, `ZCLAUDE_LOG=<path>`         | write this run's log to a specific file                               |
+| `--no-log`, `ZCLAUDE_NO_LOG=1`, `ZCLAUDE_LOG=off` | no run log at all                                                     |
+| `ZCLAUDE_LOG_DIR`                                 | directory for run logs (default `~/.zclaude/logs`)                    |
+| `ZCLAUDE_LOG_KEEP`                                | how many run logs to keep (default 30)                                |
+| `--quiet`                                         | terminal shows only warnings and errors (the file is unaffected)      |
+
+When a run fails, the error line on the terminal is followed by the path of that run's log.
 
 ## What gets set in the child process
 

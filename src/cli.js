@@ -2,7 +2,7 @@
 
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { openUrl } from "./browser.js";
 import { receiveCallback } from "./callback/index.js";
@@ -15,6 +15,7 @@ import {
   loginTimeoutMs,
   VERSION,
   zaiConfig,
+  zclaudeHome,
 } from "./config.js";
 import {
   authError,
@@ -25,8 +26,9 @@ import {
   usageError,
   ZclaudeError,
 } from "./errors.js";
-import { registerSecret } from "./http.js";
+import { registerSecret } from "./redact.js";
 import { buildAuthorizeUrl, exchangeCode, generateState, parseCallback } from "./oauth.js";
+import { configureLogger, formatEntry, listLogs, log, logFilePath, readLog } from "./logger.js";
 import { listProfiles } from "./profiles.js";
 import { mintApiKey } from "./provision.js";
 import {
@@ -42,16 +44,18 @@ import {
 } from "./settings.js";
 import { deleteCredential, loadCredential, readState, saveCredential, storePaths, writeState } from "./store.js";
 import { printBanner } from "./ui/banner.js";
-import { debug, error as logError, info, mask, paint, setVerbose, success, warn } from "./ui/log.js";
+import { debug, error as logError, info, mask, paint, setQuiet, setVerbose, success, warn } from "./ui/log.js";
 import { chooseProfile } from "./ui/menu.js";
 import { chooseSaveLocation, confirmChoice, knownModels, promptApiKey, runModelWizard } from "./ui/wizard.js";
 import { checkKey, fetchQuota, formatQuota, quotaExhausted } from "./zai.js";
 
 // ------------------------------------------------------------------ parsing
 
-const COMMANDS = new Set(["login", "logout", "status", "models", "help"]);
+const COMMANDS = new Set(["login", "logout", "status", "models", "log", "help"]);
 const VALUE_FLAGS = Object.freeze({
   "--profile": "profile",
+  "--log-level": "logLevel",
+  "--log-file": "logFile",
   "--model": "model",
   "--subagent-model": "subagentModel",
   "--fast-model": "fastModel",
@@ -67,6 +71,9 @@ const BOOL_FLAGS = Object.freeze({
   "--api-key": "apiKey",
   "--verbose": "verbose",
   "--json": "json",
+  "--quiet": "quiet",
+  "--no-log": "noLog",
+  "--path": "pathOnly",
 });
 
 /** Parse `--flag value` or `--flag=value`; returns { key, value, consumed }. */
@@ -131,6 +138,7 @@ Usage
   zclaude logout                               forget the stored Z.ai key
   zclaude status [--json]                      show credential, config and model state
   zclaude models                               list models available to your Z.ai key
+  zclaude log [--json] [--path]                show the latest run log (post-mortem)
 
 Options (must come before any claude argument)
   --profile <claude|zai|name>  skip the menu
@@ -142,6 +150,10 @@ Options (must come before any claude argument)
   --no-store                   keep the key in memory for this session only
   --no-banner                  skip the splash
   --verbose                    show what zclaude is doing
+  --quiet                      only warnings and errors on the terminal
+  --log-level <level>          run-log detail: error, warn, info, debug (default), trace, off
+  --log-file <path>            write the run log there instead of ~/.zclaude/logs
+  --no-log                     no run log for this invocation
   -h, --help                   this help (use \`zclaude -- --help\` for claude's)
   -V, --version                zclaude and claude versions
 
@@ -157,6 +169,8 @@ Environment
   ZCLAUDE_CLAUDE_BIN           path to claude
   ZCLAUDE_NO_STORE, ZCLAUDE_NO_KEYCHAIN, ZCLAUDE_NO_NATIVE_CALLBACK, ZCLAUDE_NO_BANNER
   ZCLAUDE_LOGIN_TIMEOUT        seconds to wait for the browser (default 300)
+  ZCLAUDE_LOG_LEVEL            run-log level; ZCLAUDE_LOG_CATEGORIES filters (e.g. "auth,http" or "-console")
+  ZCLAUDE_LOG=off|<path>       disable the run log or pick its file; ZCLAUDE_LOG_DIR, ZCLAUDE_LOG_KEEP (default 30)
 `;
 
 // ------------------------------------------------------------------ helpers
@@ -417,6 +431,7 @@ async function maybeRunWizard({ options, env, layered, interactive, models, avai
     final[slot] = fromFlag ?? chosen[slot];
     final.sources[slot] = fromFlag ? "flag" : "wizard";
   }
+  log.info("config", "wizard choices", chosen);
   const where = await chooseSaveLocation({
     projectPath: projectEnvPath(cwd),
     userPath: userSettingsPath(env),
@@ -463,6 +478,12 @@ async function selectProfile({ options, env, layered, interactive }) {
     await writeState({ lastProfile: profileId }, env).catch((error) => debug(`state not saved: ${error.message}`));
   }
   const profile = profiles.find((item) => item.id === profileId);
+  log.info("profile", "profile selected", {
+    id: profileId,
+    known: Boolean(profile),
+    via: options.profile ? "flag" : (resolveProfileDefault({ env, layered })?.source ?? "menu"),
+    available: profiles.map((item) => item.id),
+  });
   if (!profile)
     throw usageError(`Unknown profile "${profileId}".`, `Available: ${profiles.map((item) => item.id).join(", ")}`);
   debug(`Profile: ${profile.id}`);
@@ -492,9 +513,21 @@ async function cmdLaunch({ options, passthrough, env, cwd }) {
 
   const credential = await resolveCredential({ options, env, config, interactive });
   const availableModels = credential.check?.models ?? [];
+  log.info("auth", "credential resolved", {
+    source: credential.source,
+    key: mask(credential.apiKey),
+    check: credential.check ? { status: credential.check.status, httpStatus: credential.check.httpStatus } : null,
+    models: availableModels.map((model) => model.id),
+  });
   const resolved = resolveModels({ flags: flagModels(options), env, layered });
   const models = await maybeRunWizard({ options, env, layered, interactive, models: resolved, availableModels, cwd });
   warnUnknownModels(models, availableModels);
+  log.info("config", "models resolved", {
+    primary: models.primary,
+    subagent: models.subagent,
+    fast: models.fast,
+    sources: models.sources,
+  });
 
   if (credential.check && credential.check.status !== "rejected") {
     const quota = await fetchQuota(credential.apiKey, config);
@@ -658,6 +691,7 @@ function statusText(status) {
     modelLine("fast", ""),
     `${label("wizard")}${status.wizardNeeded ? "will run on the next Z.ai launch (no saved config)" : "not needed (use --reconfigure to change models)"}`,
     `${label("profiles")}${status.profiles.join(", ")}`,
+    `${label("log")}${logFilePath() ?? "disabled"}`,
     status.conflict ? `${label("warning")}${status.conflict.path} sets ${status.conflict.keys.join(", ")}` : null,
   ];
   return `${lines.filter(Boolean).join("\n")}\n`;
@@ -667,6 +701,31 @@ async function cmdStatus(context) {
   const status = await gatherStatus(context);
   process.stdout.write(context.options.json ? `${JSON.stringify(statusJson(status), null, 2)}\n` : statusText(status));
   return EXIT.OK;
+}
+
+/** Show the latest run log so a failed run can be examined after the fact. */
+function cmdLog({ options, env }) {
+  const [latest] = listLogs(env);
+  if (!latest) {
+    process.stderr.write(`No run logs yet (looked in ${logsDirFor(env)}).\n`);
+    return EXIT.USAGE;
+  }
+  if (options.pathOnly) {
+    process.stdout.write(`${latest}\n`);
+    return EXIT.OK;
+  }
+  const entries = readLog(latest);
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(entries, null, 2)}\n`);
+    return EXIT.OK;
+  }
+  process.stdout.write(`${paint(latest, "grey", process.stdout)}\n`);
+  for (const entry of entries) process.stdout.write(`${formatEntry(entry)}\n`);
+  return EXIT.OK;
+}
+
+function logsDirFor(env) {
+  return dirname(listLogs(env)[0] ?? join(zclaudeHome(env), "logs", "x"));
 }
 
 async function cmdVersion({ env }) {
@@ -688,12 +747,31 @@ const COMMAND_HANDLERS = {
   logout: cmdLogout,
   status: cmdStatus,
   models: cmdModels,
+  log: cmdLog,
   launch: cmdLaunch,
 };
 
 export function main(argv, { env = process.env, cwd = process.cwd() } = {}) {
-  const parsed = parseArgs(argv);
+  let parsed;
+  try {
+    parsed = parseArgs(argv);
+  } catch (error) {
+    configureLogger({ env, argv });
+    log.error("cli", "argument parsing failed", { error });
+    throw error;
+  }
+  if (parsed.command !== "log") {
+    configureLogger({
+      env,
+      argv,
+      level: parsed.options.logLevel,
+      file: parsed.options.logFile,
+      disabled: Boolean(parsed.options.noLog),
+    });
+  }
   setVerbose(Boolean(parsed.options.verbose));
+  setQuiet(Boolean(parsed.options.quiet));
+  log.info("cli", "command", { command: parsed.command, options: parsed.options, passthrough: parsed.passthrough });
   const handler = COMMAND_HANDLERS[parsed.command] ?? cmdLaunch;
   return handler({ ...parsed, env, cwd });
 }
