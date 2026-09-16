@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# zclaude runner: finds a suitable Node.js and executes bin/zclaude.js.
+# Lets a plain git clone work without npm, e.g.
+#   ln -s "$PWD/zclaude" ~/.local/bin/zclaude
+set -euo pipefail
+
+MIN_MAJOR=20
+MIN_MINOR=17
+
+# Resolve the real location of this script, following symlinks portably
+# (macOS ships a readlink without -f on older releases).
+resolve_self() {
+  local source="$1" dir
+  while [ -L "$source" ]; do
+    dir="$(cd -P "$(dirname "$source")" && pwd)"
+    source="$(readlink "$source")"
+    [[ "$source" != /* ]] && source="$dir/$source"
+  done
+  cd -P "$(dirname "$source")" && pwd
+}
+
+SCRIPT_DIR="$(resolve_self "${BASH_SOURCE[0]}")"
+ENTRY="$SCRIPT_DIR/bin/zclaude.js"
+
+if [ ! -f "$ENTRY" ]; then
+  echo "zclaude: cannot find $ENTRY" >&2
+  exit 1
+fi
+
+if [ ! -d "$SCRIPT_DIR/node_modules/@inquirer" ]; then
+  echo "zclaude: dependencies are missing. Run 'npm install' in $SCRIPT_DIR first." >&2
+  exit 1
+fi
+
+version_ok() {
+  local raw major minor
+  raw="$("$1" --version 2>/dev/null || true)"
+  raw="${raw#v}"
+  major="${raw%%.*}"
+  minor="${raw#*.}"
+  minor="${minor%%.*}"
+  [[ "$major" =~ ^[0-9]+$ ]] || return 1
+  [[ "$minor" =~ ^[0-9]+$ ]] || minor=0
+  if [ "$major" -gt "$MIN_MAJOR" ]; then return 0; fi
+  if [ "$major" -eq "$MIN_MAJOR" ] && [ "$minor" -ge "$MIN_MINOR" ]; then return 0; fi
+  return 1
+}
+
+find_node() {
+  local candidate
+  if [ -n "${ZCLAUDE_NODE:-}" ]; then
+    if version_ok "$ZCLAUDE_NODE"; then echo "$ZCLAUDE_NODE"; return 0; fi
+    echo "zclaude: ZCLAUDE_NODE=$ZCLAUDE_NODE is not Node.js >= $MIN_MAJOR.$MIN_MINOR" >&2
+    return 1
+  fi
+  if candidate="$(command -v node 2>/dev/null)" && version_ok "$candidate"; then
+    echo "$candidate"; return 0
+  fi
+  local dirs=()
+  [ -n "${NVM_DIR:-}" ] && dirs+=("$NVM_DIR/versions/node")
+  dirs+=("$HOME/.nvm/versions/node" "$HOME/.volta/bin" "$HOME/.local/share/fnm/node-versions" "$HOME/.fnm/node-versions" "/opt/homebrew/bin" "/usr/local/bin" "/usr/bin")
+  local dir bin
+  for dir in "${dirs[@]}"; do
+    [ -d "$dir" ] || continue
+    # Direct binaries first, then version-manager layouts (newest first).
+    if [ -x "$dir/node" ] && version_ok "$dir/node"; then echo "$dir/node"; return 0; fi
+    while IFS= read -r bin; do
+      [ -n "$bin" ] || continue
+      if version_ok "$bin"; then echo "$bin"; return 0; fi
+    done < <(ls -1d "$dir"/*/bin/node "$dir"/*/installation/bin/node 2>/dev/null | sort -rV)
+  done
+  return 1
+}
+
+if ! NODE_BIN="$(find_node)"; then
+  echo "zclaude: Node.js >= $MIN_MAJOR.$MIN_MINOR is required but was not found." >&2
+  echo "Install it from https://nodejs.org or set ZCLAUDE_NODE=/path/to/node." >&2
+  exit 2
+fi
+
+exec "$NODE_BIN" "$ENTRY" "$@"

@@ -1,0 +1,44 @@
+{
+  "name": "zclaude",
+  "version": "0.1.0",
+  "description": "Interactive preloader for Claude Code: pick your Anthropic account or your Z.ai GLM Coding Plan per launch, with browser sign-in, Keychain-stored keys and per-project model config",
+  "type": "module",
+  "bin": {
+    "zclaude": "bin/zclaude.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "zclaude",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.17.0"
+  },
+  "scripts": {
+    "test": "node --test test/",
+    "lint:sh": "shellcheck zclaude"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^8.7.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vipincr/zclaude.git"
+  },
+  "homepage": "https://github.com/vipincr/zclaude#readme",
+  "bugs": {
+    "url": "https://github.com/vipincr/zclaude/issues"
+  },
+  "keywords": [
+    "claude-code",
+    "z.ai",
+    "glm",
+    "coding-plan",
+    "cli",
+    "oauth",
+    "preloader"
+  ],
+  "license": "MIT"
+}
