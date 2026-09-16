@@ -573,9 +573,30 @@ function warnUnknownModels(models, availableModels) {
 
 // ------------------------------------------------------------------- launch
 
+const PROFILE_SOURCES = Object.freeze({
+  env: "ZCLAUDE_PROFILE in this shell",
+  project: "the project's .zclaude/env",
+  user: "your ~/.zclaude/settings",
+});
+
 async function selectProfile({ options, env, layered, interactive }) {
   const profiles = await listProfiles(env);
-  let profileId = options.profile ?? resolveProfileDefault({ env, layered })?.value ?? null;
+  const known = (id) => profiles.some((item) => item.id === id);
+  const configured = resolveProfileDefault({ env, layered });
+  let via = options.profile ? "flag" : (configured?.source ?? "menu");
+  let profileId = options.profile ?? configured?.value ?? null;
+
+  // A profile named by a config file may simply not exist on this machine:
+  // .zclaude/env is committed, and a teammate has their own profiles. That is
+  // a reason to ask rather than to fail; a wrong --profile is still an error.
+  if (profileId && via !== "flag" && !known(profileId)) {
+    warn(
+      `${PROFILE_SOURCES[via] ?? "Your configuration"} names the profile "${profileId}", which does not exist here.`,
+    );
+    log.warn("profile", "configured profile is unknown", { id: profileId, via, available: profiles.map((p) => p.id) });
+    profileId = null;
+    via = "menu";
+  }
   if (!profileId) {
     if (!interactive)
       throw usageError(
@@ -590,7 +611,7 @@ async function selectProfile({ options, env, layered, interactive }) {
   log.info("profile", "profile selected", {
     id: profileId,
     known: Boolean(profile),
-    via: options.profile ? "flag" : (resolveProfileDefault({ env, layered })?.source ?? "menu"),
+    via,
     available: profiles.map((item) => item.id),
   });
   if (!profile)

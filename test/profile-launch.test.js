@@ -140,6 +140,20 @@ describe("profile lifecycle", () => {
     }
   });
 
+  it("says so when a launch has to recreate a directory that vanished", async () => {
+    const { home, env } = await setup();
+    try {
+      const { record } = await createProfile({ name: "work", provider: "anthropic", env, platform: "linux" });
+      assert.equal((await prepareLaunch(record, env)).recreated, false);
+      await rm(record.dir, { recursive: true, force: true });
+      const prepared = await prepareLaunch(record, env);
+      assert.equal(prepared.recreated, true);
+      assert.equal((await stat(prepared.configDir)).isDirectory(), true, "the launch still works");
+    } finally {
+      await home.cleanup();
+    }
+  });
+
   it("deleting a profile removes its directory and registry entry, never what it pointed at", async () => {
     const { home, env, claudeDir } = await setup();
     try {

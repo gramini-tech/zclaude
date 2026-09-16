@@ -132,6 +132,49 @@ describe("interactive (pseudo-terminal)", { skip: !hasScript() && "needs macOS s
     }
   });
 
+  it("profile add walks the wizard and registers the profile", async () => {
+    const down = `${String.fromCodePoint(27)}[B`;
+    const log = join(home.dir, "profile-add.log");
+    const code = await runInPty({
+      args: ["profile", "add"],
+      env,
+      keys: [
+        [1500, "work\r"], // name
+        [1200, "\r"], // provider: an Anthropic account
+        [1000, "\r"], // sharing: settings and history
+        [1000, `${down}\r`], // sign in: later
+      ],
+      log,
+    });
+    const out = clean(await readFile(log, "utf8"));
+    assert.equal(code, 0, out.slice(-600));
+    assert.match(out, /Name for this profile/u);
+    assert.match(out, /What does this profile sign in to\?/u);
+    assert.match(out, /What should this profile share/u);
+    assert.match(out, /Sign in to "work" now\?/u);
+    assert.match(out, /Created profile "work"/u);
+    const registry = JSON.parse(await readFile(join(env.ZCLAUDE_HOME, "profiles.json"), "utf8"));
+    assert.equal(registry.profiles.work.provider, "anthropic");
+    assert.deepEqual(registry.profiles.work.share, { config: true, history: true });
+  });
+
+  it("Ctrl-C part way through the wizard creates nothing", async () => {
+    const log = join(home.dir, "profile-cancel.log");
+    const code = await runInPty({
+      args: ["profile", "add"],
+      env,
+      keys: [
+        [1500, "abandoned\r"], // name
+        [1200, String.fromCodePoint(3)], // Ctrl-C at the provider question
+      ],
+      log,
+    });
+    assert.equal(code, 130, clean(await readFile(log, "utf8")).slice(-400));
+    const registry = JSON.parse(await readFile(join(env.ZCLAUDE_HOME, "profiles.json"), "utf8"));
+    assert.equal(registry.profiles.abandoned, undefined);
+    await assert.rejects(readFile(join(env.ZCLAUDE_HOME, "profiles", "abandoned", "home", ".claude.json")));
+  });
+
   it("exits 130 on Ctrl-C at the menu", async () => {
     const log = join(home.dir, "ctrlc.log");
     const code = await runInPty({ args: ["--", "--never"], env, keys: [[1500, ""]], log });

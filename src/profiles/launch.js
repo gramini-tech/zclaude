@@ -4,7 +4,7 @@
 // cli.js stays a thin layer of prompts and reporting, and so the arguments
 // passed through to claude are built away from the flag table.
 
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -67,14 +67,20 @@ export async function deleteProfile(name, env = process.env) {
 
 /**
  * Bring a profile's directory up to date and return what claude needs.
- * @returns {Promise<{configDir: string, claudeArgs: string[], occupied: string[], detached: string[], removedSettings: string[]}>}
+ * @returns {Promise<{configDir: string, claudeArgs: string[], occupied: string[], detached: string[], removedSettings: string[], recreated: boolean}>}
  */
 export async function prepareLaunch(record, env = process.env) {
   const configDir = canonicalConfigDir(record.dir);
+  // A directory that vanished is worth saying out loud: Claude Code keys its
+  // credentials by this path, so an empty directory here picks up whatever
+  // login the old one had.
+  const recreated = !(await stat(configDir)
+    .then(() => true)
+    .catch(() => false));
   await mkdir(configDir, { recursive: true, mode: 0o700 });
   const defaultDir = defaultConfigDir(env);
   const share = record.share ?? { config: true, history: true };
-  const result = { configDir, claudeArgs: [], occupied: [], detached: [], removedSettings: [] };
+  const result = { configDir, claudeArgs: [], occupied: [], detached: [], removedSettings: [], recreated };
 
   if (share.config || share.history) {
     const linked = await linkShares({ defaultDir, configDir, share });

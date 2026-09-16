@@ -346,6 +346,7 @@ async function cmdShell({ args, env, interactive }) {
 async function cmdEnv({ args, env }) {
   const record = await requireProfile(args[0], env);
   const prepared = await prepareLaunch(record, env);
+  reportPreparation(prepared, record);
   process.stderr.write(`# ${SHELL_WARNING.replaceAll("\n", "\n# ")}\n# Prefer: zclaude profile shell ${record.name}\n`);
   process.stdout.write(`export CLAUDE_CONFIG_DIR=${JSON.stringify(prepared.configDir)}\n`);
   process.stdout.write(`export ZCLAUDE_PROFILE=${JSON.stringify(record.name)}\n`);
@@ -471,6 +472,10 @@ function managedSettingsPaths(platform = process.platform) {
 
 /** Tell the user what a launch had to work around. */
 function reportPreparation(prepared, record) {
+  if (prepared.recreated)
+    warn(
+      `${record.name}: its directory was missing and has been recreated. Claude Code keys credentials by that path, so an earlier login for it may still apply; run \`zclaude profile login ${record.name}\` if it is signed out.`,
+    );
   if (prepared.occupied.length > 0)
     warn(
       `${record.name}: ${prepared.occupied.join(", ")} exist inside the profile as real files, so they are not shared.`,

@@ -231,6 +231,18 @@ describe("end to end", () => {
     assert.equal(got.env.ONLY_USER, "1");
   });
 
+  it("a profile named by a committed config file that does not exist here asks instead of failing", async () => {
+    const cwd = join(home.dir, "teammate");
+    await mkdir(join(cwd, ".zclaude"), { recursive: true });
+    await writeFile(join(cwd, ".zclaude", "env"), "ZCLAUDE_PROFILE=their-profile\n");
+    const result = await run([], env, { cwd });
+    assert.equal(result.code, 2);
+    assert.match(result.stderr, /names the profile "their-profile", which does not exist here/u);
+    assert.match(result.stderr, /No profile selected and no terminal to ask/u, "with a terminal this is the menu");
+    const flag = await run(["--profile", "their-profile"], env, { cwd });
+    assert.match(flag.stderr, /Unknown profile "their-profile"/u, "an explicit flag is still an error");
+  });
+
   it("exits 5 when ZAI_API_KEY is rejected and never launches claude", async () => {
     await writeFile(captureFile, "{}");
     const result = await run(["--profile", "zai"], { ...env, ZAI_API_KEY: "0123456789abcdef0123.badbadbadbadbadbad" });
