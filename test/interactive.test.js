@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, before, describe, it } from "node:test";
@@ -189,6 +189,66 @@ describe("interactive (pseudo-terminal)", { skip: !hasScript() && "needs macOS s
     assert.match(out, /left alone/u, "the prompt says what survives; it wraps in a narrow terminal");
     const registry = JSON.parse(await readFile(join(env.ZCLAUDE_HOME, "profiles.json"), "utf8"));
     assert.ok(registry.profiles.work, "the profile survives a cancelled removal");
+  });
+
+  it("asks what to do about a settings env block, and honours both answers", async () => {
+    const key = "0123456789abcdef0123.ABCDEFGHIJKLMNOPQRSTUV";
+    const down = `${String.fromCodePoint(27)}[B`;
+    const zai = createServer((request, response) => {
+      response.writeHead(200, { "Content-Type": "application/json" });
+      if (request.url === "/api/coding/paas/v4/models") {
+        response.end(JSON.stringify({ object: "list", data: [{ id: "glm-5.3" }, { id: "glm-5.3-flash" }] }));
+        return;
+      }
+      response.end(JSON.stringify({ code: 200, data: { level: "pro", limits: [] } }));
+    });
+    await new Promise((resolve) => {
+      zai.listen(0, "127.0.0.1", resolve);
+    });
+    const settings = join(home.dir, ".claude", "settings.json");
+    try {
+      await mkdir(join(home.dir, ".claude"), { recursive: true });
+      await writeFile(settings, JSON.stringify({ env: { ANTHROPIC_MODEL: "claude-opus-4" } }));
+      await writeFile(capture, "");
+      const conflictEnv = {
+        ...env,
+        ZAI_API_KEY: key,
+        ZCLAUDE_BASE_URL: `http://127.0.0.1:${zai.address().port}`,
+        ZCLAUDE_MODEL: "glm-5.3",
+        ZCLAUDE_SUBAGENT_MODEL: "glm-5.3-flash",
+        ZCLAUDE_FAST_MODEL: "glm-5.3-flash",
+      };
+      const quitLog = join(home.dir, "conflict-quit.log");
+      const quit = await runInPty({
+        args: ["--profile", "zai", "--", "--conflict"],
+        env: conflictEnv,
+        keys: [[2500, "\r"]], // the default: quit and edit the file
+        log: quitLog,
+      });
+      const quitOut = clean(await readFile(quitLog, "utf8"));
+      assert.equal(quit, 130, quitOut.slice(-600));
+      assert.match(quitOut, /ANTHROPIC_MODEL: settings\.json has claude-opus-4/u);
+      assert.match(quitOut, /What do you want to do\?/u);
+      assert.equal(await readFile(capture, "utf8"), "", "claude never started");
+      assert.equal(
+        JSON.parse(await readFile(settings, "utf8")).env.ANTHROPIC_MODEL,
+        "claude-opus-4",
+        "zclaude never edits the file it is complaining about",
+      );
+
+      const launchLog = join(home.dir, "conflict-launch.log");
+      const launched = await runInPty({
+        args: ["--profile", "zai", "--", "--anyway"],
+        env: conflictEnv,
+        keys: [[2500, `${down}\r`]], // launch anyway
+        log: launchLog,
+      });
+      assert.equal(launched, 0, clean(await readFile(launchLog, "utf8")).slice(-600));
+      assert.equal((await readFile(capture, "utf8")).trim(), "ran --anyway");
+    } finally {
+      zai.close();
+      await rm(settings, { force: true });
+    }
   });
 
   it("exits 130 on Ctrl-C at the menu", async () => {

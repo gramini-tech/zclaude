@@ -466,12 +466,13 @@ async function handleRejected(candidate, check, loginContext) {
       "Unset it or replace it with a valid coding-plan key.",
     );
   }
-  warn(`The stored Z.ai key was rejected (${detail}). Signing in again.`);
-  await deleteCredential({ env: loginContext.env, profile: loginContext.profile ?? null });
+  const profile = loginContext.profile ?? null;
+  warn(`The stored Z.ai key ${profile ? `for "${profile}" ` : ""}was rejected (${detail}). Signing in again.`);
+  await deleteCredential({ env: loginContext.env, profile });
   if (!loginContext.interactive)
     throw authError(
-      "Stored credential rejected and no terminal available to sign in again.",
-      "Run `zclaude login` interactively.",
+      `Stored credential${profile ? ` for "${profile}"` : ""} rejected and no terminal available to sign in again.`,
+      `Run \`${profile ? `zclaude profile login ${profile}` : "zclaude login"}\` interactively.`,
     );
   return loginWithRetries(loginContext);
 }

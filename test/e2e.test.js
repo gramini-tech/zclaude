@@ -415,6 +415,24 @@ describe("end to end", () => {
     assert.equal((await run(["profile", "remove", "glm", "--yes"], env)).code, 0);
   });
 
+  it("forgets a profile's stored key when Z.ai rejects it, and says a sign-in is needed", async () => {
+    await run(["profile", "add", "stale", "--provider", "zai", "--share", "none", "--yes"], env);
+    const credentials = join(env.ZCLAUDE_HOME, "profiles", "stale", "zai-credentials.json");
+    await writeFile(
+      credentials,
+      JSON.stringify({ version: 1, apiKey: "0123456789abcdef0123.badbadbadbadbadbad", email: "old@x.y" }),
+      { mode: 0o600 },
+    );
+    await writeFile(captureFile, "{}");
+    const result = await run(["--profile", "stale", "-p", "x"], env);
+    assert.equal(result.code, 4);
+    assert.match(result.stderr, /The stored Z\.ai key for "stale" was rejected \(HTTP 401/u);
+    assert.match(result.stderr, /Run `zclaude profile login stale` interactively/u, "the hint names the profile");
+    await assert.rejects(readFile(credentials), /ENOENT/u, "a rejected key is not kept");
+    assert.equal(await readFile(captureFile, "utf8"), "{}", "claude never started");
+    assert.equal((await run(["profile", "remove", "stale", "--yes"], env)).code, 0);
+  });
+
   it("status --json, models and logout work non-interactively", async () => {
     const status = await run(["status", "--json"], { ...env, ZAI_API_KEY: GOOD_KEY });
     assert.equal(status.code, 0, status.stderr);
