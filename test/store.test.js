@@ -138,18 +138,16 @@ describe("keychain wrapper", () => {
         { apiKey: "bbbbbbbbbbbbbbbb.bbbbbbbbbbbbbbbb", email: "two@x.y" },
         { ...options, profile: "work" },
       );
-      assert.deepEqual(
-        store
-          .keys()
-          .toArray()
-          .toSorted((a, b) => a.localeCompare(b)),
-        ["zai:default", "zai:work"],
-      );
+      // Node 20 has no Iterator#toArray, and the spread form trips the lint
+      // rule that prefers it, so these go through the Map API instead.
+      assert.equal(store.size, 2);
+      assert.ok(store.has("zai:default") && store.has("zai:work"));
       assert.equal((await loadCredential(options)).email, "one@x.y");
       assert.equal((await loadCredential({ ...options, profile: "work" })).email, "two@x.y");
 
       await deleteCredential({ ...options, profile: "work" });
-      assert.deepEqual(store.keys().toArray(), ["zai:default"]);
+      assert.equal(store.size, 1);
+      assert.ok(store.has("zai:default"));
       assert.equal(await loadCredential({ ...options, profile: "work" }), null);
       assert.equal((await loadCredential(options)).email, "one@x.y");
     } finally {
@@ -167,7 +165,8 @@ describe("keychain wrapper", () => {
       await writeFile(`${home.dir}/.zclaude/profile.json`, JSON.stringify({ email: "me@x.y" }));
       const loaded = await loadCredential({ env, platform: "darwin", security });
       assert.equal(loaded.apiKey, "cccccccccccccccc.cccccccccccccccc");
-      assert.deepEqual(store.keys().toArray(), ["zai:default"]);
+      assert.equal(store.size, 1);
+      assert.ok(store.has("zai:default"));
     } finally {
       await home.cleanup();
     }
