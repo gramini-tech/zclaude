@@ -36,6 +36,19 @@ describe("parseArgs", () => {
       ["--verbose", "--subagent-model=glm-5", "--fast-model", "f"],
       { command: "launch", options: { verbose: true, subagentModel: "glm-5", fastModel: "f" }, passthrough: [] },
     ],
+    [
+      ["profile", "add", "work", "--provider", "anthropic", "--share=none"],
+      {
+        command: "profile",
+        options: { args: ["add", "work"], provider: "anthropic", share: "none" },
+        passthrough: [],
+      },
+    ],
+    [["profile", "list", "--json"], { command: "profile", options: { args: ["list"], json: true }, passthrough: [] }],
+    [
+      ["profile", "remove", "work", "--yes"],
+      { command: "profile", options: { args: ["remove", "work"], yes: true }, passthrough: [] },
+    ],
   ];
   for (const [argv, expected] of cases) {
     it(`parses ${JSON.stringify(argv)}`, () => {
@@ -49,6 +62,11 @@ describe("parseArgs", () => {
   it("rejects unknown arguments after a subcommand", () => {
     assert.throws(() => parseArgs(["login", "--bogus"]), /Unknown argument/u);
     assert.throws(() => parseArgs(["status", "extra"]), /Unknown argument/u);
+    assert.throws(() => parseArgs(["profile", "--bogus"]), /Unknown argument/u);
+  });
+  it("collects positionals only for command groups", () => {
+    assert.deepEqual(parseArgs(["profile", "show", "work"]).options.args, ["show", "work"]);
+    assert.equal(parseArgs(["status", "--json"]).options.args, undefined);
   });
   it("help mentions the passthrough separator", () => {
     assert.match(HELP, /zclaude -- --help/u);

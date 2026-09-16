@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.2.0
+
+Profiles: several Claude Code accounts on one machine, each scoped to the terminal it runs in.
+
+- `zclaude profile add|list|show|login|logout|shell|env|remove|doctor`. A profile is a name, a
+  provider (`anthropic` or `zai`), its own config directory under `~/.zclaude/profiles/<name>/home`,
+  and its own credentials. `--profile <name>` launches one; the menu lists them alongside the
+  built-in `claude` and `zai` entries.
+- The default profile never sets `CLAUDE_CONFIG_DIR`, so your existing login and the VS Code
+  extension are untouched. An inherited value is reported by `status` and `profile doctor` instead of
+  being overwritten.
+- Sharing, chosen per profile and defaulting to both: settings (agents, commands, skills, rules,
+  output styles, workflows, themes and `CLAUDE.md` as symlinks, plus a filtered `settings.json`
+  passed with `--settings`) and history (`projects/`, `history.jsonl`). The filter drops
+  authentication keys always, and the model keys for a Z.ai profile, so a shared `env` block cannot
+  override the GLM models zclaude selects.
+- New profiles are seeded from an allowlist of `.claude.json`; identity, entitlement caches, the
+  projects map and tool permissions are never copied. MCP servers and trusted folders are opt-in, and
+  servers carrying secrets are named before the question is asked.
+- Z.ai keys are per profile, one Keychain item each, with the existing single key migrated on first
+  run. `ZAI_API_KEY` applies to the built-in `zai` profile only.
+- Settings-conflict detection now reads all four tiers Claude Code applies: user, project,
+  project-local and machine-wide managed policy.
+- `self-uninstall` signs every profile out and names the Keychain items it removes.
+- README and website rewritten around profiles, including what profiles do not isolate: managed
+  policy, `~/.claude/.device-keys.json`, and anything you chose to share.
+
 ## 0.1.0
 
 First release.

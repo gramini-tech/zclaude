@@ -6,7 +6,7 @@
     <title>zclaude</title>
     <meta
       name="description"
-      content="Run Claude Code on your Z.ai GLM Coding Plan. Pick the account per launch, sign in through the browser, choose models for the main agent and its subagents."
+      content="Run several Claude Code accounts at once, one per terminal. Work, personal and a Z.ai GLM Coding Plan, each with its own login, side by side."
     />
     <meta name="color-scheme" content="dark light" />
     <link rel="canonical" href="https://vipincr.github.io/zclaude/" />
@@ -14,7 +14,7 @@
     <meta property="og:title" content="zclaude" />
     <meta
       property="og:description"
-      content="Claude Code on your Z.ai GLM Coding Plan, one command away. Open source, MIT licensed."
+      content="Several Claude Code accounts at once, one per terminal. Open source, MIT licensed."
     />
     <meta property="og:url" content="https://vipincr.github.io/zclaude/" />
     <meta property="og:type" content="website" />
@@ -35,7 +35,8 @@
         </a>
         <nav aria-label="Sections">
           <a href="#install">Install</a>
-          <a href="#how">How it works</a>
+          <a href="#profiles">Profiles</a>
+          <a href="#zai">Z.ai</a>
           <a href="#usage">Usage</a>
           <a href="#faq">FAQ</a>
           <a href="https://github.com/vipincr/zclaude">GitHub</a>
@@ -46,11 +47,12 @@
     <main id="top">
       <section class="hero wrap">
         <img class="logo" src="site/logo.svg" alt="zclaude" width="670" height="130" />
-        <h1>Claude Code on your Z.ai GLM Coding Plan</h1>
+        <h1>Several Claude Code accounts, one per terminal</h1>
         <p class="lede">
-          zclaude asks which account a session should use, signs you in to Z.ai in the browser, lets you choose the GLM
-          models for the main agent and its subagents, and then starts Claude Code with all of it passed through the
-          environment.
+          Claude Code keeps one login per machine, so signing in to a second account signs you out of the first, VS Code
+          included. zclaude gives each account a profile with its own credentials and its own config directory, scoped
+          to the terminal you start it from. Work, client and personal run side by side, and a
+          <a href="https://z.ai/subscribe">Z.ai GLM Coding Plan</a> is just another profile.
         </p>
 
         <div class="install" id="install">
@@ -97,29 +99,101 @@
       </section>
 
       <section class="wrap demo" id="how" aria-labelledby="how-title">
-        <h2 id="how-title">A first run, start to finish</h2>
-        <div
-          class="terminal"
-          role="img"
-          aria-label="Terminal session showing the zclaude menu, sign-in, model choices and launch"
-        >
-          <div class="terminal-bar"><span></span><span></span><span></span></div>
-          <pre><span class="prompt">$</span> zclaude
-<span class="q">?</span> What do you want to launch?
-  Claude Code
-<span class="sel">❯ Claude Code + Z.ai GLM Coding Plan</span>
-<span class="dim">· Sign in to Z.ai in your browser to authorize zclaude.</span>
-<span class="ok">✓</span> Signed in as you@example.com. Key "zclaude" created and stored in keychain.
-<span class="q">?</span> Primary model (what you talk to): <span class="ans">glm-5.3  (1M context)</span>
-<span class="q">?</span> Subagent model (background agents, Task tool): <span class="ans">glm-5.3-flash  (1M context)</span>
-<span class="q">?</span> Fast model (haiku-class helpers, summaries): <span class="ans">glm-5.3-flash  (1M context)</span>
-<span class="q">?</span> Save these choices? <span class="ans">This project</span>
-<span class="ok">✓</span> Saved to ./.zclaude/env
-<span class="dim">· Z.ai GLM Coding Plan (max) · 5h credits 12% · weekly credits 17%</span>
-<span class="dim">· Launching claude on glm-5.3 (subagents: glm-5.3-flash, fast: glm-5.3-flash)</span></pre>
+        <h2 id="how-title">Two accounts, two terminals, at the same time</h2>
+        <div class="terminals">
+          <div class="terminal" role="img" aria-label="Terminal one, running the work profile">
+            <div class="terminal-bar"><span></span><span></span><span></span></div>
+            <pre><span class="prompt">$</span> zclaude profile add work --provider anthropic
+<span class="q">?</span> What should this profile share with your main setup? <span class="ans">Settings and history</span>
+<span class="ok">✓</span> Created profile "work" (Anthropic account).
+<span class="dim">· Signing in to "work". Claude Code will open your browser.</span>
+<span class="ok">✓</span> "work" is signed in as you@company.com.
+
+<span class="prompt">$</span> zclaude --profile work
+<span class="dim">· claude · you@company.com · ~/.zclaude/profiles/work/home</span></pre>
+          </div>
+          <div class="terminal" role="img" aria-label="Terminal two, running the personal profile">
+            <div class="terminal-bar"><span></span><span></span><span></span></div>
+            <pre><span class="prompt">$</span> zclaude --profile personal
+<span class="dim">· claude · you@gmail.com · ~/.zclaude/profiles/personal/home</span>
+
+<span class="prompt">$</span> zclaude profile list
+<span class="sel">work</span>      anthropic  you@company.com   <span class="dim">shares config + history</span>
+<span class="sel">personal</span>  anthropic  you@gmail.com     <span class="dim">shares nothing</span>
+<span class="sel">glm</span>       zai        z.ai coding plan  <span class="dim">shares config</span>
+
+<span class="prompt">$</span> claude
+<span class="dim">· your original login, untouched</span></pre>
+          </div>
         </div>
         <p class="after">
-          The next launch skips straight from the menu to Claude Code. Quit it and your shell is exactly as it was.
+          A third terminal running plain <code>claude</code>, and the VS Code extension, stay on the login you already
+          had. Nothing is switched; the sessions simply do not see each other.
+        </p>
+      </section>
+
+      <section class="wrap usage" id="profiles" aria-labelledby="profiles-title">
+        <h2 id="profiles-title">Profiles</h2>
+        <p>
+          A profile is a name, a provider (an Anthropic account or a Z.ai coding plan), its own Claude Code config
+          directory, and a choice about what it borrows from your main setup. Credentials are keyed by that directory,
+          which is what keeps the accounts apart.
+        </p>
+        <div class="table-scroll">
+          <table>
+            <tbody>
+              <tr>
+                <td><code>zclaude profile add work</code></td>
+                <td>Create one. The wizard asks for the provider, sharing, MCP servers, trust and sign-in.</td>
+              </tr>
+              <tr>
+                <td><code>zclaude --profile work</code></td>
+                <td>Launch Claude Code on that account, for this terminal only.</td>
+              </tr>
+              <tr>
+                <td><code>zclaude profile shell work</code></td>
+                <td>A subshell where plain <code>claude</code> is that account.</td>
+              </tr>
+              <tr>
+                <td><code>zclaude profile list</code></td>
+                <td>Every profile with its signed-in identity and what it shares.</td>
+              </tr>
+              <tr>
+                <td><code>zclaude profile show work</code></td>
+                <td>Its directory, credential item, identity and shared items.</td>
+              </tr>
+              <tr>
+                <td><code>zclaude profile login work</code></td>
+                <td>Sign in, or sign in again. <code>--sso</code> and <code>--console</code> pass straight through.</td>
+              </tr>
+              <tr>
+                <td><code>zclaude profile logout work</code></td>
+                <td>Sign that profile out. The others are untouched.</td>
+              </tr>
+              <tr>
+                <td><code>zclaude profile remove work</code></td>
+                <td>Delete the profile, its login and its directory.</td>
+              </tr>
+              <tr>
+                <td><code>zclaude profile doctor</code></td>
+                <td>Check every profile, this shell, and any machine-wide policy that applies.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>What a profile shares</h3>
+        <p>
+          By default a new profile borrows your settings and your history, so it works straight away. Shared settings
+          are your agents, commands, skills, rules, output styles, workflows, themes and <code>CLAUDE.md</code>, plus a
+          filtered copy of <code>settings.json</code> that drops anything which would hand the profile another account's
+          credentials or models. Shared history is <code>projects/</code> and <code>history.jsonl</code>, so
+          <code>/resume</code> spans profiles. Pick <code>--share config</code>, <code>--share history</code> or
+          <code>--share none</code> instead, and change your mind later.
+        </p>
+        <p>
+          Credentials, <code>.claude.json</code>, installed plugins, caches and telemetry are never shared. Nor is
+          anything about your identity copied into a new profile: it starts signed out and earns its own login.
         </p>
       </section>
 
@@ -127,45 +201,45 @@
         <h2 id="features-title">What it does for you</h2>
         <ul class="grid">
           <li>
-            <h3>Choose per launch</h3>
+            <h3>Accounts side by side</h3>
             <p>
-              A menu picks your Anthropic account or the Z.ai plan each time. Add your own entries as files in
-              <code>~/.zclaude/profiles</code>.
+              Each profile gets its own config directory, so Claude Code stores its credentials under a separate
+              Keychain item. No switching, no signing out.
             </p>
           </li>
           <li>
-            <h3>Browser sign-in</h3>
+            <h3>Scoped to the terminal</h3>
             <p>
-              Z.ai's own authorization page issues a coding-plan key named <code>zclaude</code>. On macOS the redirect
-              is caught automatically; elsewhere you paste one URL.
+              A profile lives in the environment of the one <code>claude</code> process it starts. Your default login
+              and the VS Code extension carry on unchanged.
             </p>
           </li>
           <li>
-            <h3>Key in the Keychain</h3>
+            <h3>Usable from the first run</h3>
             <p>
-              The key lives in the macOS Keychain, or a 0600 file on Linux. It never lands in a shell rc file or in
-              Claude Code's settings.
+              A new profile borrows your settings, skills and commands by default, so it behaves like your normal setup
+              without copying your secrets.
             </p>
           </li>
           <li>
-            <h3>Separate models</h3>
+            <h3>Z.ai coding plans too</h3>
             <p>
-              The main agent, subagents and background helpers each get a model from the list your plan returns, with
-              context sizes shown.
+              Browser sign-in issues a coding-plan key, stored in the Keychain, with the GLM models you pick for the
+              main agent, subagents and helpers.
             </p>
           </li>
           <li>
-            <h3>Per-project choices</h3>
+            <h3>Nothing written to ~/.claude</h3>
             <p>
-              Choices save to <code>./.zclaude/env</code> or <code>~/.zclaude/settings</code>. Neither holds secrets, so
-              the project file can be committed.
+              zclaude reads your Claude Code files and never writes them. A contract test and a hash check enforce it on
+              every change.
             </p>
           </li>
           <li>
-            <h3>Environment only</h3>
+            <h3>Honest about the edges</h3>
             <p>
-              Everything reaches Claude Code through its process environment. Your <code>~/.claude</code> files are read
-              and never written.
+              <code>profile doctor</code> reports a shell that pins a config directory, a share that detached, and any
+              machine-wide policy no profile can escape.
             </p>
           </li>
           <li>
@@ -185,6 +259,35 @@
         </ul>
       </section>
 
+      <section class="wrap demo" id="zai" aria-labelledby="zai-title">
+        <h2 id="zai-title">A Z.ai coding plan, with models you choose</h2>
+        <div
+          class="terminal"
+          role="img"
+          aria-label="Terminal session showing the zclaude menu, Z.ai sign-in, model choices and launch"
+        >
+          <div class="terminal-bar"><span></span><span></span><span></span></div>
+          <pre><span class="prompt">$</span> zclaude
+<span class="q">?</span> What do you want to launch?
+  Claude Code
+<span class="sel">❯ Claude Code + Z.ai GLM Coding Plan</span>
+<span class="dim">· Sign in to Z.ai in your browser to authorize zclaude.</span>
+<span class="ok">✓</span> Signed in as you@example.com. Key "zclaude" created and stored in keychain.
+<span class="q">?</span> Primary model (what you talk to): <span class="ans">glm-5.3  (1M context)</span>
+<span class="q">?</span> Subagent model (background agents, Task tool): <span class="ans">glm-5.3-flash  (1M context)</span>
+<span class="q">?</span> Fast model (haiku-class helpers, summaries): <span class="ans">glm-5.3-flash  (1M context)</span>
+<span class="q">?</span> Save these choices? <span class="ans">This project</span>
+<span class="ok">✓</span> Saved to ./.zclaude/env
+<span class="dim">· Z.ai GLM Coding Plan (max) · 5h credits 12% · weekly credits 17%</span>
+<span class="dim">· Launching claude on glm-5.3 (subagents: glm-5.3-flash, fast: glm-5.3-flash)</span></pre>
+        </div>
+        <p class="after">
+          The key goes to the macOS Keychain, or a 0600 file elsewhere, never into a shell rc file or Claude Code's
+          settings. More than one Z.ai account works the same way as more than one Claude account: give each plan its
+          own profile and each keeps its own key and quota.
+        </p>
+      </section>
+
       <section class="wrap usage" id="usage" aria-labelledby="usage-title">
         <h2 id="usage-title">Usage</h2>
         <div class="table-scroll">
@@ -192,31 +295,31 @@
             <tbody>
               <tr>
                 <td><code>zclaude</code></td>
-                <td>Menu, then launch. Signs in first if no valid key is stored.</td>
+                <td>Menu of everything available, then launch.</td>
               </tr>
               <tr>
                 <td><code>zclaude -p "explain this repo"</code></td>
                 <td>Any arguments after zclaude's own options go to <code>claude</code>.</td>
               </tr>
               <tr>
-                <td><code>zclaude --profile zai</code></td>
+                <td><code>zclaude --profile work</code></td>
                 <td>Skip the menu. <code>--profile claude</code> launches your normal Claude Code.</td>
               </tr>
               <tr>
                 <td><code>zclaude --reconfigure</code></td>
-                <td>Choose the models again and save them per project or as your default.</td>
+                <td>Choose the Z.ai models again and save them per project or as your default.</td>
               </tr>
               <tr>
                 <td><code>zclaude login</code></td>
-                <td>Sign in now, then optionally pick models and launch.</td>
+                <td>Sign in to Z.ai now, then optionally pick models and launch.</td>
               </tr>
               <tr>
                 <td><code>zclaude status</code></td>
-                <td>Key, quota, models, config files and the current log file.</td>
+                <td>Profiles, key, quota, models, config files and the current log file.</td>
               </tr>
               <tr>
                 <td><code>zclaude models</code></td>
-                <td>Models your plan can use.</td>
+                <td>Models your Z.ai plan can use.</td>
               </tr>
               <tr>
                 <td><code>zclaude log</code></td>
@@ -228,7 +331,7 @@
               </tr>
               <tr>
                 <td><code>zclaude logout</code></td>
-                <td>Forget the stored key on this machine.</td>
+                <td>Forget the stored Z.ai key on this machine.</td>
               </tr>
               <tr>
                 <td><code>zclaude -- --help</code></td>
@@ -243,10 +346,11 @@
 ZCLAUDE_MODEL=glm-5.3
 ZCLAUDE_SUBAGENT_MODEL=glm-5.3-flash
 ZCLAUDE_FAST_MODEL=glm-5.3-flash
-ZCLAUDE_PROFILE=zai        # optional: skip the menu in this project</code></pre>
+ZCLAUDE_PROFILE=work       # optional: pick a profile for this project</code></pre>
         <p>
-          A command-line flag beats the environment, which beats the project file, which beats your user default. Every
-          option and variable is listed in the
+          A command-line flag beats the environment, which beats the project file, which beats your user default. A
+          profile name your teammates do not have falls back to the menu with a warning, so the project file is safe to
+          commit. Every option and variable is listed in the
           <a href="https://github.com/vipincr/zclaude#readme">README</a>.
         </p>
       </section>
@@ -257,9 +361,59 @@ ZCLAUDE_PROFILE=zai        # optional: skip the menu in this project</code></pre
         <details>
           <summary>What is zclaude?</summary>
           <p>
-            A small launcher for Claude Code. It keeps your normal Claude Code setup untouched and, when you pick the
-            Z.ai profile, starts Claude Code pointed at Z.ai's Anthropic-compatible endpoint with your coding-plan key
-            and the GLM models you chose.
+            A launcher for Claude Code. It starts <code>claude</code> with the profile you pick: your usual login, a
+            second or third account, or a Z.ai GLM Coding Plan. Everything it configures is passed to that one process,
+            so your normal setup stays where it is.
+          </p>
+        </details>
+
+        <details>
+          <summary>How can several accounts run at once?</summary>
+          <p>
+            Claude Code reads its configuration from <code>CLAUDE_CONFIG_DIR</code> and keys its stored credentials by
+            that directory. zclaude gives each profile its own directory and sets that variable for the one process it
+            starts, so each terminal has its own login. It never sets the variable for your default profile, because
+            Claude Code treats the presence of the variable, and not its value, as a different account.
+          </p>
+        </details>
+
+        <details>
+          <summary>Does signing in to a profile sign me out of VS Code?</summary>
+          <p>
+            No. The extension uses the default login, which zclaude never touches. That is the whole point of the
+            design, and it is checked end to end: create a profile, sign in, and plain <code>claude</code> in a fresh
+            terminal still reports the original account.
+          </p>
+        </details>
+
+        <details>
+          <summary>Work and personal on one machine: what stays separate?</summary>
+          <p>
+            Credentials, the signed-in identity, transcripts and project memory, MCP servers, tool permissions, folder
+            trust and installed plugins. Shared, only if you ask for it, are your settings and your history.
+            Machine-wide policy from an employer's MDM applies to every profile, and the device key file Claude Code
+            writes in your home directory is shared too. <code>zclaude profile doctor</code> tells you when either
+            applies.
+          </p>
+        </details>
+
+        <details>
+          <summary>Can I share my skills and commands with a new profile?</summary>
+          <p>
+            Yes, that is the default. Agents, commands, skills, rules, output styles, workflows, themes and
+            <code>CLAUDE.md</code> are linked, and your <code>settings.json</code> is copied through a filter that drops
+            authentication and, for a Z.ai profile, the model keys that would fight your GLM choices. Edits to the
+            originals follow. <code>--share none</code> gives you a clean profile instead.
+          </p>
+        </details>
+
+        <details>
+          <summary>What happens to <code>/resume</code> across profiles?</summary>
+          <p>
+            With shared history, <code>projects/</code> and <code>history.jsonl</code> are shared, so
+            <code>/resume</code> and <code>claude --continue</code> can reach a session started under a different
+            profile. Handy for one person with several accounts, and the wrong default if the profiles are for different
+            clients. <code>--share config</code> keeps the settings and separates the transcripts.
           </p>
         </details>
 
@@ -274,42 +428,54 @@ ZCLAUDE_PROFILE=zai        # optional: skip the menu in this project</code></pre
         <details>
           <summary>What do I need?</summary>
           <p>
-            A Z.ai GLM Coding Plan subscription and a Mac or Linux machine. The curl installer adds Claude Code if it is
-            missing, and Node.js only if yours is missing or older than 20.17. On Windows, install with npm; the sign-in
-            asks you to paste the redirect URL.
+            A Mac or Linux machine and Claude Code. The curl installer adds Claude Code if it is missing, and Node.js
+            only if yours is missing or older than 20.17. A Z.ai profile needs a GLM Coding Plan subscription. On
+            Windows, install with npm; the Z.ai sign-in asks you to paste the redirect URL.
           </p>
         </details>
 
         <details>
           <summary>Does it change my Claude Code settings?</summary>
           <p>
-            No. It never writes to <code>~/.claude/settings.json</code>, <code>~/.claude.json</code> or any project
-            <code>.claude</code> folder. Everything is passed in the environment of the one <code>claude</code> process
-            it starts, so the moment you quit, nothing is left behind. The test suite checks this on every change.
+            zclaude never writes to <code>~/.claude/settings.json</code>, <code>~/.claude.json</code> or your project's
+            <code>.claude</code> folder. It reads them, to seed a profile you asked for and to spot an
+            <code>env</code> block that would override your session. Claude Code itself writes
+            <code>~/.claude/.device-keys.json</code> whatever config directory it is given, so that one file appears
+            even for a profile. The test suite hashes the directory before and after a run.
           </p>
         </details>
 
         <details>
           <summary>My settings.json already sets ANTHROPIC_* variables. What happens?</summary>
           <p>
-            Claude Code applies the <code>env</code> block of its settings file over the process environment, which
-            would quietly undo the session zclaude set up. So zclaude shows each conflicting variable with both values
-            and asks whether to stop so you can edit the file, or launch anyway. It does not edit the file for you.
+            Claude Code applies the <code>env</code> block of its settings over the process environment, which would
+            quietly undo the session zclaude set up. So zclaude shows each conflicting variable with both values and
+            asks whether to stop so you can edit the file, or launch anyway. It checks your user settings, the project
+            file, the project-local file and machine-wide policy, and it does not edit any of them for you.
+          </p>
+        </details>
+
+        <details>
+          <summary>My company enforces a policy. Will a personal profile escape it?</summary>
+          <p>
+            No, and zclaude will not pretend otherwise. Managed settings live outside your home directory and apply to
+            every Claude Code session on the machine. <code>zclaude profile doctor</code> names the file that applies so
+            you know where the rule comes from.
           </p>
         </details>
 
         <details>
           <summary>Where is my key, and how do I remove it?</summary>
           <p>
-            In the macOS Keychain under the service name <code>zclaude</code>, or in
-            <code>~/.zclaude/credentials.json</code> with 0600 permissions on Linux. <code>zclaude logout</code> removes
-            the local copy. The key also exists on your Z.ai account; revoke it in the Z.ai API key console when you no
-            longer need it.
+            A Z.ai key goes in the macOS Keychain under the service name <code>zclaude</code>, one item per profile, or
+            in a 0600 file on Linux. <code>zclaude logout</code> and <code>zclaude profile logout</code> remove the
+            local copy; the key also exists on your Z.ai account until you revoke it there. Anthropic logins are stored
+            by Claude Code itself, and zclaude only ever asks whether an item exists.
           </p>
         </details>
 
         <details>
-          <summary>Which models can I pick?</summary>
+          <summary>Which Z.ai models can I pick?</summary>
           <p>
             Whatever Z.ai's model list returns for your plan, such as <code>glm-5.3</code>,
             <code>glm-5.3-flash</code> and <code>glm-4.7</code>. The wizard also accepts a custom model id. Models with
@@ -338,11 +504,11 @@ ZCLAUDE_PROFILE=zai        # optional: skip the menu in this project</code></pre
           <summary>How do I update or uninstall?</summary>
           <p>
             <code>zclaude self-update</code> updates it the same way it was installed.
-            <code>zclaude self-uninstall</code> removes it: the files, the command, the settings and logs in
-            <code>~/.zclaude</code> and the key in your Keychain. Add <code>--keep-config</code> to keep
+            <code>zclaude self-uninstall</code> removes it: the files, the command, the profiles, settings and logs in
+            <code>~/.zclaude</code> and the keys in your Keychain. Add <code>--keep-config</code> to keep
             <code>~/.zclaude</code>. The installer can do the same directly with
             <code>curl -fsSL https://vipincr.github.io/zclaude/install | bash -s -- --uninstall</code>. Installing and
-            removing it repeatedly is fine. The API key itself stays on your Z.ai account until you revoke it there.
+            removing it repeatedly is fine.
           </p>
         </details>
 
@@ -351,7 +517,8 @@ ZCLAUDE_PROFILE=zai        # optional: skip the menu in this project</code></pre
           <p>
             Run <code>zclaude log</code>. Every run records the profile, config files, key source and validation, each
             HTTP call with its status and timing, and how Claude Code was started and exited. Keys are redacted, so
-            <code>zclaude log --json</code> is safe to attach to an issue.
+            <code>zclaude log --json</code> is safe to attach to an issue. For anything profile-shaped, start with
+            <code>zclaude profile doctor</code>.
           </p>
         </details>
       </section>

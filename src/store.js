@@ -5,9 +5,10 @@
 import { spawn } from "node:child_process";
 import { timingSafeEqual } from "node:crypto";
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { flag, zclaudeHome } from "./config.js";
+import { profileRoot } from "./profiles/paths.js";
 import { log } from "./logger.js";
 import { registerSecret } from "./redact.js";
 import { debug, warn } from "./ui/log.js";
@@ -69,8 +70,27 @@ export function keychainAvailable(env = process.env, platform = process.platform
   return platform === "darwin" && !flag(env, "ZCLAUDE_NO_KEYCHAIN");
 }
 
-async function keychainFind(security = runSecurity) {
-  const result = await security(["find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"]);
+/**
+ * The keychain account a Z.ai key is stored under. Every profile has its own,
+ * including the built-in one, so several Z.ai plans can be signed in at once.
+ */
+function keychainAccountFor(profile) {
+  return `zai:${profile || "default"}`;
+}
+
+/** Where a profile's Z.ai credential and its non-secret metadata live. */
+function credentialPaths(profile, env = process.env) {
+  if (!profile || profile === "default") {
+    const paths = storePaths(env);
+    return { credentialsFile: paths.credentialsFile, profileFile: paths.profileFile };
+  }
+  const root = profileRoot(profile, env);
+  return { credentialsFile: join(root, "zai-credentials.json"), profileFile: join(root, "zai-profile.json") };
+}
+
+async function keychainFind(security = runSecurity, account = null) {
+  const selector = account ? ["-a", account] : [];
+  const result = await security(["find-generic-password", "-s", KEYCHAIN_SERVICE, ...selector, "-w"]);
   if (result.code === KEYCHAIN_NOT_FOUND) return null;
   if (result.code !== 0)
     throw new Error(`security find-generic-password failed: ${result.stderr.trim() || `exit ${result.code}`}`);
@@ -78,10 +98,11 @@ async function keychainFind(security = runSecurity) {
   return secret || null;
 }
 
-async function keychainDeleteAll(security = runSecurity) {
+async function keychainDeleteAll(security = runSecurity, account = null) {
+  const selector = account ? ["-a", account] : [];
   let removed = 0;
   for (let attempt = 0; attempt < 10; attempt += 1) {
-    const result = await security(["delete-generic-password", "-s", KEYCHAIN_SERVICE]);
+    const result = await security(["delete-generic-password", "-s", KEYCHAIN_SERVICE, ...selector]);
     if (result.code === KEYCHAIN_NOT_FOUND) break;
     if (result.code !== 0)
       throw new Error(`security delete-generic-password failed: ${result.stderr.trim() || `exit ${result.code}`}`);
@@ -90,19 +111,35 @@ async function keychainDeleteAll(security = runSecurity) {
   return removed;
 }
 
-async function keychainAdd(account, secret, security = runSecurity) {
-  await keychainDeleteAll(security);
+async function keychainAdd(account, secret, security = runSecurity, legacyAccount = null) {
+  await keychainDeleteAll(security, account);
+  if (legacyAccount && legacyAccount !== account) await keychainDeleteAll(security, legacyAccount);
   // Interactive mode reads commands from stdin, keeping the secret out of argv.
   const command = `add-generic-password -a ${keychainQuote(account)} -s ${keychainQuote(KEYCHAIN_SERVICE)} -w ${keychainQuote(secret)} -U\n`;
   const result = await security(["-i"], { stdinText: command });
   if (result.code !== 0 || /error|failed/iu.test(result.stderr)) {
     throw new Error(`security add-generic-password failed: ${result.stderr.trim() || `exit ${result.code}`}`);
   }
-  const stored = Buffer.from(String((await keychainFind(security)) ?? ""));
+  const stored = Buffer.from(String((await keychainFind(security, account)) ?? ""));
   const expected = Buffer.from(secret);
   if (stored.length !== expected.length || !timingSafeEqual(stored, expected)) {
     throw new Error("Keychain read-back did not match the stored secret.");
   }
+}
+
+/**
+ * Look the key up under its profile account. The built-in profile also looks
+ * for a key stored before profiles existed, which sits under the account name
+ * of the signed-in email, and moves it across on the way past.
+ */
+async function findOrMigrate(security, account, legacyEmail) {
+  const secret = await keychainFind(security, account);
+  if (secret || legacyEmail === null) return secret;
+  const legacy = await keychainFind(security, null);
+  if (!legacy) return null;
+  await keychainAdd(account, legacy, security, legacyEmail || null);
+  log.info("store", "migrated the legacy keychain item", { account, targeted: Boolean(legacyEmail) });
+  return legacy;
 }
 
 // --------------------------------------------------------------- json files
@@ -128,10 +165,6 @@ async function writeJsonAtomic(path, value, { mode = 0o600 } = {}) {
   await rename(tmp, path);
 }
 
-function readProfile(env = process.env) {
-  return readJson(storePaths(env).profileFile);
-}
-
 export async function readState(env = process.env) {
   return (await readJson(storePaths(env).stateFile)) ?? {};
 }
@@ -142,33 +175,25 @@ export async function writeState(patch, env = process.env) {
   await writeJsonAtomic(storePaths(env).stateFile, { ...current, ...patch });
 }
 
-// ------------------------------------------------------------- public API
-
-/**
- * Returns { apiKey, source, email, userId, keyName } or null. `source` is
- * "keychain" or "file".
- */
-export async function loadCredential({ env = process.env, platform = process.platform, security = runSecurity } = {}) {
-  const profile = (await readProfile(env)) ?? {};
-  const meta = { email: profile.email ?? "", userId: profile.userId ?? "", keyName: profile.keyName ?? "" };
-  if (keychainAvailable(env, platform)) {
-    try {
-      const secret = await keychainFind(security);
-      if (secret) {
-        registerSecret(secret);
-        log.info("store", "credential loaded", { source: "keychain", email: meta.email || null });
-        return { apiKey: secret, source: "keychain", ...meta };
-      }
-      log.debug("store", "no keychain item", { service: KEYCHAIN_SERVICE });
-    } catch (error) {
-      log.warn("store", "keychain lookup failed", { error });
-      warn(`Keychain lookup failed (${error.message}); falling back to the file store.`);
-    }
+/** The keychain half of a lookup. A failure falls back to the file store. */
+async function keychainSecret(security, account, legacyEmail) {
+  try {
+    const secret = await findOrMigrate(security, account, legacyEmail);
+    if (!secret) log.debug("store", "no keychain item", { service: KEYCHAIN_SERVICE, account });
+    return secret;
+  } catch (error) {
+    log.warn("store", "keychain lookup failed", { error });
+    warn(`Keychain lookup failed (${error.message}); falling back to the file store.`);
+    return null;
   }
-  const record = await readJson(storePaths(env).credentialsFile);
+}
+
+/** The file half of a lookup, used off macOS and when the Keychain declines. */
+async function fileCredential(file, meta) {
+  const record = await readJson(file);
   const apiKey = typeof record?.apiKey === "string" ? record.apiKey.trim() : "";
   if (!apiKey) {
-    log.debug("store", "no stored credential", { file: storePaths(env).credentialsFile });
+    log.debug("store", "no stored credential", { file });
     return null;
   }
   registerSecret(apiKey);
@@ -182,19 +207,46 @@ export async function loadCredential({ env = process.env, platform = process.pla
   };
 }
 
+// ------------------------------------------------------------- public API
+
+/**
+ * Returns { apiKey, source, email, userId, keyName } or null. `source` is
+ * "keychain" or "file".
+ */
+export async function loadCredential({
+  env = process.env,
+  platform = process.platform,
+  security = runSecurity,
+  profile: profileName = null,
+} = {}) {
+  const paths = credentialPaths(profileName, env);
+  const profile = (await readJson(paths.profileFile)) ?? {};
+  const meta = { email: profile.email ?? "", userId: profile.userId ?? "", keyName: profile.keyName ?? "" };
+  if (keychainAvailable(env, platform)) {
+    const secret = await keychainSecret(security, keychainAccountFor(profileName), profileName ? null : meta.email);
+    if (secret) {
+      registerSecret(secret);
+      log.info("store", "credential loaded", { source: "keychain", email: meta.email || null });
+      return { apiKey: secret, source: "keychain", ...meta };
+    }
+  }
+  return fileCredential(paths.credentialsFile, meta);
+}
+
 /** Persist a credential. Returns { location } = "keychain" | "file". */
 export async function saveCredential(
   { apiKey, email = "", userId = "", keyName = "", source = "oauth" },
-  { env = process.env, platform = process.platform, security = runSecurity } = {},
+  { env = process.env, platform = process.platform, security = runSecurity, profile = null } = {},
 ) {
   if (!apiKey) throw new Error("saveCredential: apiKey is required");
   registerSecret(apiKey);
   await ensureHome(env);
-  const paths = storePaths(env);
+  const paths = credentialPaths(profile, env);
+  await mkdir(dirname(paths.credentialsFile), { recursive: true, mode: 0o700 });
   let location = "file";
   if (keychainAvailable(env, platform)) {
     try {
-      await keychainAdd(email || "default", apiKey, security);
+      await keychainAdd(keychainAccountFor(profile), apiKey, security, profile ? null : email || null);
       location = "keychain";
       await rm(paths.credentialsFile, { force: true });
     } catch (error) {
@@ -234,12 +286,17 @@ export async function deleteCredential({
   env = process.env,
   platform = process.platform,
   security = runSecurity,
+  profile = null,
 } = {}) {
   const removed = [];
-  const paths = storePaths(env);
+  const paths = credentialPaths(profile, env);
+  const stored = (await readJson(paths.profileFile)) ?? {};
   if (keychainAvailable(env, platform)) {
     try {
-      if ((await keychainDeleteAll(security)) > 0) removed.push("keychain");
+      let count = await keychainDeleteAll(security, keychainAccountFor(profile));
+      // Pre-profile keys sit under the signed-in email; remove that one too.
+      if (!profile && stored.email) count += await keychainDeleteAll(security, stored.email);
+      if (count > 0) removed.push("keychain");
     } catch (error) {
       warn(`Keychain cleanup failed: ${error.message}`);
     }
@@ -251,6 +308,6 @@ export async function deleteCredential({
     if (error?.code !== "ENOENT") warn(`Could not remove ${paths.credentialsFile}: ${error.message}`);
   }
   await rm(paths.profileFile, { force: true });
-  log.info("store", "credential deleted", { removed });
+  log.info("store", "credential deleted", { profile: profile ?? "default", removed });
   return { removed };
 }

@@ -205,6 +205,7 @@ describe("end to end", () => {
     assert.equal(result.code, 0, result.stderr);
     const got = await capture();
     assert.deepEqual(got.argv, ["--model", "opus", "-p", "x"]);
+    assert.equal(got.env.CLAUDE_CONFIG_DIR, undefined, "the default profile must never set a config directory");
     assert.equal(got.env.ANTHROPIC_BASE_URL, undefined);
     assert.equal(got.env.ANTHROPIC_API_KEY, "keep");
     assert.ok(zai.requests.some((r) => r.url.includes("models")));
@@ -271,6 +272,75 @@ describe("end to end", () => {
     const got = await capture();
     assert.equal(got.env.TEAM_TOKEN, "abc");
     assert.equal(got.env.ANTHROPIC_AUTH_TOKEN, GOOD_KEY);
+  });
+
+  it("a named profile launches claude in its own config directory and leaves ~/.claude alone", async () => {
+    const claudeDir = join(home.dir, ".claude");
+    await mkdir(join(claudeDir, "agents"), { recursive: true });
+    await writeFile(join(claudeDir, "agents", "reviewer.md"), "shared agent\n");
+    await writeFile(join(claudeDir, "settings.json"), JSON.stringify({ env: { ANTHROPIC_API_KEY: "sk-secret" } }));
+    await writeFile(
+      join(claudeDir, ".claude.json"),
+      JSON.stringify({ theme: "dark", oauthAccount: { emailAddress: "me@x.y" } }),
+    );
+    const before = (await readdir(claudeDir)).toSorted((x, y) => x.localeCompare(y));
+
+    const added = await run(["profile", "add", "work", "--provider", "anthropic", "--yes"], env);
+    assert.equal(added.code, 0, added.stderr);
+    assert.match(added.stderr, /Created profile "work"/u);
+
+    const listed = await run(["profile", "list", "--json"], env);
+    const [record] = JSON.parse(listed.stdout);
+    assert.equal(record.name, "work");
+    assert.equal(record.provider, "anthropic");
+    assert.deepEqual(record.share, { config: true, history: true });
+    assert.equal(record.signedIn, false, "a fresh profile is signed out, whatever the default login says");
+
+    const launched = await run(["--profile", "work", "-p", "hi"], env);
+    assert.equal(launched.code, 0, launched.stderr);
+    const got = await capture();
+    assert.equal(got.env.CLAUDE_CONFIG_DIR, join(env.ZCLAUDE_HOME, "profiles", "work", "home"));
+    assert.equal(got.argv[0], "--settings", "shared settings arrive as a read-only tier");
+    const shared = JSON.parse(await readFile(got.argv[1], "utf8"));
+    assert.equal(shared.env, undefined, "the shared copy never carries authentication keys");
+    assert.deepEqual(got.argv.slice(2), ["-p", "hi"]);
+
+    const seeded = JSON.parse(await readFile(join(got.env.CLAUDE_CONFIG_DIR, ".claude.json"), "utf8"));
+    assert.equal(seeded.theme, "dark");
+    assert.equal(seeded.oauthAccount, undefined, "identity is never copied into a profile");
+    assert.equal(
+      await readFile(join(got.env.CLAUDE_CONFIG_DIR, "agents", "reviewer.md"), "utf8"),
+      "shared agent\n",
+      "shared directories are reachable from inside the profile",
+    );
+
+    const shown = await run(["profile", "show", "work", "--json"], env);
+    const detail = JSON.parse(shown.stdout);
+    assert.match(detail.credentialService, /^Claude Code-credentials-[\da-f]{8}$/u);
+
+    const removed = await run(["profile", "remove", "work", "--yes"], env);
+    assert.equal(removed.code, 0, removed.stderr);
+    assert.equal(JSON.parse((await run(["profile", "list", "--json"], env)).stdout).length, 0);
+    assert.deepEqual(
+      (await readdir(claudeDir)).toSorted((x, y) => x.localeCompare(y)),
+      before,
+      "removing a profile leaves the default installation untouched",
+    );
+    assert.equal(await readFile(join(claudeDir, "agents", "reviewer.md"), "utf8"), "shared agent\n");
+    await rm(claudeDir, { recursive: true, force: true });
+  });
+
+  it("a Z.ai profile keeps its own key and ignores ZAI_API_KEY from the shell", async () => {
+    const added = await run(["profile", "add", "glm", "--provider", "zai", "--share", "none", "--yes"], env);
+    assert.equal(added.code, 0, added.stderr);
+    const result = await run(["--profile", "glm", "-p", "x"], { ...env, ZAI_API_KEY: GOOD_KEY });
+    assert.equal(result.code, 4);
+    assert.match(result.stderr, /ZAI_API_KEY is ignored for profile "glm"/u);
+    assert.match(result.stderr, /Profile "glm" has no Z\.ai key stored/u);
+    const doctor = await run(["profile", "doctor"], env);
+    assert.equal(doctor.code, 0, doctor.stderr);
+    assert.match(doctor.stderr, /glm: no Z\.ai key stored/u);
+    assert.equal((await run(["profile", "remove", "glm", "--yes"], env)).code, 0);
   });
 
   it("status --json, models and logout work non-interactively", async () => {

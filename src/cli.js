@@ -1,13 +1,21 @@
 // Command-line front end and orchestration.
 
 import { execFile, spawn } from "node:child_process";
-import { readFile, rm } from "node:fs/promises";
-import { homedir } from "node:os";
+import { rm } from "node:fs/promises";
 import { delimiter, dirname, join } from "node:path";
 
 import { openUrl } from "./browser.js";
 import { receiveCallback } from "./callback/index.js";
-import { buildPlainEnv, buildZaiEnv, claudeVersion, requireClaude, runClaude } from "./claude.js";
+import {
+  buildPlainEnv,
+  buildProfileEnv,
+  buildZaiEnv,
+  claudeVersion,
+  overridingAuthVars,
+  requireClaude,
+  runClaude,
+} from "./claude.js";
+import { claudeSettingsTiers, describeConflicts, SESSION_KEYS, settingsConflicts } from "./claude-settings.js";
 import {
   CONSOLE_KEYS_URL,
   describeContextWindow,
@@ -30,7 +38,9 @@ import {
 import { registerSecret } from "./redact.js";
 import { buildAuthorizeUrl, exchangeCode, generateState, parseCallback } from "./oauth.js";
 import { configureLogger, formatEntry, listLogs, log, logFilePath, readLog } from "./logger.js";
+import { cmdProfile, describeShare, forgetAllProfiles, launchContext, profileSummaries } from "./profile-commands.js";
 import { listProfiles } from "./profiles.js";
+import { getRegistered } from "./profiles/registry.js";
 import { mintApiKey } from "./provision.js";
 import {
   extraEnv,
@@ -64,6 +74,7 @@ import { checkKey, fetchQuota, formatQuota, quotaExhausted } from "./zai.js";
 // ------------------------------------------------------------------ parsing
 
 const COMMANDS = new Set([
+  "profile",
   "login",
   "logout",
   "status",
@@ -74,8 +85,13 @@ const COMMANDS = new Set([
   "self-uninstall",
   "help",
 ]);
+// Commands that take their own subcommand and names, collected into options.args.
+const COMMAND_GROUPS = new Set(["profile"]);
 const VALUE_FLAGS = Object.freeze({
   "--profile": "profile",
+  "--provider": "provider",
+  "--share": "share",
+  "--email": "email",
   "--log-level": "logLevel",
   "--log-file": "logFile",
   "--model": "model",
@@ -97,6 +113,10 @@ const BOOL_FLAGS = Object.freeze({
   "--no-log": "noLog",
   "--keep-config": "keepConfig",
   "--path": "pathOnly",
+  "--yes": "yes",
+  "--fix": "fix",
+  "--sso": "sso",
+  "--console": "useConsole",
 });
 
 /** Parse `--flag value` or `--flag=value`; returns { key, value, consumed }. */
@@ -141,6 +161,11 @@ export function parseArgs(argv) {
       i += 1;
       continue;
     }
+    if (command && COMMAND_GROUPS.has(command) && !arg.startsWith("-")) {
+      options.args = [...(options.args ?? []), arg];
+      i += 1;
+      continue;
+    }
     if (command)
       throw usageError(
         `Unknown argument for \`zclaude ${command}\`: ${arg}`,
@@ -156,7 +181,9 @@ export const HELP = `zclaude ${VERSION} — interactive preloader for Claude Cod
 
 Usage
   zclaude [zclaude options] [claude args...]   pick a profile, then launch claude
+  zclaude --profile <name> [claude args...]    launch that profile straight away
   zclaude -- [claude args...]                  pass everything after -- to claude
+  zclaude profile <subcommand>                 manage profiles (see below)
   zclaude login [--no-browser] [--paste] [--api-key] [--no-store]
   zclaude logout                               forget the stored Z.ai key
   zclaude status [--json]                      show credential, config and model state
@@ -166,6 +193,17 @@ Usage
   zclaude self-update                          update to the newest version the same way it was installed
   zclaude self-uninstall [--keep-config]       remove zclaude, its settings, logs and the stored key
 
+Profiles (one Claude or Z.ai account each, scoped to the terminal that started it)
+  zclaude profile add [name] [--provider anthropic|zai] [--share all|config|history|none]
+  zclaude profile list [--json]                names, accounts and what each one shares
+  zclaude profile show <name> [--json]         everything about one profile
+  zclaude profile login <name>                 sign in to that profile only
+  zclaude profile logout <name>                sign out of that profile only
+  zclaude profile shell <name>                 a subshell pinned to the profile
+  zclaude profile env <name>                   print exports for advanced use
+  zclaude profile remove <name> [--yes]        delete the profile, its login and its directory
+  zclaude profile doctor [--fix]               check every profile and this shell
+
 Options (must come before any claude argument)
   --profile <claude|zai|name>  skip the menu
   --reconfigure                run the model wizard even if config exists (alias --customize)
@@ -173,6 +211,11 @@ Options (must come before any claude argument)
   --model <id>                 primary model (Z.ai profile; forwarded to claude otherwise)
   --subagent-model <id>        subagent model (CLAUDE_CODE_SUBAGENT_MODEL)
   --fast-model <id>            haiku-class helper model
+  --share <what>               profile add: all (default), config, history or none
+  --provider <name>            profile add: anthropic or zai
+  --sso, --console, --email    passed to \`claude auth login\` for an Anthropic profile
+  --yes                        profile remove: do not ask
+  --fix                        profile doctor: relink what it can
   --no-store                   keep the key in memory for this session only
   --no-banner                  skip the splash
   --verbose                    show what zclaude is doing
@@ -187,10 +230,13 @@ Config files (dotenv, no secrets)
   ./.zclaude/env               project choices, safe to commit
   ~/.zclaude/settings          user defaults
   ~/.zclaude/profiles/*.env    extra menu entries (ZCLAUDE_ZAI=1 routes through Z.ai)
+  ~/.zclaude/profiles.json     the profiles you added, and where each one lives
 
 Environment
   ZAI_API_KEY                  use this key, never store it
   ZCLAUDE_PROFILE              default profile (skips the menu)
+  CLAUDE_CONFIG_DIR            never set by zclaude for the default profile; a value inherited
+                               from your shell hides your default login and is reported
   ZCLAUDE_HOME                 config dir (default ~/.zclaude)
   ZCLAUDE_CLAUDE_BIN           path to claude
   ZCLAUDE_NO_STORE, ZCLAUDE_NO_KEYCHAIN, ZCLAUDE_NO_NATIVE_CALLBACK, ZCLAUDE_NO_BANNER
@@ -219,68 +265,27 @@ function httpDetail(check) {
   return `HTTP ${check.httpStatus}${check.detail ? `: ${check.detail}` : ""}`;
 }
 
-/** Read-only: the env block of Claude Code's settings.json, or {} when absent. */
-async function claudeSettingsEnv(env = process.env) {
-  const configured = typeof env.CLAUDE_CONFIG_DIR === "string" ? env.CLAUDE_CONFIG_DIR.trim() : "";
-  const dir = configured || join(env.HOME || homedir(), ".claude");
-  const path = join(dir, "settings.json");
-  try {
-    const settings = JSON.parse(await readFile(path, "utf8"));
-    const block = settings?.env && typeof settings.env === "object" ? settings.env : {};
-    return { path, block };
-  } catch {
-    return { path, block: {} };
-  }
-}
-
-const ALIAS_MODELS = new Set(["opus", "sonnet", "haiku"]);
-const SESSION_KEYS = [
-  "ANTHROPIC_BASE_URL",
-  "ANTHROPIC_AUTH_TOKEN",
-  "ANTHROPIC_API_KEY",
-  "ANTHROPIC_MODEL",
-  "ANTHROPIC_DEFAULT_OPUS_MODEL",
-  "ANTHROPIC_DEFAULT_SONNET_MODEL",
-  "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-  "CLAUDE_CODE_SUBAGENT_MODEL",
-];
-
 /**
- * Claude Code applies the settings.json env block over the process
- * environment (measured with claude 2.1.273), so a value there that differs
- * from what this session sets would silently win. Model aliases (opus, sonnet,
- * haiku) are not conflicts: they resolve through the ANTHROPIC_DEFAULT_* values
- * zclaude sets.
+ * Ask what to do when a settings file would override this session. Claude Code
+ * applies its settings `env` block over the process environment, so a value
+ * there silently wins; that is a decision for the user, never a warning zclaude
+ * shrugs off, and zclaude never edits those files itself.
  */
-async function claudeSettingsConflicts(env, childEnv) {
-  const { path, block } = await claudeSettingsEnv(env);
-  const conflicts = [];
-  for (const key of SESSION_KEYS) {
-    if (!Object.hasOwn(block, key)) continue;
-    const theirs = String(block[key]);
-    if (key === "ANTHROPIC_API_KEY") {
-      conflicts.push({ key, theirs: mask(theirs), ours: "(unset)" });
-      continue;
-    }
-    const aliasOk = key === "CLAUDE_CODE_SUBAGENT_MODEL" && ALIAS_MODELS.has(theirs.toLowerCase());
-    if (aliasOk || !Object.hasOwn(childEnv, key) || theirs === childEnv[key]) continue;
-    const secret = key === "ANTHROPIC_AUTH_TOKEN";
-    conflicts.push({ key, theirs: secret ? mask(theirs) : theirs, ours: secret ? mask(childEnv[key]) : childEnv[key] });
-  }
-  return conflicts.length > 0 ? { path, conflicts } : null;
-}
-
-/** Ask what to do about a settings.json env block that would override this session. */
-async function resolveSettingsConflict({ env, childEnv, interactive }) {
-  const found = await claudeSettingsConflicts(env, childEnv);
-  if (!found) return;
-  log.warn("config", "settings.json env block overrides the session", found);
-  const lines = found.conflicts.map((c) => `  ${c.key}: settings.json has ${c.theirs}, this session wants ${c.ours}`);
-  const explanation = `${found.path} has an env block that Claude Code applies over the environment zclaude sets:\n${lines.join("\n")}`;
+async function resolveSettingsConflict({ env, childEnv, cwd, interactive }) {
+  const found = await settingsConflicts({ childEnv, cwd });
+  if (found.length === 0) return;
+  log.warn("config", "settings env block overrides the session", found);
+  const files = found.map((entry) => `${entry.path} (${entry.tier})`).join(", ");
+  const explanation = `${files} ${found.length === 1 ? "has an env block" : "have env blocks"} that Claude Code applies over the environment zclaude sets:\n${describeConflicts(found).join("\n")}`;
   if (flag(env, "ZCLAUDE_ALLOW_SETTINGS_OVERRIDE")) {
     warn(`${explanation}\nContinuing because ZCLAUDE_ALLOW_SETTINGS_OVERRIDE is set.`);
     return;
   }
+  const managed = found.filter((entry) => entry.tier === "managed");
+  if (managed.length > 0)
+    warn(
+      "Managed settings come from a machine-wide policy. No profile can opt out of them; ask whoever set the policy.",
+    );
   if (!interactive) {
     throw usageError(
       `${explanation}\nThe session would not run the way zclaude configured it.`,
@@ -289,17 +294,18 @@ async function resolveSettingsConflict({ env, childEnv, interactive }) {
   }
   process.stderr.write(`${explanation}\n`);
   const choice = await confirmChoice(
-    "Claude Code will apply those settings.json values. What do you want to do?",
+    "Claude Code will apply those settings values. What do you want to do?",
     [
-      { name: "Quit so I can edit settings.json", value: "quit" },
-      { name: "Launch anyway with the settings.json values in effect", value: "continue" },
+      { name: "Quit so I can edit the settings file", value: "quit" },
+      { name: "Launch anyway with the settings values in effect", value: "continue" },
     ],
     "quit",
   );
   log.info("config", "settings conflict decision", { choice });
   if (choice !== "quit") return;
-  info(`Remove or adjust ${found.conflicts.map((c) => c.key).join(", ")} in ${found.path}, then run zclaude again.`);
-  throw new InterruptedError("Stopped to let you edit settings.json.");
+  const keys = found.flatMap((entry) => entry.conflicts.map((conflict) => conflict.key));
+  info(`Remove or adjust ${[...new Set(keys)].join(", ")} in ${files}, then run zclaude again.`);
+  throw new InterruptedError("Stopped to let you edit the settings file.");
 }
 
 function flagModels(options) {
@@ -312,9 +318,9 @@ function warnOnCheck(check, { fresh }) {
     warn(`Could not ${fresh ? "fully validate the new" : "validate the"} key (HTTP ${check.httpStatus}); continuing.`);
 }
 
-async function persist(credential, { store, env }) {
+async function persist(credential, { store, env, profile = null }) {
   if (!store) return "memory";
-  const { location } = await saveCredential(credential, { env });
+  const { location } = await saveCredential(credential, { env, profile });
   return location;
 }
 
@@ -324,7 +330,7 @@ function describeLocation(location) {
 
 // -------------------------------------------------------------------- oauth
 
-async function oauthLogin({ options, env, config, interactive, store }) {
+async function oauthLogin({ options, env, config, interactive, store, profile = null }) {
   const state = generateState();
   const url = buildAuthorizeUrl(state, config);
   info("Sign in to Z.ai in your browser to authorize zclaude.");
@@ -368,7 +374,7 @@ async function oauthLogin({ options, env, config, interactive, store }) {
     keyName: minted.keyName,
     source: "oauth",
   };
-  const location = await persist(credential, { store, env });
+  const location = await persist(credential, { store, env, profile });
   const who = token.email ? ` as ${token.email}` : "";
   success(
     `Signed in${who}. Key "${minted.keyName}" ${minted.created ? "created" : "reused"} and ${describeLocation(location)}.`,
@@ -376,7 +382,7 @@ async function oauthLogin({ options, env, config, interactive, store }) {
   return { ...credential, location, check };
 }
 
-async function manualKeyLogin({ env, config, store }) {
+async function manualKeyLogin({ env, config, store, profile = null }) {
   const apiKey = await promptApiKey();
   registerSecret(apiKey);
   const check = await checkKey(apiKey, config);
@@ -388,7 +394,7 @@ async function manualKeyLogin({ env, config, store }) {
   }
   warnOnCheck(check, { fresh: true });
   const credential = { apiKey, email: "", userId: "", keyName: "", source: "manual" };
-  const location = await persist(credential, { store, env });
+  const location = await persist(credential, { store, env, profile });
   success(`Key ${mask(apiKey)} ${describeLocation(location)}.`);
   return { ...credential, location, check };
 }
@@ -422,8 +428,18 @@ async function loginWithRetries(context) {
 
 // --------------------------------------------------------------- credential
 
-/** Find a credential without touching the network: env, inherited, or stored. */
-async function findCandidate(env) {
+/**
+ * Find a credential without touching the network: env, inherited, or stored.
+ * A named profile only ever uses its own stored key, because ZAI_API_KEY in
+ * the shell cannot say which profile it belongs to.
+ */
+async function findCandidate(env, profile = null) {
+  if (profile) {
+    const own = await loadCredential({ env, profile });
+    if (own) debug(`Loaded the key for profile "${profile}" from ${own.source}`);
+    else if (explicitKey(env)) warn(`ZAI_API_KEY is ignored for profile "${profile}"; it has its own stored key.`);
+    return own;
+  }
   const explicit = explicitKey(env);
   if (explicit) {
     debug("Using ZAI_API_KEY from the environment");
@@ -451,7 +467,7 @@ async function handleRejected(candidate, check, loginContext) {
     );
   }
   warn(`The stored Z.ai key was rejected (${detail}). Signing in again.`);
-  await deleteCredential({ env: loginContext.env });
+  await deleteCredential({ env: loginContext.env, profile: loginContext.profile ?? null });
   if (!loginContext.interactive)
     throw authError(
       "Stored credential rejected and no terminal available to sign in again.",
@@ -465,18 +481,18 @@ async function handleRejected(candidate, check, loginContext) {
  * { apiKey, source, check } where check may be null when validation could
  * not be performed.
  */
-async function resolveCredential({ options, env, config, interactive }) {
+async function resolveCredential({ options, env, config, interactive, profile = null }) {
   const store = !options.noStore && !flag(env, "ZCLAUDE_NO_STORE");
-  const loginContext = { options, env, config, interactive, store };
+  const loginContext = { options, env, config, interactive, store, profile };
   if (options.login) {
     if (!interactive) throw usageError("--login needs an interactive terminal.");
     return loginWithRetries(loginContext);
   }
-  const candidate = await findCandidate(env);
+  const candidate = await findCandidate(env, profile);
   if (!candidate) {
     if (!interactive)
       throw authError(
-        "No Z.ai credential is available.",
+        profile ? `Profile "${profile}" has no Z.ai key stored.` : "No Z.ai credential is available.",
         "Run `zclaude login` from an interactive terminal first, or set ZAI_API_KEY.",
       );
     return loginWithRetries(loginContext);
@@ -596,18 +612,67 @@ async function cmdLaunch({ options, passthrough, env, cwd }) {
   }
   const profile = await selectProfile({ options, env, layered, interactive });
   const extra = { ...extraEnv(layered), ...profile.env };
+  // A named profile brings its own config directory and shared settings file;
+  // the built-in profiles bring neither, and must not, because setting
+  // CLAUDE_CONFIG_DIR at all moves Claude Code off the default login.
+  const record = profile.configDir ? await getRegistered(profile.id, env) : null;
+  const prepared = record ? await launchContext(record, env) : null;
+  const claudeArgs = prepared?.claudeArgs ?? [];
+
   if (!profile.zai) {
-    const args = options.model ? ["--model", options.model, ...passthrough] : passthrough;
-    return runClaude(bin, args, buildPlainEnv({ baseEnv: env, extra }));
+    const args = [...claudeArgs, ...(options.model ? ["--model", options.model] : []), ...passthrough];
+    const childEnv = prepared
+      ? buildProfileEnv({ baseEnv: env, configDir: prepared.configDir, extra })
+      : buildPlainEnv({ baseEnv: env, extra });
+    if (prepared) await resolveSettingsConflict({ env, childEnv, cwd, interactive });
+    reportInheritedAuth(childEnv, profile);
+    return runClaude(bin, args, childEnv);
   }
 
   const config = zaiConfig(env);
-  const credential = await resolveCredential({ options, env, config, interactive });
-  return launchZai({ bin, options, passthrough, env, cwd, layered, interactive, config, credential, extra });
+  const credential = await resolveCredential({ options, env, config, interactive, profile: record?.name ?? null });
+  return launchZai({
+    bin,
+    options,
+    passthrough,
+    env,
+    cwd,
+    layered,
+    interactive,
+    config,
+    credential,
+    extra,
+    prepared,
+  });
+}
+
+/**
+ * An API key inherited from the shell replaces an account login. It is
+ * reported rather than stripped: someone may have set it deliberately.
+ */
+function reportInheritedAuth(childEnv, profile) {
+  const inherited = overridingAuthVars(childEnv);
+  if (inherited.length === 0) return;
+  warn(
+    `${inherited.join(", ")} is set in this shell, so claude will use it instead of the ${profile.id} account login.`,
+  );
+  log.warn("profile", "inherited auth variables", { profile: profile.id, keys: inherited });
 }
 
 /** Pick models (wizard when needed), report quota, and hand off to claude. */
-async function launchZai({ bin, options, passthrough, env, cwd, layered, interactive, config, credential, extra }) {
+async function launchZai({
+  bin,
+  options,
+  passthrough,
+  env,
+  cwd,
+  layered,
+  interactive,
+  config,
+  credential,
+  extra,
+  prepared = null,
+}) {
   const availableModels = credential.check?.models ?? [];
   log.info("auth", "credential resolved", {
     source: credential.source,
@@ -630,10 +695,17 @@ async function launchZai({ bin, options, passthrough, env, cwd, layered, interac
     const line = formatQuota(quota);
     if (line) (quotaExhausted(quota) ? warn : info)(line);
   }
-  const childEnv = buildZaiEnv({ baseEnv: env, apiKey: credential.apiKey, config, models, extra });
-  await resolveSettingsConflict({ env, childEnv, interactive });
+  const childEnv = buildZaiEnv({
+    baseEnv: env,
+    apiKey: credential.apiKey,
+    config,
+    models,
+    extra,
+    configDir: prepared?.configDir ?? null,
+  });
+  await resolveSettingsConflict({ env, childEnv, cwd, interactive });
   info(`Launching claude on ${models.primary} (subagents: ${models.subagent}, fast: ${models.fast})`);
-  return runClaude(bin, passthrough, childEnv);
+  return runClaude(bin, [...(prepared?.claudeArgs ?? []), ...passthrough], childEnv);
 }
 
 // ----------------------------------------------------------------- commands
@@ -682,6 +754,21 @@ async function cmdLogin({ options, passthrough, env, cwd }) {
     credential,
     extra: extraEnv(layered),
   });
+}
+
+/**
+ * The Z.ai sign-in, as the profile commands need it: same flow, but the key is
+ * stored under the profile rather than the single default slot.
+ */
+function zaiLoginFor({ env, options, profile = null }) {
+  const config = zaiConfig(env);
+  const store = !options.noStore && !flag(env, "ZCLAUDE_NO_STORE");
+  const context = { options, env, config, interactive: isInteractive(), store, profile };
+  return options.apiKey ? manualKeyLogin(context) : loginWithRetries(context);
+}
+
+function cmdProfileGroup(context) {
+  return cmdProfile(context, { zaiLogin: zaiLoginFor, interactive: isInteractive() });
 }
 
 async function cmdLogout({ env }) {
@@ -740,14 +827,22 @@ async function gatherStatus({ options, env, cwd }) {
   const layered = await loadLayeredConfig({ cwd, env });
   const bin = optionalClaude(env);
   const credential = await storedOrExplicit(env);
-  const [version, inspection, profiles, settingsEnv] = await Promise.all([
+  const [version, inspection, profiles, named, tiers] = await Promise.all([
     bin ? claudeVersion(bin) : null,
     inspectCredential(credential, config),
     listProfiles(env),
-    claudeSettingsEnv(env),
+    profileSummaries(env),
+    claudeSettingsTiers({ env, cwd }),
   ]);
-  const overriding = SESSION_KEYS.filter((key) => Object.hasOwn(settingsEnv.block, key));
-  const conflict = overriding.length > 0 ? { path: settingsEnv.path, keys: overriding } : null;
+  const overriding = tiers
+    .map((tier) => ({
+      tier: tier.tier,
+      path: tier.path,
+      keys: SESSION_KEYS.filter((key) => Object.hasOwn(tier.block, key)),
+    }))
+    .filter((entry) => entry.keys.length > 0);
+  const inheritedConfigDir =
+    typeof env.CLAUDE_CONFIG_DIR === "string" && env.CLAUDE_CONFIG_DIR.trim() ? env.CLAUDE_CONFIG_DIR.trim() : null;
   return {
     zclaude: VERSION,
     claude: { path: bin, version },
@@ -757,7 +852,9 @@ async function gatherStatus({ options, env, cwd }) {
     models: resolveModels({ flags: flagModels(options), env, layered }),
     wizardNeeded: wizardNeeded(layered),
     profiles: profiles.map((profile) => profile.id),
-    conflict,
+    named,
+    conflicts: overriding,
+    inheritedConfigDir,
     storeHome: storePaths(env).home,
   };
 }
@@ -791,7 +888,9 @@ function statusJson(status) {
     models: status.models,
     wizardNeeded: status.wizardNeeded,
     profiles: status.profiles,
-    claudeSettingsConflict: status.conflict,
+    namedProfiles: status.named,
+    inheritedConfigDir: status.inheritedConfigDir,
+    claudeSettingsConflicts: status.conflicts,
   };
 }
 
@@ -822,10 +921,18 @@ function statusText(status) {
     modelLine("fast", ""),
     `${label("wizard")}${status.wizardNeeded ? "will run on the next Z.ai launch (no saved config)" : "not needed (use --reconfigure to change models)"}`,
     `${label("profiles")}${status.profiles.join(", ")}`,
+    ...status.named.map(
+      (profile) =>
+        `${label("")}${profile.name} ${grey(`${profile.provider} · ${profile.account} · shares ${describeShare(profile.share)}`)}`,
+    ),
     `${label("log")}${logFilePath() ?? "disabled"}`,
-    status.conflict
-      ? `${label("settings")}${status.conflict.path} env block sets ${status.conflict.keys.join(", ")} (applied over this session's environment)`
+    status.inheritedConfigDir
+      ? `${label("config dir")}${status.inheritedConfigDir} ${grey("(inherited from this shell: your default Claude Code login is not visible here)")}`
       : null,
+    ...status.conflicts.map(
+      (entry) =>
+        `${label("settings")}${entry.path} (${entry.tier}) env block sets ${entry.keys.join(", ")} ${grey("(applied over this session's environment)")}`,
+    ),
   ];
   return `${lines.filter(Boolean).join("\n")}\n`;
 }
@@ -904,6 +1011,10 @@ async function cmdSelfUninstall({ options, env }) {
 
   const { removed } = await deleteCredential({ env });
   if (removed.length > 0) info(`Removed the stored Z.ai key from: ${removed.join(", ")}.`);
+  const profiles = await forgetAllProfiles(env);
+  if (profiles.forgotten.length > 0) info(`Signed out of: ${profiles.forgotten.join(", ")}.`);
+  if (!keepConfig && profiles.profiles.length > 0)
+    info(`Removing ${profiles.profiles.length} profile director${profiles.profiles.length === 1 ? "y" : "ies"}.`);
 
   if (kind === "checkout") {
     info("This is a git checkout: delete the clone and any symlink you made to it.");
@@ -1048,6 +1159,7 @@ const COMMAND_HANDLERS = {
   "self-install": cmdSelfInstall,
   "self-update": cmdSelfUpdate,
   "self-uninstall": cmdSelfUninstall,
+  profile: cmdProfileGroup,
   launch: cmdLaunch,
 };
 

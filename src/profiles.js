@@ -6,6 +6,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 
 import { flag, zclaudeHome } from "./config.js";
+import { listRegistered } from "./profiles/registry.js";
 import { parseDotenv } from "./settings.js";
 import { warn } from "./ui/log.js";
 
@@ -18,6 +19,9 @@ import { warn } from "./ui/log.js";
  * @property {Record<string, string>} env extra variables for the child process
  * @property {boolean} builtin
  * @property {string} [path]
+ * @property {string} [configDir] CLAUDE_CONFIG_DIR for a named profile
+ * @property {"anthropic" | "zai"} [provider]
+ * @property {{config: boolean, history: boolean}} [share]
  */
 
 /** @type {readonly Profile[]} */
@@ -51,9 +55,29 @@ function profilesDir(env = process.env) {
   return join(zclaudeHome(env), "profiles");
 }
 
+/** A registered profile as a menu entry. */
+function fromRecord(record) {
+  const shared = [record.share.config ? "config" : null, record.share.history ? "history" : null].filter(Boolean);
+  const provider = record.provider === "zai" ? "Z.ai GLM Coding Plan" : "Anthropic account";
+  return {
+    id: record.name,
+    label: record.label || record.name,
+    description: `${provider}, own login${shared.length > 0 ? `, shares ${shared.join(" and ")}` : ""}`,
+    zai: record.provider === "zai",
+    env: {},
+    builtin: false,
+    configDir: record.dir,
+    provider: record.provider,
+    share: record.share,
+  };
+}
+
 export async function listProfiles(env = process.env) {
   /** @type {Profile[]} */
   const profiles = [...BUILTIN_PROFILES];
+  const registered = await listRegistered(env);
+  const names = new Set(registered.map((record) => record.name));
+  for (const record of registered) profiles.push(fromRecord(record));
   let entries;
   try {
     entries = await readdir(profilesDir(env), { withFileTypes: true });
@@ -73,6 +97,10 @@ export async function listProfiles(env = process.env) {
     }
     if (RESERVED.has(id)) {
       warn(`Skipping profile "${file}": "${id}" is a built-in profile name.`);
+      continue;
+    }
+    if (names.has(id)) {
+      warn(`Skipping profile file "${file}": a registered profile already uses the name "${id}".`);
       continue;
     }
     const path = join(profilesDir(env), file);

@@ -6,6 +6,7 @@ import { constants as osConstants, homedir } from "node:os";
 import { delimiter, isAbsolute, join, resolve as resolvePath } from "node:path";
 
 import { contextWindowFor, formatModelForClaude } from "./config.js";
+import { canonicalConfigDir } from "./profiles/paths.js";
 import { EXIT, noClaudeError, ZclaudeError } from "./errors.js";
 import { log } from "./logger.js";
 
@@ -76,14 +77,44 @@ export function claudeVersion(bin, { timeoutMs = 5000 } = {}) {
   });
 }
 
+// Variables that would quietly repoint or override a profile's login. They are
+// removed from every child environment zclaude builds.
+const HIJACK_KEYS = Object.freeze(["CLAUDE_SECURESTORAGE_CONFIG_DIR", "ANTHROPIC_CONFIG_DIR", "ANTHROPIC_PROFILE"]);
+
+// Variables the user may have set deliberately. These override a subscription
+// login, so they are reported to the caller and decided there, never dropped in
+// silence. CLAUDE_CODE_OAUTH_TOKEN is listed because Claude Code deletes the
+// default keychain entry when it is set (anthropics/claude-code#37512).
+const OVERRIDING_AUTH_KEYS = Object.freeze(["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"]);
+
+/** Which overriding variables are present in an environment. */
+export function overridingAuthVars(env) {
+  return OVERRIDING_AUTH_KEYS.filter((key) => typeof env[key] === "string" && env[key].trim() !== "");
+}
+
+/**
+ * Child environment for a named profile: the same environment plus its config
+ * directory. CLAUDE_CONFIG_DIR is applied last so a profile's own env lines
+ * cannot point it somewhere else.
+ * @param {{baseEnv?: NodeJS.ProcessEnv, configDir: string, extra?: Record<string, string>}} args
+ */
+export function buildProfileEnv({ baseEnv = process.env, configDir, extra = {} }) {
+  const env = { ...baseEnv };
+  for (const [key, value] of Object.entries(extra)) env[key] = String(value);
+  for (const key of HIJACK_KEYS) delete env[key];
+  env.CLAUDE_CONFIG_DIR = canonicalConfigDir(configDir);
+  return env;
+}
+
 /**
  * Build the child environment for the Z.ai profile. `extra` are KEY=value
  * pairs from config/profile files; the Z.ai essentials are applied last so
  * they always win.
  */
-export function buildZaiEnv({ baseEnv = process.env, apiKey, config, models, extra = {} }) {
+export function buildZaiEnv({ baseEnv = process.env, apiKey, config, models, extra = {}, configDir = null }) {
   const env = { ...baseEnv };
   delete env.ANTHROPIC_API_KEY;
+  for (const key of HIJACK_KEYS) delete env[key];
   env.API_TIMEOUT_MS = "3000000";
   env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1";
   for (const [key, value] of Object.entries(extra)) env[key] = String(value);
@@ -98,9 +129,15 @@ export function buildZaiEnv({ baseEnv = process.env, apiKey, config, models, ext
   env.CLAUDE_CODE_SUBAGENT_MODEL = subagent;
   env.ANTHROPIC_DEFAULT_HAIKU_MODEL = fast;
   env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = String(contextWindowFor(models.primary));
+  if (configDir) env.CLAUDE_CONFIG_DIR = canonicalConfigDir(configDir);
   return env;
 }
 
+/**
+ * The default profile: the environment as it is, plus any profile env lines.
+ * It must never set CLAUDE_CONFIG_DIR, because setting that variable at all
+ * moves Claude Code off the default login, even when set to ~/.claude.
+ */
 export function buildPlainEnv({ baseEnv = process.env, extra = {} }) {
   const env = { ...baseEnv };
   for (const [key, value] of Object.entries(extra)) env[key] = String(value);
@@ -127,7 +164,7 @@ export function runClaude(bin, args, env, { platform = process.platform } = {}) 
       args,
       shell: useShell,
       env: Object.keys(env)
-        .filter((key) => /^(ANTHROPIC_|CLAUDE_CODE_|API_TIMEOUT_MS)/u.test(key))
+        .filter((key) => /^(ANTHROPIC_|CLAUDE_CODE_|CLAUDE_CONFIG_DIR|API_TIMEOUT_MS)/u.test(key))
         .toSorted((a, b) => a.localeCompare(b))
         .map((key) => (key === "ANTHROPIC_AUTH_TOKEN" ? `${key}=<redacted>` : `${key}=${env[key]}`)),
     });

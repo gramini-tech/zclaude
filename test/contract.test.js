@@ -8,8 +8,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 
-import { buildZaiEnv } from "../src/claude.js";
+import { buildPlainEnv, buildProfileEnv, buildZaiEnv } from "../src/claude.js";
 import { HELP } from "../src/cli.js";
+import { PROFILE_SUBCOMMANDS } from "../src/profile-commands.js";
 import { CALLBACK_SCHEME, CONSOLE_KEYS_URL, DEFAULT_MODELS, MODEL_CONTEXT_WINDOWS, zaiConfig } from "../src/config.js";
 import { EXIT } from "../src/errors.js";
 
@@ -105,7 +106,17 @@ describe("claude config boundary", () => {
       /\b(writeFile|writeFileSync|appendFile|appendFileSync|rename|renameSync|rm|rmSync|unlink|unlinkSync|truncate|copyFile|mkdir|mkdirSync)\s*\(/u;
     const allowedMentions = new Map([
       ["claude.js", /join\(home, "\.claude", "local"/u],
-      ["cli.js", /join\(env\.HOME \|\| homedir\(\), "\.claude"\)/u],
+      // Reading Claude Code's settings tiers, never writing them.
+      [
+        "claude-settings.js",
+        /join\((env\.HOME \|\| homedir\(\), "\.claude"\)|cwd, "\.claude", "settings(\.local)?\.json"\))/u,
+      ],
+      ["profiles/launch.js", /join\(env\.HOME \|\| homedir\(\), "\.claude"\)/u],
+      // Profiles read the default installation's config file to seed a new
+      // profile, and write only the copy inside that profile's own directory.
+      // profile-share.test.js proves the write side stays inside the profile.
+      ["profiles/seed.js", /join\(canonicalConfigDir\((defaultDir|configDir)\), "\.claude\.json"\)/u],
+      ["profiles/probe.js", /join\(canonicalConfigDir\(configDir\), "\.claude\.json"\)/u],
     ]);
     const checkLine = (file, index, line) => {
       const where = `${file}:${index + 1}`;
@@ -138,15 +149,64 @@ describe("documentation contract", () => {
     }
   });
 
-  it("every ZCLAUDE_* and ZAI_* variable read in src is documented in the README", async () => {
+  it("every profile subcommand is listed in --help and the README", async () => {
     const readme = await readFile(join(root, "README.md"), "utf8");
-    const sources = ["cli.js", "config.js", "store.js", "settings.js", "callback/index.js", "profiles.js"];
+    for (const sub of PROFILE_SUBCOMMANDS) {
+      if (sub === "ls" || sub === "rm") continue; // aliases of list and remove
+      assert.ok(HELP.includes(`profile ${sub}`), `profile ${sub} missing from --help`);
+      assert.ok(readme.includes(`profile ${sub}`), `profile ${sub} missing from README`);
+    }
+  });
+
+  it("every ZCLAUDE_* and ZAI_* variable read anywhere in src is documented in the README", async () => {
+    const readme = await readFile(join(root, "README.md"), "utf8");
+    const dir = join(root, "src");
+    const files = (await readdir(dir, { recursive: true })).filter((name) => name.endsWith(".js"));
     const names = new Set();
-    for (const file of sources) {
-      const text = await readFile(join(root, "src", file), "utf8");
+    for (const file of files) {
+      const text = await readFile(join(dir, file), "utf8");
       for (const match of text.matchAll(/\b(ZCLAUDE_[A-Z_]+|ZAI_[A-Z_]+)\b/gu)) names.add(match[1]);
     }
     assert.ok(names.size >= 15);
     for (const name of names) assert.ok(readme.includes(name), `${name} missing from README`);
+  });
+});
+
+describe("profile isolation contract", () => {
+  // Setting CLAUDE_CODE_OAUTH_TOKEN makes Claude Code delete the default
+  // Keychain item when it exits (anthropics/claude-code#37512), which would
+  // sign the user out of the account zclaude never touched.
+  it("never assigns CLAUDE_CODE_OAUTH_TOKEN", async () => {
+    const dir = join(root, "src");
+    const files = (await readdir(dir, { recursive: true })).filter((name) => name.endsWith(".js"));
+    for (const file of files) {
+      const text = await readFile(join(dir, file), "utf8");
+      assert.doesNotMatch(
+        text,
+        /CLAUDE_CODE_OAUTH_TOKEN"?\]?\s*[=:]\s*[^=]/u,
+        `${file} assigns CLAUDE_CODE_OAUTH_TOKEN`,
+      );
+    }
+  });
+
+  // The test Claude Code applies is whether the variable is set, not what it
+  // holds: CLAUDE_CONFIG_DIR=~/.claude is a different credential item and
+  // reads as signed out.
+  it("the default profile is launched without a config directory", () => {
+    const plain = buildPlainEnv({ baseEnv: { HOME: "/home/x", PATH: "/bin" }, extra: { A: "1" } });
+    assert.equal(Object.hasOwn(plain, "CLAUDE_CONFIG_DIR"), false);
+    const inherited = buildPlainEnv({ baseEnv: { CLAUDE_CONFIG_DIR: "/somewhere" } });
+    assert.equal(inherited.CLAUDE_CONFIG_DIR, "/somewhere", "an inherited value is reported, never rewritten");
+  });
+
+  it("a profile environment pins the config directory last and drops the hijacking variables", () => {
+    const env = buildProfileEnv({
+      baseEnv: { CLAUDE_SECURESTORAGE_CONFIG_DIR: "/x", ANTHROPIC_PROFILE: "other", CLAUDE_CONFIG_DIR: "/old" },
+      configDir: "/p/home/",
+      extra: { CLAUDE_CONFIG_DIR: "/hijack" },
+    });
+    assert.equal(env.CLAUDE_CONFIG_DIR, "/p/home");
+    assert.equal(env.CLAUDE_SECURESTORAGE_CONFIG_DIR, undefined);
+    assert.equal(env.ANTHROPIC_PROFILE, undefined);
   });
 });
