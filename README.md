@@ -209,7 +209,7 @@ npm run test:coverage  # same tests with coverage thresholds (80% lines, 75% bra
 npm run check          # everything CI runs, plus npm pack --dry-run
 ```
 
-`npm install` points git at `.githooks`, so the pre-commit hook runs `npm run lint` and the coverage-gated
+The lint toolchain needs Node 22 or newer (the runtime itself works on 20.17+). `npm install` points git at `.githooks`, so the pre-commit hook runs `npm run lint` and the coverage-gated
 tests before every commit (`ZCLAUDE_SKIP_HOOKS=1` bypasses it). Three suites protect the core against
 regressions: `test/contract.test.js` pins the Z.ai endpoints, the child environment, the exit codes and
 the documentation of every flag and variable; `test/e2e.test.js` runs the real binary against a fake Z.ai

@@ -5,27 +5,38 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  CI: "1"
+
 jobs:
-  check:
+  lint:
+    # The lint toolchain (ESLint 10 and its plugins) needs Node 22+; the
+    # runtime itself supports Node 20.17+, which the test matrix covers.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - run: npm ci
+      - run: npm run lint
+
+  test:
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
         node: ["20", "22", "24"]
     runs-on: ${{ matrix.os }}
-    env:
-      CI: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-      - name: Install shellcheck
-        run: |
-          if [ "$RUNNER_OS" = "Linux" ]; then sudo apt-get update && sudo apt-get install -y shellcheck; else brew install shellcheck; fi
       - run: npm ci
-      - run: npm run lint
       - run: npm run test:coverage
       - run: ./zclaude --help
       - run: npm pack --dry-run
