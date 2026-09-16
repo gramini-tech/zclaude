@@ -54,6 +54,15 @@ describe("install kind", () => {
     assert.equal(detectInstallKind({ scriptPath: `${home}/work/zclaude/bin/zclaude.js`, env, home }), "checkout");
     assert.equal(
       detectInstallKind({
+        scriptPath: `${home}/work/zclaude/bin/zclaude.js`,
+        env: { ...env, ZCLAUDE_INSTALL_KIND: "npm" },
+        home,
+      }),
+      "npm",
+      "the kind can be forced",
+    );
+    assert.equal(
+      detectInstallKind({
         scriptPath: "/custom/app/bin/zclaude.js",
         env: { ...env, ZCLAUDE_INSTALL_DIR: "/custom/app" },
         home,

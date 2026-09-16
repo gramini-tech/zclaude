@@ -1,6 +1,6 @@
 {
   "name": "zclaude",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Interactive preloader for Claude Code: pick your Anthropic account or your Z.ai GLM Coding Plan per launch, with browser sign-in, Keychain-stored keys and per-project model config",
   "type": "module",
   "bin": {
@@ -18,18 +18,18 @@
     "node": ">=20.17.0"
   },
   "scripts": {
+    "check": "npm run -s hooks && npm run -s lint && npm run -s test:coverage && npm pack --dry-run",
+    "hooks": "node scripts/install-hooks.js",
+    "lint": "npm run -s lint:js && npm run -s lint:format && npm run -s lint:dead && npm run -s typecheck && npm run -s lint:sh",
+    "lint:dead": "knip --no-progress",
+    "lint:fix": "eslint . --fix && prettier --write .",
+    "lint:format": "prettier --check .",
+    "lint:js": "eslint .",
+    "lint:sh": "sh scripts/lint-shell.sh",
+    "render:logo": "node scripts/render-logo.js",
     "test": "node --test",
     "test:coverage": "node --test --experimental-test-coverage --test-coverage-lines=80 --test-coverage-branches=75 --test-coverage-functions=75 --test-coverage-include='src/**' --test-coverage-include='bin/**' --test-coverage-exclude='src/ui/menu.js' --test-coverage-exclude='src/ui/wizard.js' --test-coverage-exclude='src/callback/paste.js'",
-    "lint": "npm run -s lint:js && npm run -s lint:format && npm run -s lint:dead && npm run -s typecheck && npm run -s lint:sh",
-    "lint:js": "eslint .",
-    "lint:format": "prettier --check .",
-    "lint:dead": "knip --no-progress",
-    "typecheck": "tsc -p jsconfig.json",
-    "lint:sh": "sh scripts/lint-shell.sh",
-    "lint:fix": "eslint . --fix && prettier --write .",
-    "check": "npm run -s lint && npm run -s test:coverage && npm pack --dry-run",
-    "prepare": "node scripts/install-hooks.js",
-    "render:logo": "node scripts/render-logo.js"
+    "typecheck": "tsc -p jsconfig.json"
   },
   "dependencies": {
     "@inquirer/prompts": "^8.7.2"

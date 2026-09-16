@@ -337,10 +337,12 @@ ZCLAUDE_PROFILE=zai        # optional: skip the menu in this project</code></pre
         <details>
           <summary>How do I update or uninstall?</summary>
           <p>
-            <code>zclaude self-update</code> updates it the same way it was installed. To remove an installer-based
-            setup, run <code>curl -fsSL https://vipincr.github.io/zclaude/install | bash -s -- --uninstall</code>; your
-            settings and logs stay in <code>~/.zclaude</code> until you delete them. For npm installs, use
-            <code>npm uninstall -g zclaude</code>.
+            <code>zclaude self-update</code> updates it the same way it was installed.
+            <code>zclaude self-uninstall</code> removes it: the files, the command, the settings and logs in
+            <code>~/.zclaude</code> and the key in your Keychain. Add <code>--keep-config</code> to keep
+            <code>~/.zclaude</code>. The installer can do the same directly with
+            <code>curl -fsSL https://vipincr.github.io/zclaude/install | bash -s -- --uninstall</code>. Installing and
+            removing it repeatedly is fine. The API key itself stays on your Z.ai account until you revoke it there.
           </p>
         </details>
 

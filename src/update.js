@@ -13,9 +13,12 @@ import { log } from "./logger.js";
 import { readState, writeState } from "./store.js";
 
 const REPO = "vipincr/zclaude";
-export const GITHUB_SPEC = `github:${REPO}`;
+// npm installs from a tarball URL rather than the git spec: a git install
+// needs npm to "prepare" the package, and when script running is disabled npm
+// leaves a symlink into its cache instead of a real installation.
+export const GITHUB_SPEC = `https://codeload.github.com/${REPO}/tar.gz/refs/heads/main`;
 const RAW_PACKAGE_URL = `https://raw.githubusercontent.com/${REPO}/main/package.json`;
-const INSTALLER_URL = "https://vipincr.github.io/zclaude/install";
+export const INSTALLER_URL = "https://vipincr.github.io/zclaude/install";
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 /** Positive when a is newer than b. */
@@ -77,6 +80,10 @@ export async function checkForUpdate({ env = process.env, now = Date.now(), fetc
  * or an npx cache) or "checkout" (a git clone).
  */
 export function detectInstallKind({ scriptPath = process.argv[1], env = process.env, home = homedir() } = {}) {
+  const forced = String(env.ZCLAUDE_INSTALL_KIND ?? "")
+    .trim()
+    .toLowerCase();
+  if (["installer", "npm", "checkout"].includes(forced)) return forced;
   let real = scriptPath ?? "";
   try {
     real = realpathSync(real);
@@ -100,6 +107,26 @@ function runShell(command, args, env) {
   });
 }
 
+/** Where npm puts global commands, or null when npm cannot be asked. */
+export function npmBinDir(execFileImpl, env = process.env) {
+  return new Promise((resolve) => {
+    const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+    execFileImpl(
+      npm,
+      ["prefix", "-g"],
+      { env, timeout: 15_000, shell: process.platform === "win32" },
+      (error, stdout) => {
+        if (error) {
+          resolve(null);
+          return;
+        }
+        const prefix = String(stdout).trim();
+        resolve(prefix ? join(prefix, process.platform === "win32" ? "" : "bin") : null);
+      },
+    );
+  });
+}
+
 /** Re-run the install path that matches this installation. */
 export function selfUpdate({ env = process.env, kind = detectInstallKind({ env }), npmSpec = GITHUB_SPEC } = {}) {
   log.info("cli", "self-update", { kind, npmSpec });
@@ -109,6 +136,20 @@ export function selfUpdate({ env = process.env, kind = detectInstallKind({ env }
   if (kind === "npm") {
     const npm = process.platform === "win32" ? "npm.cmd" : "npm";
     return runShell(npm, ["install", "-g", npmSpec], env);
+  }
+  return null;
+}
+
+/** Remove the installation that matches this one. */
+export function selfUninstall({ env = process.env, kind = detectInstallKind({ env }), keepConfig = false } = {}) {
+  log.info("cli", "self-uninstall", { kind, keepConfig });
+  if (kind === "installer") {
+    const flags = keepConfig ? " --keep-config" : "";
+    return runShell("bash", ["-c", `curl -fsSL "${INSTALLER_URL}" | bash -s -- --uninstall${flags}`], env);
+  }
+  if (kind === "npm") {
+    const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+    return runShell(npm, ["uninstall", "-g", "zclaude"], env);
   }
   return null;
 }

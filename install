@@ -17,14 +17,18 @@
 #   ZCLAUDE_INSTALL_REF        git ref to install (default: main)
 #   ZCLAUDE_INSTALL_SOURCE     local checkout dir or .tgz instead of GitHub (offline installs)
 #   ZCLAUDE_INSTALL_DIR        where zclaude lives (default: ~/.zclaude/app)
-#   ZCLAUDE_BIN_DIR            where the zclaude command is linked (default: ~/.local/bin)
+#   ZCLAUDE_BIN_DIR            where the zclaude command is linked (default: the first
+#                              writable directory already on PATH, else ~/.local/bin)
 #   ZCLAUDE_NODE_VERSION       Node major to download when needed (default: 22)
 #   ZCLAUDE_INSTALL_FORCE_NODE set to 1 to download a private Node even if one is installed
 #   ZCLAUDE_INSTALL_NO_CLAUDE  set to 1 to skip installing Claude Code
 #   ZCLAUDE_INSTALL_NO_RC      set to 1 to leave shell rc files alone
+#   ZCLAUDE_NO_KEYCHAIN        set to 1 to leave the macOS Keychain item alone
 #
-#   install.sh --uninstall     removes ~/.zclaude/app, ~/.zclaude/node and the link;
-#                              keeps your settings, logs and stored credential.
+#   install.sh --uninstall     removes everything: the app, the private Node, the
+#                              command, ~/.zclaude (settings and logs), the
+#                              Keychain item and the PATH line this script added.
+#                              Add --keep-config to keep ~/.zclaude.
 set -euo pipefail
 
 REPO="vipincr/zclaude"
@@ -32,7 +36,7 @@ REF="${ZCLAUDE_INSTALL_REF:-main}"
 ZCLAUDE_HOME="${ZCLAUDE_HOME:-$HOME/.zclaude}"
 APP_DIR="${ZCLAUDE_INSTALL_DIR:-$ZCLAUDE_HOME/app}"
 NODE_DIR="$ZCLAUDE_HOME/node"
-BIN_DIR="${ZCLAUDE_BIN_DIR:-$HOME/.local/bin}"
+BIN_DIR="${ZCLAUDE_BIN_DIR:-}"
 NODE_MAJOR="${ZCLAUDE_NODE_VERSION:-22}"
 SOURCE="${ZCLAUDE_INSTALL_SOURCE:-}"
 MIN_MAJOR=20
@@ -65,17 +69,90 @@ case "$(uname -m)" in
   *) die "Unsupported CPU architecture: $(uname -m)." ;;
 esac
 
+path_has() { case ":$PATH:" in *":$1:"*) return 0 ;; *) return 1 ;; esac; }
+
+# Link into a directory that is already on PATH when there is a sensible one,
+# so the command works in the shell that ran the installer without any PATH
+# edit. Falls back to ~/.local/bin, which is then added to the shell profile.
+choose_bin_dir() {
+  local candidate
+  # Only ever inside the home directory: an installer piped from curl should
+  # not write into /usr/local or a Homebrew prefix.
+  for candidate in "$HOME/.local/bin" "$HOME/bin"; do
+    path_has "$candidate" || continue
+    if [ -d "$candidate" ] && [ -w "$candidate" ]; then
+      echo "$candidate"
+      return 0
+    fi
+    if [ ! -d "$candidate" ] && [ -w "$HOME" ]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+  echo "$HOME/.local/bin"
+}
+
+if [ -z "$BIN_DIR" ]; then BIN_DIR="$(choose_bin_dir)"; fi
+
 # ---------------------------------------------------------------- uninstall
+remove_links() {
+  local candidate target
+  for candidate in "$BIN_DIR" "$HOME/.local/bin" "$HOME/bin"; do
+    [ -L "$candidate/zclaude" ] || continue
+    target="$(readlink "$candidate/zclaude")"
+    case "$target" in
+      *"/.zclaude/app/zclaude" | "$APP_DIR"*) rm -f "$candidate/zclaude" && info "Removed $candidate/zclaude" ;;
+      *) : ;;
+    esac
+  done
+}
+
+remove_path_lines() {
+  local rc
+  for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.profile"; do
+    [ -f "$rc" ] || continue
+    grep -Fq "# added by the zclaude installer" "$rc" || continue
+    # grep exits 1 when nothing is left, which is a valid result here.
+    grep -Fv "# added by the zclaude installer" "$rc" >"$rc.zclaude-tmp" || true
+    if [ -f "$rc.zclaude-tmp" ]; then
+      mv "$rc.zclaude-tmp" "$rc"
+      info "Removed the PATH line from $rc"
+    fi
+  done
+}
+
+remove_keychain() {
+  [ "$PLATFORM" = "darwin" ] || return 0
+  [ -n "${ZCLAUDE_NO_KEYCHAIN:-}" ] && return 0
+  command -v security >/dev/null 2>&1 || return 0
+  local removed=0
+  while security delete-generic-password -s zclaude >/dev/null 2>&1; do
+    removed=$((removed + 1))
+    [ "$removed" -gt 10 ] && break
+  done
+  [ "$removed" -gt 0 ] && info "Removed the zclaude item from your Keychain"
+  return 0
+}
+
 if [ "${1:-}" = "--uninstall" ]; then
+  KEEP_CONFIG=""
+  [ "${2:-}" = "--keep-config" ] && KEEP_CONFIG=1
   info "Removing zclaude from this machine"
   rm -rf "$APP_DIR" "$NODE_DIR"
-  [ -L "$BIN_DIR/zclaude" ] && rm -f "$BIN_DIR/zclaude"
-  ok "Removed $APP_DIR, $NODE_DIR and $BIN_DIR/zclaude."
-  info "Kept $ZCLAUDE_HOME (settings, logs, credential file). Remove it yourself if you want a clean slate."
-  info "The Keychain item 'zclaude' and the API key on your Z.ai account are untouched: run 'zclaude logout' before uninstalling to clear the local copy."
+  remove_links
+  remove_path_lines
+  remove_keychain
+  if [ -n "$KEEP_CONFIG" ]; then
+    info "Kept $ZCLAUDE_HOME (settings and logs)."
+  else
+    rm -rf "$ZCLAUDE_HOME"
+    info "Removed $ZCLAUDE_HOME (settings, logs, any credential file)."
+  fi
+  ok "zclaude is gone from this machine."
+  info "The API key still exists on your Z.ai account. Revoke it at https://z.ai/manage-apikey/apikey-list if you no longer need it."
   exit 0
 fi
-[ -n "${1:-}" ] && die "Unknown argument: $1 (only --uninstall is supported)"
+if [ -n "${1:-}" ]; then die "Unknown argument: $1 (only --uninstall [--keep-config] is supported)"; fi
 
 # --------------------------------------------------------------------- node
 version_ok() {
@@ -187,7 +264,6 @@ ln -sfn "$APP_DIR/zclaude" "$BIN_DIR/zclaude"
 ok "Linked $BIN_DIR/zclaude"
 
 # --------------------------------------------------------------------- path
-path_has() { case ":$PATH:" in *":$1:"*) return 0 ;; *) return 1 ;; esac; }
 if ! path_has "$BIN_DIR"; then
   if [ -n "${ZCLAUDE_INSTALL_NO_RC:-}" ]; then
     warn "$BIN_DIR is not on your PATH. Add it yourself: export PATH=\"$BIN_DIR:\$PATH\""
@@ -225,4 +301,8 @@ fi
 if ! "$BIN_DIR/zclaude" --version >/dev/null 2>&1; then
   die "zclaude was installed but '$BIN_DIR/zclaude --version' failed. Run it with --verbose to see why."
 fi
-ok "Ready. Open a new terminal and run: zclaude"
+if path_has "$BIN_DIR"; then
+  ok "Ready. Run: zclaude"
+else
+  ok "Ready. Run it now with $BIN_DIR/zclaude, or open a new terminal and type zclaude."
+fi

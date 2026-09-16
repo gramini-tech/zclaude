@@ -298,19 +298,35 @@ describe("end to end", () => {
     assert.equal(noKey.code, 4);
   });
 
-  it("self-install runs npm install -g with the GitHub spec when unpublished", async () => {
-    const fakeBin = join(home.dir, "fakenpm");
-    await mkdir(fakeBin, { recursive: true });
+  it("self-install installs globally and verifies the command really runs", async () => {
+    const fakeBin = join(home.dir, "npm-good");
+    const prefixBin = join(fakeBin, "prefix", "bin");
+    await mkdir(prefixBin, { recursive: true });
     const npmCapture = join(home.dir, "npm-args.txt");
+    // A stand-in npm: "view" fails (not published), "prefix" reports our
+    // scratch prefix, and "install" drops a working command into it.
     await writeFile(
       join(fakeBin, "npm"),
-      `#!/bin/sh\nif [ "$1" = "view" ]; then exit 1; fi\nif [ "$1" = "prefix" ]; then echo /fake/prefix; exit 0; fi\necho "$*" >> "${npmCapture}"\nexit 0\n`,
+      [
+        "#!/bin/sh",
+        'if [ "$1" = "view" ]; then exit 1; fi',
+        `if [ "$1" = "prefix" ]; then echo "${join(fakeBin, "prefix")}"; exit 0; fi`,
+        `echo "$*" >> "${npmCapture}"`,
+        `printf '#!/bin/sh\\necho "zclaude 9.9.9"\\n' > "${join(prefixBin, "zclaude")}"`,
+        `chmod +x "${join(prefixBin, "zclaude")}"`,
+        "exit 0",
+      ].join("\n"),
     );
     await chmod(join(fakeBin, "npm"), 0o755);
-    const result = await run(["self-install"], { ...env, PATH: `${fakeBin}:${process.env.PATH}` });
+    const result = await run(["self-install"], { ...env, PATH: `${fakeBin}:${prefixBin}:${process.env.PATH}` });
     assert.equal(result.code, 0, result.stderr);
-    assert.equal((await readFile(npmCapture, "utf8")).trim(), "install -g github:vipincr/zclaude");
-    assert.match(result.stderr, /\/fake\/prefix\/bin must be on your PATH/u);
+    assert.equal(
+      (await readFile(npmCapture, "utf8")).trim(),
+      "install -g https://codeload.github.com/vipincr/zclaude/tar.gz/refs/heads/main",
+      "installs from the tarball, not the git spec npm cannot prepare",
+    );
+    assert.match(result.stderr, /zclaude 9\.9\.9 installed/u);
+    assert.match(result.stderr, /Run `zclaude` from any directory/u);
   });
 
   it("prints help and versions", async () => {

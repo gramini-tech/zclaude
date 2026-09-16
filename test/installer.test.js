@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { readFile, readlink, stat } from "node:fs/promises";
+import { readFile, readlink, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, before, describe, it } from "node:test";
@@ -32,6 +32,7 @@ describe("install.sh", { skip }, () => {
       ZCLAUDE_INSTALL_SOURCE: root,
       ZCLAUDE_INSTALL_NO_CLAUDE: "1",
       ZCLAUDE_INSTALL_NO_RC: "1",
+      ZCLAUDE_NO_KEYCHAIN: "1",
       NO_COLOR: "1",
     };
   });
@@ -59,6 +60,29 @@ describe("install.sh", { skip }, () => {
     assert.match(again.stderr, /installed in/u);
   });
 
+  it("survives repeated install and uninstall cycles", async () => {
+    const link = join(home.dir, ".local", "bin", "zclaude");
+    const app = join(home.dir, ".zclaude", "app");
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      const installed = await sh([join(root, "install.sh")], env);
+      assert.equal(installed.code, 0, `cycle ${cycle} install: ${installed.stderr}`);
+      assert.ok((await stat(link)).isFile() || (await stat(link)).isSymbolicLink());
+      const removed = await sh([join(root, "install.sh"), "--uninstall"], env);
+      assert.equal(removed.code, 0, `cycle ${cycle} uninstall: ${removed.stderr}`);
+      await assert.rejects(stat(app), /ENOENT/u, `cycle ${cycle} left the app directory`);
+      await assert.rejects(readlink(link), /ENOENT/u, `cycle ${cycle} left a dangling command`);
+    }
+    await sh([join(root, "install.sh")], env);
+  });
+
+  it("links into a directory already on PATH so the command works at once", async () => {
+    const binDir = join(home.dir, ".local", "bin");
+    const onPath = await sh([join(root, "install.sh")], { ...env, PATH: `${binDir}:${process.env.PATH}` });
+    assert.equal(onPath.code, 0, onPath.stderr);
+    assert.match(onPath.stderr, /Ready\. Run: zclaude/u);
+    assert.equal(await readlink(join(binDir, "zclaude")), join(home.dir, ".zclaude", "app", "zclaude"));
+  });
+
   it("rejects unknown arguments and uninstalls cleanly", async () => {
     const bad = await sh([join(root, "install.sh"), "--bogus"], env);
     assert.equal(bad.code, 1);
@@ -66,7 +90,18 @@ describe("install.sh", { skip }, () => {
     assert.equal(gone.code, 0, gone.stderr);
     await assert.rejects(stat(join(home.dir, ".zclaude", "app")), /ENOENT/u);
     await assert.rejects(stat(join(home.dir, ".local", "bin", "zclaude")), /ENOENT/u);
-    assert.match(gone.stderr, /Kept .*\.zclaude/u);
+    await assert.rejects(stat(join(home.dir, ".zclaude")), /ENOENT/u, "settings and logs are purged by default");
+    assert.match(gone.stderr, /gone from this machine/u);
+  });
+
+  it("keeps settings with --keep-config", async () => {
+    await sh([join(root, "install.sh")], env);
+    const settings = join(home.dir, ".zclaude", "settings");
+    await writeFile(settings, "ZCLAUDE_MODEL=glm-5.3\n");
+    const kept = await sh([join(root, "install.sh"), "--uninstall", "--keep-config"], env);
+    assert.equal(kept.code, 0, kept.stderr);
+    assert.equal(await readFile(settings, "utf8"), "ZCLAUDE_MODEL=glm-5.3\n");
+    await assert.rejects(stat(join(home.dir, ".zclaude", "app")), /ENOENT/u);
   });
 
   it("warns instead of editing rc files when told to, and appends once otherwise", async () => {

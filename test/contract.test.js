@@ -78,6 +78,16 @@ describe("protocol contract", () => {
 });
 
 describe("installer contract", () => {
+  it("declares no npm lifecycle scripts that run on install", async () => {
+    const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
+    // npm runs these when the package is installed. With one present, a
+    // `github:` install needs a "prepare" step; when npm refuses to run
+    // scripts it links its cache clone instead, leaving a dangling command.
+    for (const name of ["preinstall", "install", "postinstall", "prepare", "prepack", "prepublish"]) {
+      assert.equal(pkg.scripts[name], undefined, `package.json must not define a "${name}" script`);
+    }
+  });
+
   it("the short-URL copy (install) matches install.sh byte for byte", async () => {
     const [long, short] = await Promise.all([
       readFile(join(root, "install.sh"), "utf8"),

@@ -29,8 +29,9 @@ The installer uses the Node.js already on your machine when it is 20.17 or newer
 missing or older does it download an official build into `~/.zclaude/node` for zclaude alone
 (checksum-verified against nodejs.org); a system Node is never replaced or upgraded. It then puts zclaude in `~/.zclaude/app`, links `~/.local/bin/zclaude`,
 adds `~/.local/bin` to your shell PATH, and runs Anthropic's Claude Code installer if `claude` is
-missing. Re-running it updates zclaude in place; `install.sh --uninstall` removes it and leaves your
-settings, logs and stored key alone. Knobs: `ZCLAUDE_INSTALL_REF` (git ref, default `main`),
+missing. Re-running it updates zclaude in place; `curl -fsSL https://vipincr.github.io/zclaude/install | bash -s -- --uninstall` removes everything:
+the app, the private Node, the command, the PATH line it added, `~/.zclaude` and the Keychain item.
+Add `--keep-config` to keep `~/.zclaude`. Knobs: `ZCLAUDE_INSTALL_REF` (git ref, default `main`),
 `ZCLAUDE_INSTALL_DIR`, `ZCLAUDE_BIN_DIR`, `ZCLAUDE_NODE_VERSION` (default 22),
 `ZCLAUDE_INSTALL_FORCE_NODE=1` (private Node even if one exists), `ZCLAUDE_INSTALL_NO_CLAUDE=1`,
 `ZCLAUDE_INSTALL_NO_RC=1` (do not touch rc files), `ZCLAUDE_INSTALL_SOURCE` (a local checkout or
@@ -64,6 +65,8 @@ notice when a newer version exists. To update:
 ```sh
 zclaude self-update                        # re-runs whichever install path put zclaude here
 npx github:vipincr/zclaude self-update     # the same, without a global install
+zclaude self-uninstall                     # remove zclaude, its settings, logs and stored key
+zclaude self-uninstall --keep-config       # keep ~/.zclaude
 ```
 
 `self-update` re-runs the curl installer for installer-based setups, `npm install -g` for npm-based ones,
@@ -144,17 +147,18 @@ Levels are `error`, `warn`, `info`, `debug` (default) and `trace` (adds request 
 Categories are `cli`, `config`, `profile`, `auth`, `callback`, `provision`, `store`, `zai`, `http`,
 `claude` and `console` (everything printed to the terminal).
 
-| Control                                           | Effect                                                                |
-| ------------------------------------------------- | --------------------------------------------------------------------- |
-| `--log-level <level>`, `ZCLAUDE_LOG_LEVEL`        | detail written to the file; `off` disables it                         |
-| `ZCLAUDE_LOG_CATEGORIES`                          | `auth,http` keeps only those; `-console,-http` drops those; forms mix |
-| `--log-file <path>`, `ZCLAUDE_LOG=<path>`         | write this run's log to a specific file                               |
-| `--no-log`, `ZCLAUDE_NO_LOG=1`, `ZCLAUDE_LOG=off` | no run log at all                                                     |
-| `ZCLAUDE_LOG_DIR`                                 | directory for run logs (default `~/.zclaude/logs`)                    |
-| `ZCLAUDE_LOG_KEEP`                                | how many run logs to keep (default 30)                                |
-| `ZCLAUDE_ALLOW_SETTINGS_OVERRIDE=1`               | launch even when settings.json's env block overrides this session     |
-| `ZCLAUDE_NO_UPDATE_CHECK=1`                       | skip the daily check for a newer version                              |
-| `--quiet`                                         | terminal shows only warnings and errors (the file is unaffected)      |
+| Control                                           | Effect                                                                              |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `--log-level <level>`, `ZCLAUDE_LOG_LEVEL`        | detail written to the file; `off` disables it                                       |
+| `ZCLAUDE_LOG_CATEGORIES`                          | `auth,http` keeps only those; `-console,-http` drops those; forms mix               |
+| `--log-file <path>`, `ZCLAUDE_LOG=<path>`         | write this run's log to a specific file                                             |
+| `--no-log`, `ZCLAUDE_NO_LOG=1`, `ZCLAUDE_LOG=off` | no run log at all                                                                   |
+| `ZCLAUDE_LOG_DIR`                                 | directory for run logs (default `~/.zclaude/logs`)                                  |
+| `ZCLAUDE_LOG_KEEP`                                | how many run logs to keep (default 30)                                              |
+| `ZCLAUDE_ALLOW_SETTINGS_OVERRIDE=1`               | launch even when settings.json's env block overrides this session                   |
+| `ZCLAUDE_NO_UPDATE_CHECK=1`                       | skip the daily check for a newer version                                            |
+| `ZCLAUDE_INSTALL_KIND`                            | force how `self-update` and `self-uninstall` work: `installer`, `npm` or `checkout` |
+| `--quiet`                                         | terminal shows only warnings and errors (the file is unaffected)                    |
 
 When a run fails, the error line on the terminal is followed by the path of that run's log.
 

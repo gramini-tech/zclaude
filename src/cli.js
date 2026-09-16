@@ -1,9 +1,9 @@
 // Command-line front end and orchestration.
 
 import { execFile, spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 
 import { openUrl } from "./browser.js";
 import { receiveCallback } from "./callback/index.js";
@@ -54,13 +54,26 @@ import {
   detectInstallKind,
   fetchLatestVersion,
   GITHUB_SPEC,
+  INSTALLER_URL,
+  npmBinDir,
+  selfUninstall,
   selfUpdate,
 } from "./update.js";
 import { checkKey, fetchQuota, formatQuota, quotaExhausted } from "./zai.js";
 
 // ------------------------------------------------------------------ parsing
 
-const COMMANDS = new Set(["login", "logout", "status", "models", "log", "self-install", "self-update", "help"]);
+const COMMANDS = new Set([
+  "login",
+  "logout",
+  "status",
+  "models",
+  "log",
+  "self-install",
+  "self-update",
+  "self-uninstall",
+  "help",
+]);
 const VALUE_FLAGS = Object.freeze({
   "--profile": "profile",
   "--log-level": "logLevel",
@@ -82,6 +95,7 @@ const BOOL_FLAGS = Object.freeze({
   "--json": "json",
   "--quiet": "quiet",
   "--no-log": "noLog",
+  "--keep-config": "keepConfig",
   "--path": "pathOnly",
 });
 
@@ -150,6 +164,7 @@ Usage
   zclaude log [--json] [--path]                show the latest run log (post-mortem)
   zclaude self-install                         install zclaude globally with npm (e.g. from npx)
   zclaude self-update                          update to the newest version the same way it was installed
+  zclaude self-uninstall [--keep-config]       remove zclaude, its settings, logs and the stored key
 
 Options (must come before any claude argument)
   --profile <claude|zai|name>  skip the menu
@@ -868,15 +883,102 @@ async function cmdSelfInstall({ env }) {
       hint: "If this was a permissions error, point npm at a user prefix: npm config set prefix ~/.npm-global (and add ~/.npm-global/bin to PATH).",
     });
   }
-  const prefix = await npmOutput(["prefix", "-g"], env);
-  const binDir = prefix ? join(prefix, process.platform === "win32" ? "" : "bin") : null;
-  success(`Installed. Run \`zclaude\` from any directory${binDir ? ` (${binDir} must be on your PATH)` : ""}.`);
+  const verified = await verifyGlobalInstall(env);
+  log.info("cli", "self-install verified", verified);
+  if (!verified.ok)
+    throw new ZclaudeError("The global install did not produce a working command.", {
+      exitCode: EXIT.INTERNAL,
+      hint: verified.note,
+    });
+  success(verified.note);
+  return EXIT.OK;
+}
+
+/**
+ * Remove this installation, whichever way it was installed, along with the
+ * stored key and (unless --keep-config) everything under ~/.zclaude.
+ */
+async function cmdSelfUninstall({ options, env }) {
+  const kind = detectInstallKind({ env });
+  const keepConfig = Boolean(options.keepConfig);
+
+  const { removed } = await deleteCredential({ env });
+  if (removed.length > 0) info(`Removed the stored Z.ai key from: ${removed.join(", ")}.`);
+
+  if (kind === "checkout") {
+    info("This is a git checkout: delete the clone and any symlink you made to it.");
+  } else {
+    info(`Removing the ${kind === "npm" ? "npm" : "script"} installation of zclaude`);
+    const code = await selfUninstall({ env, kind, keepConfig });
+    if (code !== 0) throw new ZclaudeError(`The uninstall exited with ${code}.`, { exitCode: EXIT.INTERNAL });
+    if (kind === "npm") {
+      const binDir = await npmBinDir(execFile, env);
+      if (binDir) await rm(join(binDir, "zclaude"), { force: true }).catch(() => {});
+    }
+  }
+
+  const home = zclaudeHome(env);
+  if (keepConfig) {
+    info(`Kept ${home} (settings, logs).`);
+  } else {
+    // Stop writing the run log before its directory disappears.
+    configureLogger({ env, disabled: true });
+    await rm(home, { recursive: true, force: true }).catch((error) =>
+      warn(`Could not remove ${home}: ${error.message}`),
+    );
+    info(`Removed ${home}.`);
+  }
+  success("zclaude is gone from this machine.");
+  info(`The API key still exists on your Z.ai account. Revoke it at ${CONSOLE_KEYS_URL} if you no longer need it.`);
   return EXIT.OK;
 }
 
 async function npmSpec(env) {
   const published = await npmOutput(["view", "zclaude", "version"], env);
   return published && /^\d+\.\d+\.\d+/u.test(published) ? "zclaude@latest" : GITHUB_SPEC;
+}
+
+function withoutTrailingSlash(path) {
+  let out = String(path);
+  while (out.length > 1 && out.endsWith("/")) out = out.slice(0, -1);
+  return out;
+}
+
+function onPath(dir, env) {
+  const entries = String(env.PATH ?? "")
+    .split(delimiter)
+    .filter(Boolean)
+    .map((entry) => withoutTrailingSlash(entry));
+  return entries.includes(withoutTrailingSlash(dir));
+}
+
+/**
+ * Confirm the command npm just installed is really there and runnable, then
+ * say exactly what to do next. A global install that leaves a dangling link
+ * (npm does this for git specs it cannot prepare) is reported as a failure.
+ */
+async function verifyGlobalInstall(env) {
+  const binDir = await npmBinDir(execFile, env);
+  if (!binDir) return { ok: true, note: "Run `zclaude` from any directory." };
+  const command = join(binDir, process.platform === "win32" ? "zclaude.cmd" : "zclaude");
+  const version = await new Promise((resolve) => {
+    execFile(command, ["--version"], { env, timeout: 20_000, windowsHide: true }, (error, stdout) => {
+      resolve(error ? null : String(stdout).trim().split("\n", 1)[0]);
+    });
+  });
+  if (!version) {
+    return {
+      ok: false,
+      note: `npm reported success but ${command} does not run. Install with the script instead:\n  curl -fsSL ${INSTALLER_URL} | bash`,
+    };
+  }
+  if (!onPath(binDir, env)) {
+    return {
+      ok: true,
+      note: `${version} installed. Add npm's bin directory to your PATH to use it:\n  export PATH="${binDir}:$PATH"`,
+    };
+  }
+  return { ok: true, note: `${version} installed. Run \`zclaude\` from any directory.` };
 }
 
 /** Update in place, using whichever install path put zclaude here. */
@@ -945,6 +1047,7 @@ const COMMAND_HANDLERS = {
   log: cmdLog,
   "self-install": cmdSelfInstall,
   "self-update": cmdSelfUpdate,
+  "self-uninstall": cmdSelfUninstall,
   launch: cmdLaunch,
 };
 
