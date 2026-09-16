@@ -1,6 +1,6 @@
 {
   "name": "zclaude",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Interactive preloader for Claude Code: pick your Anthropic account or your Z.ai GLM Coding Plan per launch, with browser sign-in, Keychain-stored keys and per-project model config",
   "type": "module",
   "bin": {

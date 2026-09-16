@@ -166,7 +166,9 @@ else
   curl -fsSL -o "$WORK/zclaude.tar.gz" "https://codeload.github.com/$REPO/tar.gz/$REF" || die "Could not download zclaude ($REF)."
   tar -xzf "$WORK/zclaude.tar.gz" -C "$STAGE" --strip-components=1
 fi
-[ -f "$STAGE/package.json" ] && [ -f "$STAGE/bin/zclaude.js" ] || die "The downloaded archive does not look like zclaude."
+if [ ! -f "$STAGE/package.json" ] || [ ! -f "$STAGE/bin/zclaude.js" ]; then
+  die "The downloaded archive does not look like zclaude."
+fi
 
 info "Installing zclaude's runtime dependency"
 (cd "$STAGE" && PATH="$NODE_BIN_DIR:$PATH" "$NPM_BIN" install --omit=dev --ignore-scripts --no-fund --no-audit --no-update-notifier --loglevel=error) || die "npm install failed."
