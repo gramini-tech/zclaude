@@ -98,11 +98,24 @@ const LIMIT_LABELS = {
   CREDIT_LIMIT: "credits",
 };
 
-function resetHint(value) {
+// Z.ai reports the window a limit applies to as a numeric "unit": 3 is the
+// rolling 5-hour window, 6 the weekly one (observed on the coding plan).
+const WINDOW_LABELS = { 3: "5h", 6: "weekly" };
+
+function windowLabel(unit) {
+  if ([undefined, null, ""].includes(unit)) return "";
+  return WINDOW_LABELS[unit] ?? String(unit);
+}
+
+function resetHint(value, now = Date.now()) {
   if ([null, undefined, ""].includes(value)) return "";
   const date = typeof value === "number" ? new Date(value < 1e12 ? value * 1000 : value) : new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  return ` (resets ${date.toLocaleString()})`;
+  const minutes = Math.round((date.getTime() - now) / 60_000);
+  if (minutes <= 0) return " (resets now)";
+  if (minutes < 90) return ` (resets in ${minutes}m)`;
+  if (minutes < 48 * 60) return ` (resets in ${Math.round(minutes / 60)}h)`;
+  return ` (resets in ${Math.round(minutes / (24 * 60))}d)`;
 }
 
 /** One-line human summary, or null when there is nothing to say. */
@@ -112,9 +125,9 @@ export function formatQuota(quota) {
     .filter((limit) => limit.percentage !== null)
     .map((limit) => {
       const label = LIMIT_LABELS[limit.type] ?? (limit.type || "quota").toLowerCase();
-      const unit = limit.unit !== undefined && limit.unit !== null && limit.unit !== "" ? ` ${limit.unit}` : "";
-      const exhausted = limit.percentage >= 100 ? resetHint(limit.nextResetTime) : "";
-      return `${label}${unit} ${Math.round(limit.percentage)}%${exhausted}`;
+      const window = windowLabel(limit.unit);
+      const reset = limit.percentage >= 80 ? resetHint(limit.nextResetTime) : "";
+      return `${window ? `${window} ` : ""}${label} ${Math.round(limit.percentage)}%${reset}`;
     });
   const plan = quota.level ? ` (${quota.level})` : "";
   if (parts.length === 0) return `Z.ai GLM Coding Plan${plan}`;

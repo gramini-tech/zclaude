@@ -11,6 +11,8 @@ First release.
 - Keychain storage on macOS, 0600 file elsewhere; `login`, `logout`, `status`, `models` commands.
 - Model wizard fed by the live model list; project `.zclaude/env` over `~/.zclaude/settings`.
 - Bash runner for git-clone installs.
+- `zclaude login` continues into the model wizard and offers to launch; quota line names the
+  5-hour and weekly windows and when a nearly used-up window resets.
 - Structured per-run log under `~/.zclaude/logs` with level and category filters, `zclaude log`
   to read it back, secrets redacted.
 - Quality gate: strict ESLint, Prettier, knip, TypeScript checkJs, shellcheck, coverage thresholds,

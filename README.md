@@ -46,7 +46,7 @@ zclaude                         menu, then launch
 zclaude -p "explain this repo"  menu, then launch claude with those arguments
 zclaude --profile zai           skip the menu
 zclaude -- --help               claude's own help
-zclaude login                   sign in to Z.ai now (browser)
+zclaude login                   sign in to Z.ai now (browser), then offer to pick models and launch
 zclaude login --api-key         paste a key from the Z.ai console instead
 zclaude logout                  forget the stored key
 zclaude status                  what would happen on the next launch
@@ -90,6 +90,7 @@ All zclaude options go before any argument meant for `claude`.
 6. `claude` starts with the GLM models. Quit it and you are back to a clean shell; nothing about
    Z.ai leaks into your other Claude Code sessions.
 
+`zclaude login` on its own does the same sign-in, then asks whether to pick models and launch right away.
 Later launches skip straight from the menu to `claude`.
 
 ## Run logs (post-mortem)

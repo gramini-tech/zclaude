@@ -8,6 +8,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, before, describe, it } from "node:test";
 
+import { createServer } from "node:http";
+
 import { tempHome } from "./helpers.js";
 
 const BIN = fileURLToPath(new URL("../bin/zclaude.js", import.meta.url));
@@ -86,6 +88,48 @@ describe("interactive (pseudo-terminal)", { skip: !hasScript() && "needs macOS s
     assert.match(out, /What do you want to launch\?/u);
     assert.match(out, /Claude Code \+ Z\.ai GLM Coding Plan/u);
     assert.equal((await readFile(capture, "utf8")).trim(), "ran --from-test");
+  });
+
+  it("login --api-key continues into the wizard and launches claude", async () => {
+    const key = "0123456789abcdef0123.ABCDEFGHIJKLMNOPQRSTUV";
+    const zai = createServer((request, response) => {
+      response.writeHead(200, { "Content-Type": "application/json" });
+      if (request.url === "/api/coding/paas/v4/models") {
+        response.end(JSON.stringify({ object: "list", data: [{ id: "glm-5.3" }, { id: "glm-5.3-flash" }] }));
+        return;
+      }
+      response.end(JSON.stringify({ code: 200, data: { level: "pro", limits: [] } }));
+    });
+    await new Promise((resolve) => {
+      zai.listen(0, "127.0.0.1", resolve);
+    });
+    try {
+      const log = join(home.dir, "login.log");
+      await writeFile(capture, "");
+      const keys = [
+        [1500, `${key}\r`], // paste the key
+        [1500, "\r"], // launch now (default)
+        [1200, "\r"], // primary model
+        [800, "\r"], // subagent model
+        [800, "\r"], // fast model
+        [800, "\r"], // save as user default
+      ];
+      const code = await runInPty({
+        args: ["login", "--api-key"],
+        env: { ...env, ZCLAUDE_BASE_URL: `http://127.0.0.1:${zai.address().port}` },
+        keys,
+        log,
+      });
+      const out = clean(await readFile(log, "utf8"));
+      assert.equal(code, 0, out.slice(-600));
+      assert.match(out, /Launch Claude Code on Z\.ai now\?/u);
+      assert.match(out, /Primary model/u);
+      assert.match(out, /Saved to .*settings/u);
+      assert.equal((await readFile(capture, "utf8")).trim(), "ran");
+      assert.match(await readFile(join(env.ZCLAUDE_HOME, "settings"), "utf8"), /ZCLAUDE_MODEL=glm-5\.3\n/u);
+    } finally {
+      zai.close();
+    }
   });
 
   it("exits 130 on Ctrl-C at the menu", async () => {

@@ -512,6 +512,11 @@ async function cmdLaunch({ options, passthrough, env, cwd }) {
     );
 
   const credential = await resolveCredential({ options, env, config, interactive });
+  return launchZai({ bin, options, passthrough, env, cwd, layered, interactive, config, credential, extra });
+}
+
+/** Pick models (wizard when needed), report quota, and hand off to claude. */
+async function launchZai({ bin, options, passthrough, env, cwd, layered, interactive, config, credential, extra }) {
   const availableModels = credential.check?.models ?? [];
   log.info("auth", "credential resolved", {
     source: credential.source,
@@ -541,18 +546,50 @@ async function cmdLaunch({ options, passthrough, env, cwd }) {
 
 // ----------------------------------------------------------------- commands
 
-async function cmdLogin({ options, env }) {
+async function cmdLogin({ options, passthrough, env, cwd }) {
   const interactive = isInteractive();
   if (!interactive)
     throw usageError("`zclaude login` needs an interactive terminal.", "For scripts, set ZAI_API_KEY instead.");
   const config = zaiConfig(env);
   const store = !options.noStore && !flag(env, "ZCLAUDE_NO_STORE");
   const context = { options, env, config, interactive, store };
-  const result = options.apiKey ? await manualKeyLogin(context) : await loginWithRetries(context);
-  const line = formatQuota(await fetchQuota(result.apiKey, config));
-  if (line) info(line);
+  const credential = options.apiKey ? await manualKeyLogin(context) : await loginWithRetries(context);
   if (!store) warn("The key was not stored (--no-store). It will be needed again next time.");
-  return EXIT.OK;
+
+  // Signing in is usually the first step of a session: continue into the
+  // model wizard and offer to start claude right away.
+  const bin = optionalClaude(env);
+  if (!bin) {
+    warn("Claude Code is not installed yet, so there is nothing to launch. The key is stored for later.");
+    return EXIT.OK;
+  }
+  const layered = await loadLayeredConfig({ cwd, env });
+  reportWarnings(layered);
+  const next = await confirmChoice(
+    "Signed in. Launch Claude Code on Z.ai now?",
+    [
+      { name: "Yes, pick models and launch", value: "launch" },
+      { name: "Not now", value: "done" },
+    ],
+    "launch",
+  );
+  log.info("cli", "post-login choice", { next });
+  if (next !== "launch") {
+    info("Run `zclaude` whenever you are ready; the key is stored.");
+    return EXIT.OK;
+  }
+  return launchZai({
+    bin,
+    options,
+    passthrough,
+    env,
+    cwd,
+    layered,
+    interactive,
+    config,
+    credential,
+    extra: extraEnv(layered),
+  });
 }
 
 async function cmdLogout({ env }) {

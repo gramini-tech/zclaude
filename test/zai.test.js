@@ -67,7 +67,7 @@ describe("quota", () => {
         data: {
           level: "pro",
           limits: [
-            { type: "TOKENS_LIMIT", unit: "5h", percentage: 12.4 },
+            { type: "TOKENS_LIMIT", unit: 3, percentage: 12.4 },
             { type: "TIME_LIMIT", percentage: 100, nextResetTime: 4_102_444_800_000 },
             { type: "MYSTERY" },
           ],
@@ -78,9 +78,25 @@ describe("quota", () => {
     assert.equal(quota.level, "pro");
     assert.equal(quota.limits.length, 3);
     const line = formatQuota(quota);
-    assert.match(line, /^Z\.ai GLM Coding Plan \(pro\) · tokens 5h 12% · time 100% \(resets /u);
+    assert.match(line, /^Z\.ai GLM Coding Plan \(pro\) · 5h tokens 12% · time 100% \(resets in \d+d\)$/u);
     assert.equal(quotaExhausted(quota), true);
   });
+  it("formats the coding-plan credit windows the way Z.ai reports them", () => {
+    const soon = Date.now() + 32 * 60_000;
+    const line = formatQuota({
+      level: "max",
+      limits: [
+        { type: "CREDIT_LIMIT", unit: 3, percentage: 89, nextResetTime: soon },
+        { type: "CREDIT_LIMIT", unit: 6, percentage: 17, nextResetTime: Date.now() + 6 * 24 * 3_600_000 },
+        { type: "CREDIT_LIMIT", unit: 9, percentage: 5, nextResetTime: null },
+      ],
+    });
+    assert.equal(
+      line,
+      "Z.ai GLM Coding Plan (max) · 5h credits 89% (resets in 32m) · weekly credits 17% · 9 credits 5%",
+    );
+  });
+
   it("returns null on failure and formats nothing", async () => {
     assert.equal(await fetchQuota("k", config, { fetchImpl: async () => new Response("nope", { status: 500 }) }), null);
     assert.equal(
