@@ -7,7 +7,7 @@ import { chmod, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/pr
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 
-import { cmdProfile, forgetAllProfiles } from "../src/profile-commands.js";
+import { cmdProfile, exportLines, forgetAllProfiles } from "../src/profile-commands.js";
 import { getRegistered, listRegistered } from "../src/profiles/registry.js";
 import { loadCredential, saveCredential } from "../src/store.js";
 import { tempHome } from "./helpers.js";
@@ -276,6 +276,23 @@ describe("profile commands", () => {
     assert.match(printed.err, /# .*inherits the profile, including editors/u);
     assert.doesNotMatch(printed.out, /#/u, "only the exports go to stdout, so eval is safe");
     assert.match((await rejects(() => profile(["shell", "work"]))).message, /needs an interactive terminal/u);
+  });
+
+  it("writes the lines the shell in front of the user can actually evaluate", () => {
+    const values = { CLAUDE_CONFIG_DIR: "/p/home", ZCLAUDE_PROFILE: "work" };
+    assert.deepEqual(exportLines(values, { platform: "darwin", shell: "/bin/zsh" }), [
+      'export CLAUDE_CONFIG_DIR="/p/home"',
+      'export ZCLAUDE_PROFILE="work"',
+    ]);
+    assert.deepEqual(exportLines(values, { platform: "win32", shell: "" }), [
+      '$env:CLAUDE_CONFIG_DIR = "/p/home"',
+      '$env:ZCLAUDE_PROFILE = "work"',
+    ]);
+    assert.deepEqual(
+      exportLines({ ZCLAUDE_PROFILE: "work" }, { platform: "win32", shell: "C:\\Program Files\\Git\\bin\\bash.exe" }),
+      ['export ZCLAUDE_PROFILE="work"'],
+      "a POSIX shell on Windows still wants export",
+    );
   });
 
   it("doctor is quiet when everything is in order", async () => {

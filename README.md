@@ -141,7 +141,11 @@ ZCLAUDE_PROFILE=work zclaude               # same thing through the environment
 `zclaude profile shell` is the honest way to pin a terminal: it starts your shell with the profile in
 place and tells you when you leave. `zclaude profile env work` prints the same variables for scripts,
 with a warning, because everything you start from that shell inherits them. Launching `code .` from a
-pinned shell would move the VS Code extension onto that profile.
+pinned shell would move the VS Code extension onto that profile. On Windows the lines come out in
+PowerShell syntax unless `SHELL` names a POSIX shell.
+
+Two terminals can run the same profile, exactly as two terminals can run one login today. They share
+the profile's transcripts and interface state, so the last one to write a preference wins.
 
 ### Managing them
 

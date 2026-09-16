@@ -343,13 +343,29 @@ async function cmdShell({ args, env, interactive }) {
   });
 }
 
-async function cmdEnv({ args, env }) {
+/**
+ * The lines a shell would evaluate. PowerShell is the one that matters: `export`
+ * is a syntax error there, so a Windows user would get a broken shell rather
+ * than a pinned one.
+ * @param {Record<string, string>} values
+ */
+export function exportLines(values, { platform = process.platform, shell = "" } = {}) {
+  const powershell = platform === "win32" && !/(?:bash|zsh|sh|fish)(?:\.exe)?$/iu.test(shell);
+  return Object.entries(values).map(([key, value]) =>
+    powershell ? `$env:${key} = ${JSON.stringify(value)}` : `export ${key}=${JSON.stringify(value)}`,
+  );
+}
+
+async function cmdEnv({ args, env, platform = process.platform }) {
   const record = await requireProfile(args[0], env);
   const prepared = await prepareLaunch(record, env);
   reportPreparation(prepared, record);
   process.stderr.write(`# ${SHELL_WARNING.replaceAll("\n", "\n# ")}\n# Prefer: zclaude profile shell ${record.name}\n`);
-  process.stdout.write(`export CLAUDE_CONFIG_DIR=${JSON.stringify(prepared.configDir)}\n`);
-  process.stdout.write(`export ZCLAUDE_PROFILE=${JSON.stringify(record.name)}\n`);
+  const lines = exportLines(
+    { CLAUDE_CONFIG_DIR: prepared.configDir, ZCLAUDE_PROFILE: record.name },
+    { platform, shell: env.SHELL ?? "" },
+  );
+  for (const line of lines) process.stdout.write(`${line}\n`);
   return EXIT.OK;
 }
 
