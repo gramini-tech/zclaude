@@ -1,6 +1,6 @@
 {
   "name": "zclaude",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Interactive preloader for Claude Code: pick your Anthropic account or your Z.ai GLM Coding Plan per launch, with browser sign-in, Keychain-stored keys and per-project model config",
   "type": "module",
   "bin": {
@@ -11,7 +11,8 @@
     "src",
     "zclaude",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "install.sh"
   ],
   "engines": {
     "node": ">=20.17.0"

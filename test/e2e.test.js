@@ -298,6 +298,21 @@ describe("end to end", () => {
     assert.equal(noKey.code, 4);
   });
 
+  it("self-install runs npm install -g with the GitHub spec when unpublished", async () => {
+    const fakeBin = join(home.dir, "fakenpm");
+    await mkdir(fakeBin, { recursive: true });
+    const npmCapture = join(home.dir, "npm-args.txt");
+    await writeFile(
+      join(fakeBin, "npm"),
+      `#!/bin/sh\nif [ "$1" = "view" ]; then exit 1; fi\nif [ "$1" = "prefix" ]; then echo /fake/prefix; exit 0; fi\necho "$*" >> "${npmCapture}"\nexit 0\n`,
+    );
+    await chmod(join(fakeBin, "npm"), 0o755);
+    const result = await run(["self-install"], { ...env, PATH: `${fakeBin}:${process.env.PATH}` });
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal((await readFile(npmCapture, "utf8")).trim(), "install -g github:vipincr/zclaude");
+    assert.match(result.stderr, /\/fake\/prefix\/bin must be on your PATH/u);
+  });
+
   it("prints help and versions", async () => {
     const help = await run(["--help"], env);
     assert.equal(help.code, 0);

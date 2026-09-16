@@ -3,5 +3,6 @@
 set -euo pipefail
 [ -n "${ZCLAUDE_SKIP_HOOKS:-}" ] && exit 0
 cd "$(git rev-parse --show-toplevel)"
+node scripts/bump-version.js
 npm run --silent lint
 npm run --silent test:coverage >/dev/null

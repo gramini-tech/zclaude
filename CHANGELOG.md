@@ -15,6 +15,8 @@ First release.
   5-hour and weekly windows and when a nearly used-up window resets.
 - A settings.json env block that would override the session is a prompt (quit to edit, or launch
   anyway), never a silent warning; zclaude never writes Claude Code files.
+- `install.sh` for bare machines (downloads Node if needed, installs Claude Code), `self-install`
+  and `self-update` commands, daily update notice, patch version bumped on every commit.
 - Structured per-run log under `~/.zclaude/logs` with level and category filters, `zclaude log`
   to read it back, secrets redacted.
 - Quality gate: strict ESLint, Prettier, knip, TypeScript checkJs, shellcheck, coverage thresholds,

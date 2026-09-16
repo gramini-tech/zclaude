@@ -1,5 +1,6 @@
 // Command-line front end and orchestration.
 
+import { execFile, spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -47,11 +48,19 @@ import { printBanner } from "./ui/banner.js";
 import { debug, error as logError, info, mask, paint, setQuiet, setVerbose, success, warn } from "./ui/log.js";
 import { chooseProfile } from "./ui/menu.js";
 import { chooseSaveLocation, confirmChoice, knownModels, promptApiKey, runModelWizard } from "./ui/wizard.js";
+import {
+  checkForUpdate,
+  compareVersions,
+  detectInstallKind,
+  fetchLatestVersion,
+  GITHUB_SPEC,
+  selfUpdate,
+} from "./update.js";
 import { checkKey, fetchQuota, formatQuota, quotaExhausted } from "./zai.js";
 
 // ------------------------------------------------------------------ parsing
 
-const COMMANDS = new Set(["login", "logout", "status", "models", "log", "help"]);
+const COMMANDS = new Set(["login", "logout", "status", "models", "log", "self-install", "self-update", "help"]);
 const VALUE_FLAGS = Object.freeze({
   "--profile": "profile",
   "--log-level": "logLevel",
@@ -139,6 +148,8 @@ Usage
   zclaude status [--json]                      show credential, config and model state
   zclaude models                               list models available to your Z.ai key
   zclaude log [--json] [--path]                show the latest run log (post-mortem)
+  zclaude self-install                         install zclaude globally with npm (e.g. from npx)
+  zclaude self-update                          update to the newest version the same way it was installed
 
 Options (must come before any claude argument)
   --profile <claude|zai|name>  skip the menu
@@ -564,6 +575,10 @@ async function cmdLaunch({ options, passthrough, env, cwd }) {
   reportWarnings(layered);
   if (interactive && !options.noBanner && !flag(env, "ZCLAUDE_NO_BANNER")) printBanner({ env });
 
+  if (interactive) {
+    const newer = await checkForUpdate({ env });
+    if (newer) info(`zclaude ${newer} is available (you have ${VERSION}). Update with: zclaude self-update`);
+  }
   const profile = await selectProfile({ options, env, layered, interactive });
   const extra = { ...extraEnv(layered), ...profile.env };
   if (!profile.zai) {
@@ -806,6 +821,83 @@ async function cmdStatus(context) {
   return EXIT.OK;
 }
 
+function runNpm(args, env) {
+  const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+  return new Promise((resolve, reject) => {
+    const child = spawn(npm, args, { stdio: "inherit", env, shell: process.platform === "win32" });
+    child.on("error", reject);
+    child.on("exit", (code) => resolve(code ?? 1));
+  });
+}
+
+function npmOutput(args, env) {
+  const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+  return new Promise((resolve) => {
+    execFile(
+      npm,
+      args,
+      { env, timeout: 15_000, windowsHide: true, shell: process.platform === "win32" },
+      (error, stdout) => {
+        resolve(error ? null : String(stdout).trim());
+      },
+    );
+  });
+}
+
+/**
+ * Install zclaude globally with npm, so `npx github:vipincr/zclaude self-install`
+ * leaves a plain `zclaude` command behind. Uses the npm registry when this
+ * package is published there, GitHub otherwise.
+ */
+async function cmdSelfInstall({ env }) {
+  const spec = await npmSpec(env);
+  info(`Installing ${spec} globally with npm`);
+  log.info("cli", "self-install", { spec });
+  let code;
+  try {
+    code = await runNpm(["install", "-g", spec], env);
+  } catch (error) {
+    throw usageError(
+      `Could not run npm (${error.message}).`,
+      "Install Node.js 20.17+ first, or use the curl installer from the README.",
+    );
+  }
+  if (code !== 0) {
+    throw new ZclaudeError(`npm install -g exited with ${code}.`, {
+      exitCode: EXIT.INTERNAL,
+      hint: "If this was a permissions error, point npm at a user prefix: npm config set prefix ~/.npm-global (and add ~/.npm-global/bin to PATH).",
+    });
+  }
+  const prefix = await npmOutput(["prefix", "-g"], env);
+  const binDir = prefix ? join(prefix, process.platform === "win32" ? "" : "bin") : null;
+  success(`Installed. Run \`zclaude\` from any directory${binDir ? ` (${binDir} must be on your PATH)` : ""}.`);
+  return EXIT.OK;
+}
+
+async function npmSpec(env) {
+  const published = await npmOutput(["view", "zclaude", "version"], env);
+  return published && /^\d+\.\d+\.\d+/u.test(published) ? "zclaude@latest" : GITHUB_SPEC;
+}
+
+/** Update in place, using whichever install path put zclaude here. */
+async function cmdSelfUpdate({ env }) {
+  const latest = await fetchLatestVersion();
+  if (!latest) warn("Could not reach GitHub to look up the newest version; trying the update anyway.");
+  else if (compareVersions(latest, VERSION) <= 0) {
+    success(`zclaude ${VERSION} is already the newest version.`);
+    return EXIT.OK;
+  } else info(`Updating zclaude ${VERSION} -> ${latest}`);
+  const kind = detectInstallKind({ env });
+  const code = await selfUpdate({ env, kind, npmSpec: await npmSpec(env) });
+  if (code === null) {
+    info("This is a git checkout: run `git pull && npm install` to update it.");
+    return EXIT.OK;
+  }
+  if (code !== 0) throw new ZclaudeError(`The ${kind} update exited with ${code}.`, { exitCode: EXIT.INTERNAL });
+  success("Updated. Run `zclaude --version` in a new terminal to confirm.");
+  return EXIT.OK;
+}
+
 /** Show the latest run log so a failed run can be examined after the fact. */
 function cmdLog({ options, env }) {
   const [latest] = listLogs(env);
@@ -851,6 +943,8 @@ const COMMAND_HANDLERS = {
   status: cmdStatus,
   models: cmdModels,
   log: cmdLog,
+  "self-install": cmdSelfInstall,
+  "self-update": cmdSelfUpdate,
   launch: cmdLaunch,
 };
 

@@ -21,23 +21,58 @@ own browser sign-in instead of copy-pasting from the console, and lets you choos
 
 ## Install
 
-Node.js 20.17 or newer and Claude Code must be installed.
+Pick one. All three end with a `zclaude` command on your PATH.
+
+**New machine, nothing installed** (macOS or Linux, x64 or arm64; needs only `curl` and `tar`):
 
 ```sh
-npm install -g zclaude            # once published to npm
-npx zclaude                       # or run without installing
-npm install -g github:vipincr/zclaude   # straight from GitHub
+curl -fsSL https://vipincr.github.io/zclaude/install | bash
 ```
 
-From a clone, no npm step beyond dependencies:
+The installer uses the Node.js already on your machine when it is 20.17 or newer. Only when Node is
+missing or older does it download an official build into `~/.zclaude/node` for zclaude alone
+(checksum-verified against nodejs.org); a system Node is never replaced or upgraded. It then puts zclaude in `~/.zclaude/app`, links `~/.local/bin/zclaude`,
+adds `~/.local/bin` to your shell PATH, and runs Anthropic's Claude Code installer if `claude` is
+missing. Re-running it updates zclaude in place; `install.sh --uninstall` removes it and leaves your
+settings, logs and stored key alone. Knobs: `ZCLAUDE_INSTALL_REF` (git ref, default `main`),
+`ZCLAUDE_INSTALL_DIR`, `ZCLAUDE_BIN_DIR`, `ZCLAUDE_NODE_VERSION` (default 22),
+`ZCLAUDE_INSTALL_FORCE_NODE=1` (private Node even if one exists), `ZCLAUDE_INSTALL_NO_CLAUDE=1`,
+`ZCLAUDE_INSTALL_NO_RC=1` (do not touch rc files), `ZCLAUDE_INSTALL_SOURCE` (a local checkout or
+`.tgz` for offline installs).
+
+**Node.js already installed:**
+
+```sh
+npx github:vipincr/zclaude                 # run it once, nothing kept
+npx github:vipincr/zclaude self-install    # install globally through npm, then just type zclaude
+npm install -g github:vipincr/zclaude      # the same, directly
+npm install -g zclaude                     # once published to the npm registry
+```
+
+**From a clone:**
 
 ```sh
 git clone https://github.com/vipincr/zclaude.git && cd zclaude && npm install
 ln -s "$PWD/zclaude" ~/.local/bin/zclaude
 ```
 
-The `zclaude` bash runner finds a suitable Node (PATH, nvm, volta, fnm, Homebrew) and executes
-`bin/zclaude.js`.
+The `zclaude` bash runner finds a suitable Node (PATH, `~/.zclaude/node`, nvm, volta, fnm, Homebrew) and
+executes `bin/zclaude.js`.
+
+### Updating
+
+The version number goes up with every commit, so every push is a new version. Once a day an interactive
+launch checks GitHub (2.5 s timeout, `ZCLAUDE_NO_UPDATE_CHECK=1` disables it) and prints a one-line
+notice when a newer version exists. To update:
+
+```sh
+zclaude self-update                        # re-runs whichever install path put zclaude here
+npx github:vipincr/zclaude self-update     # the same, without a global install
+```
+
+`self-update` re-runs the curl installer for installer-based setups, `npm install -g` for npm-based ones,
+and tells you to `git pull` in a checkout. `npx github:vipincr/zclaude` on its own always resolves the
+current `main`.
 
 ## Use
 
@@ -122,6 +157,7 @@ Categories are `cli`, `config`, `profile`, `auth`, `callback`, `provision`, `sto
 | `ZCLAUDE_LOG_DIR`                                 | directory for run logs (default `~/.zclaude/logs`)                    |
 | `ZCLAUDE_LOG_KEEP`                                | how many run logs to keep (default 30)                                |
 | `ZCLAUDE_ALLOW_SETTINGS_OVERRIDE=1`               | launch even when settings.json's env block overrides this session     |
+| `ZCLAUDE_NO_UPDATE_CHECK=1`                       | skip the daily check for a newer version                              |
 | `--quiet`                                         | terminal shows only warnings and errors (the file is unaffected)      |
 
 When a run fails, the error line on the terminal is followed by the path of that run's log.

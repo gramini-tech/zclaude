@@ -57,6 +57,7 @@ find_node() {
     echo "$candidate"; return 0
   fi
   local dirs=()
+  dirs+=("${ZCLAUDE_HOME:-$HOME/.zclaude}/node/bin")
   [ -n "${NVM_DIR:-}" ] && dirs+=("$NVM_DIR/versions/node")
   dirs+=("$HOME/.nvm/versions/node" "$HOME/.volta/bin" "$HOME/.local/share/fnm/node-versions" "$HOME/.fnm/node-versions" "/opt/homebrew/bin" "/usr/local/bin" "/usr/bin")
   local dir bin

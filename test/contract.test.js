@@ -77,6 +77,16 @@ describe("protocol contract", () => {
   });
 });
 
+describe("installer contract", () => {
+  it("the short-URL copy (install) matches install.sh byte for byte", async () => {
+    const [long, short] = await Promise.all([
+      readFile(join(root, "install.sh"), "utf8"),
+      readFile(join(root, "install"), "utf8"),
+    ]);
+    assert.equal(short, long, "run: cp install.sh install");
+  });
+});
+
 describe("claude config boundary", () => {
   it("source never writes to Claude Code's own files; the only .claude references are reads", async () => {
     const dir = join(root, "src");
