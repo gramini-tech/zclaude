@@ -23,7 +23,7 @@
 #   ZCLAUDE_INSTALL_FORCE_NODE set to 1 to download a private Node even if one is installed
 #   ZCLAUDE_INSTALL_NO_CLAUDE  set to 1 to skip installing Claude Code
 #   ZCLAUDE_INSTALL_NO_RC      set to 1 to leave shell rc files alone
-#   ZCLAUDE_NO_KEYCHAIN        set to 1 to leave the macOS Keychain item alone
+#   ZCLAUDE_NO_KEYCHAIN        set to 1 to leave the macOS Keychain items alone
 #
 #   install.sh --uninstall     removes everything: the app, the private Node, the
 #                              command, ~/.zclaude (settings, logs and profiles),

@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 
 import { buildPlainEnv, buildProfileEnv, buildZaiEnv } from "../src/claude.js";
-import { HELP } from "../src/cli.js";
+import { COMMAND_NAMES, HELP } from "../src/cli.js";
 import { PROFILE_SUBCOMMANDS } from "../src/profile-commands.js";
 import { CALLBACK_SCHEME, CONSOLE_KEYS_URL, DEFAULT_MODELS, MODEL_CONTEXT_WINDOWS, zaiConfig } from "../src/config.js";
 import { EXIT } from "../src/errors.js";
@@ -156,6 +156,36 @@ describe("documentation contract", () => {
       assert.ok(HELP.includes(`profile ${sub}`), `profile ${sub} missing from --help`);
       assert.ok(readme.includes(`profile ${sub}`), `profile ${sub} missing from README`);
     }
+  });
+
+  // The other direction: the docs must not invent a command. Only text the
+  // reader would copy is checked, with trailing comments cut off and the
+  // aligned description columns of the command reference (two spaces or more)
+  // left alone, so prose like "zclaude never edits" is not read as a command.
+  it("every command the README and the website show is one the CLI accepts", async () => {
+    const [readme, html] = await Promise.all([
+      readFile(join(root, "README.md"), "utf8"),
+      readFile(join(root, "index.html"), "utf8"),
+    ]);
+    const spans = [
+      ...Array.from(readme.matchAll(/```[a-z]*\n([\s\S]*?)```/gu), (match) => match[1]),
+      ...Array.from(readme.matchAll(/`([^`\n]+)`/gu), (match) => match[1]),
+      ...Array.from(html.matchAll(/<(?:code|pre)[^>]*>([\s\S]*?)<\/(?:code|pre)>/gu), (match) => match[1]),
+    ];
+    const lines = spans.flatMap((span) => span.split("\n")).map((line) => line.split("#", 1)[0]);
+    const known = new Set([...COMMAND_NAMES, ...PROFILE_SUBCOMMANDS]);
+    let checked = 0;
+    for (const line of lines) {
+      for (const [, sub] of line.matchAll(/\bzclaude profile (?! )([a-z][a-z-]+)/gu)) {
+        checked += 1;
+        assert.ok(PROFILE_SUBCOMMANDS.includes(sub), `\`zclaude profile ${sub}\` is documented but not implemented`);
+      }
+      for (const [, word] of line.matchAll(/\bzclaude (?! )(?!profile\b)([a-z][a-z-]+)/gu)) {
+        checked += 1;
+        assert.ok(known.has(word), `\`zclaude ${word}\` is documented but not implemented`);
+      }
+    }
+    assert.ok(checked >= 30, `expected the docs to show commands, found ${checked}`);
   });
 
   it("every ZCLAUDE_* and ZAI_* variable read anywhere in src is documented in the README", async () => {

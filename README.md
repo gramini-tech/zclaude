@@ -42,8 +42,8 @@ missing or older does it download an official build into `~/.zclaude/node` for z
 zclaude in `~/.zclaude/app`, links `~/.local/bin/zclaude`, adds `~/.local/bin` to your shell PATH,
 and runs Anthropic's Claude Code installer if `claude` is missing. Re-running it updates zclaude in
 place; `curl -fsSL https://vipincr.github.io/zclaude/install | bash -s -- --uninstall` removes
-everything: the app, the private Node, the command, the PATH line it added, `~/.zclaude` and the
-Keychain item. Add `--keep-config` to keep `~/.zclaude`. Knobs: `ZCLAUDE_INSTALL_REF` (git ref,
+everything: the app, the private Node, the command, the PATH line it added, `~/.zclaude`, the
+stored Z.ai keys and the Claude Code login of each profile. Add `--keep-config` to keep `~/.zclaude`. Knobs: `ZCLAUDE_INSTALL_REF` (git ref,
 default `main`), `ZCLAUDE_INSTALL_DIR`, `ZCLAUDE_BIN_DIR`, `ZCLAUDE_NODE_VERSION` (default 22),
 `ZCLAUDE_INSTALL_FORCE_NODE=1` (private Node even if one exists), `ZCLAUDE_INSTALL_NO_CLAUDE=1`,
 `ZCLAUDE_INSTALL_NO_RC=1` (do not touch rc files), `ZCLAUDE_INSTALL_SOURCE` (a local checkout or
@@ -77,7 +77,7 @@ a one-line notice when a newer version exists.
 ```sh
 zclaude self-update                        # re-runs whichever install path put zclaude here
 npx github:vipincr/zclaude self-update     # the same, without a global install
-zclaude self-uninstall                     # remove zclaude, its profiles, settings, logs and keys
+zclaude self-uninstall                     # remove zclaude, its profiles, their logins, settings and logs
 zclaude self-uninstall --keep-config       # keep ~/.zclaude
 ```
 
@@ -483,6 +483,9 @@ stored by an earlier interactive `zclaude login`, and models come from config or
   reads them. `profile list` only asks whether an item exists.
 - The `zclaude` key on your Z.ai account is durable. `zclaude logout` and `zclaude profile logout`
   remove the local copy; revoke the key itself at https://z.ai/manage-apikey/apikey-list.
+- Uninstalling signs every profile out: each profile's Claude Code credential item sits outside
+  `~/.zclaude`, so it is removed by name. `--keep-config` keeps the profiles, and therefore their
+  logins.
 - The key travels only to `api.z.ai`, `zcode.z.ai` and `chat.z.ai`. No telemetry.
 - Secrets are masked in every log line and error message.
 

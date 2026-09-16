@@ -73,7 +73,7 @@ import { checkKey, fetchQuota, formatQuota, quotaExhausted } from "./zai.js";
 
 // ------------------------------------------------------------------ parsing
 
-const COMMANDS = new Set([
+export const COMMAND_NAMES = Object.freeze([
   "profile",
   "login",
   "logout",
@@ -85,6 +85,7 @@ const COMMANDS = new Set([
   "self-uninstall",
   "help",
 ]);
+const COMMANDS = new Set(COMMAND_NAMES);
 // Commands that take their own subcommand and names, collected into options.args.
 const COMMAND_GROUPS = new Set(["profile"]);
 const VALUE_FLAGS = Object.freeze({
