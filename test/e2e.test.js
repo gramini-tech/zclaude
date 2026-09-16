@@ -38,6 +38,15 @@ function startFakeZai() {
   });
 }
 
+/**
+ * The contents of ~/.claude that zclaude is responsible for. Claude Code
+ * writes .device-keys.json in the home directory whatever CLAUDE_CONFIG_DIR
+ * says, so it is excluded by name rather than by weakening the comparison.
+ */
+function listing(entries) {
+  return entries.filter((name) => name !== ".device-keys.json").toSorted((x, y) => x.localeCompare(y));
+}
+
 function run(args, env, { cwd } = {}) {
   return new Promise((resolve) => {
     execFile(process.execPath, [BIN, ...args], { env, cwd, encoding: "utf8" }, (error, stdout, stderr) => {
@@ -65,6 +74,10 @@ describe("end to end", () => {
       [
         "#!/bin/sh",
         'if [ "$1" = "--version" ]; then echo "fake-claude 9.9.9"; exit 0; fi',
+        // The real claude writes this file in the home directory whatever
+        // CLAUDE_CONFIG_DIR says, so the fake one does too: the boundary
+        // assertions have to hold against what actually happens.
+        'mkdir -p "$HOME/.claude" && printf "{}" > "$HOME/.claude/.device-keys.json"',
         `node -e 'require("fs").writeFileSync(process.env.ZC_CAPTURE, JSON.stringify({ argv: process.argv.slice(1), env: process.env }))' -- "$@"`,
         'exit "${ZC_EXIT:-0}"',
       ].join("\n"),
@@ -159,7 +172,7 @@ describe("end to end", () => {
     const legacyText = JSON.stringify({ hasCompletedOnboarding: true, mcpServers: {} });
     await writeFile(settings, settingsText);
     await writeFile(legacy, legacyText);
-    const before = (await readdir(claudeDir)).toSorted((x, y) => x.localeCompare(y));
+    const before = listing(await readdir(claudeDir));
     const refused = await run(["--profile", "zai", "-p", "untouched"], { ...env, ZAI_API_KEY: GOOD_KEY });
     assert.equal(refused.code, 2, "a conflicting env block stops a non-interactive launch");
     assert.match(refused.stderr, /ANTHROPIC_BASE_URL: settings\.json has https:\/\/elsewhere\.example/u);
@@ -174,10 +187,7 @@ describe("end to end", () => {
     assert.match(result.stderr, /Continuing because ZCLAUDE_ALLOW_SETTINGS_OVERRIDE/u);
     assert.equal(await readFile(settings, "utf8"), settingsText);
     assert.equal(await readFile(legacy, "utf8"), legacyText);
-    assert.deepEqual(
-      (await readdir(claudeDir)).toSorted((x, y) => x.localeCompare(y)),
-      before,
-    );
+    assert.deepEqual(listing(await readdir(claudeDir)), before);
     const got = await capture();
     assert.equal(got.env.ANTHROPIC_BASE_URL, `${zai.base}/api/anthropic`, "override travels in the environment");
     await writeFile(
@@ -295,7 +305,7 @@ describe("end to end", () => {
       join(claudeDir, ".claude.json"),
       JSON.stringify({ theme: "dark", oauthAccount: { emailAddress: "me@x.y" } }),
     );
-    const before = (await readdir(claudeDir)).toSorted((x, y) => x.localeCompare(y));
+    const before = listing(await readdir(claudeDir));
 
     const added = await run(["profile", "add", "work", "--provider", "anthropic", "--yes"], env);
     assert.equal(added.code, 0, added.stderr);
@@ -347,9 +357,13 @@ describe("end to end", () => {
     assert.equal(removed.code, 0, removed.stderr);
     assert.equal(JSON.parse((await run(["profile", "list", "--json"], env)).stdout).length, 0);
     assert.deepEqual(
-      (await readdir(claudeDir)).toSorted((x, y) => x.localeCompare(y)),
+      listing(await readdir(claudeDir)),
       before,
       "removing a profile leaves the default installation untouched",
+    );
+    assert.ok(
+      (await readdir(claudeDir)).includes(".device-keys.json"),
+      "claude writes its device key in the home directory whatever config directory it is given, which is why the assertions above exclude it and the README says so",
     );
     assert.equal(await readFile(join(claudeDir, "agents", "reviewer.md"), "utf8"), "shared agent\n");
     await rm(claudeDir, { recursive: true, force: true });
@@ -365,6 +379,39 @@ describe("end to end", () => {
     const doctor = await run(["profile", "doctor"], env);
     assert.equal(doctor.code, 0, doctor.stderr);
     assert.match(doctor.stderr, /glm: no Z\.ai key stored/u);
+    assert.equal((await run(["profile", "remove", "glm", "--yes"], env)).code, 0);
+  });
+
+  it("a Z.ai profile launches on its own key, its own directory and the shared settings", async () => {
+    await run(["profile", "add", "glm", "--provider", "zai", "--share", "none", "--yes"], env);
+    const root = join(env.ZCLAUDE_HOME, "profiles", "glm");
+    // What an interactive `zclaude profile login glm` would leave behind on a
+    // machine without a Keychain.
+    await writeFile(
+      join(root, "zai-credentials.json"),
+      JSON.stringify({ version: 1, apiKey: GOOD_KEY, email: "glm@x.y", keyName: "zclaude" }),
+      { mode: 0o600 },
+    );
+    await writeFile(join(root, "zai-profile.json"), JSON.stringify({ version: 1, email: "glm@x.y" }), { mode: 0o600 });
+
+    const result = await run(["--profile", "glm", "-p", "hi"], { ...env, ZAI_API_KEY: "" });
+    assert.equal(result.code, 0, result.stderr);
+    const got = await capture();
+    assert.equal(got.env.ANTHROPIC_AUTH_TOKEN, GOOD_KEY, "the profile's own key, not the shell's");
+    assert.equal(got.env.ANTHROPIC_BASE_URL, `${zai.base}/api/anthropic`);
+    assert.equal(got.env.CLAUDE_CONFIG_DIR, join(root, "home"));
+    assert.equal(got.env.ANTHROPIC_MODEL, "glm-5.3[1m]");
+    assert.deepEqual(got.argv, ["-p", "hi"], "sharing nothing means no --settings");
+    assert.match(result.stderr, /Launching claude on glm-5\.3/u);
+
+    const shown = JSON.parse((await run(["profile", "show", "glm", "--json"], env)).stdout);
+    assert.equal(shown.zaiKey.source, "file");
+    assert.equal(shown.zaiKey.email, "glm@x.y");
+    assert.doesNotMatch(JSON.stringify(shown), new RegExp(GOOD_KEY, "u"), "the key is masked everywhere");
+
+    const loggedOut = await run(["profile", "logout", "glm"], env);
+    assert.match(loggedOut.stderr, /Removed the Z\.ai key for "glm"/u);
+    assert.equal((await run(["--profile", "glm"], env)).code, 4, "no key, no launch");
     assert.equal((await run(["profile", "remove", "glm", "--yes"], env)).code, 0);
   });
 
