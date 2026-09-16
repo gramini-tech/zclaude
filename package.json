@@ -17,8 +17,8 @@
     "node": ">=20.17.0"
   },
   "scripts": {
-    "test": "node --test test/",
-    "test:coverage": "node --test --experimental-test-coverage --test-coverage-lines=80 --test-coverage-branches=75 --test-coverage-functions=75 --test-coverage-include='src/**' --test-coverage-include='bin/**' --test-coverage-exclude='src/ui/menu.js' --test-coverage-exclude='src/ui/wizard.js' --test-coverage-exclude='src/callback/paste.js' test/",
+    "test": "node --test",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-lines=80 --test-coverage-branches=75 --test-coverage-functions=75 --test-coverage-include='src/**' --test-coverage-include='bin/**' --test-coverage-exclude='src/ui/menu.js' --test-coverage-exclude='src/ui/wizard.js' --test-coverage-exclude='src/callback/paste.js'",
     "lint": "npm run -s lint:js && npm run -s lint:format && npm run -s lint:dead && npm run -s typecheck && npm run -s lint:sh",
     "lint:js": "eslint .",
     "lint:format": "prettier --check .",

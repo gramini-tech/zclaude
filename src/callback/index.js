@@ -28,8 +28,9 @@ async function setupNative({ wanted, pasteAvailable, createNative, env, platform
 function timeoutRacer(timeoutMs) {
   let timer;
   const promise = new Promise((_resolve, reject) => {
+    // Deliberately ref'd: with no receiver holding the loop open (native poll
+    // finished, no TTY) an unref'd timer would let the process exit silently.
     timer = setTimeout(() => reject(new CallbackTimeout(timeoutMs)), timeoutMs);
-    timer.unref?.();
   });
   return { promise, cancel: () => clearTimeout(timer) };
 }
