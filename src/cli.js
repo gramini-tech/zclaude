@@ -193,20 +193,87 @@ function httpDetail(check) {
   return `HTTP ${check.httpStatus}${check.detail ? `: ${check.detail}` : ""}`;
 }
 
-async function claudeSettingsConflicts(env = process.env) {
+/** Read-only: the env block of Claude Code's settings.json, or {} when absent. */
+async function claudeSettingsEnv(env = process.env) {
   const configured = typeof env.CLAUDE_CONFIG_DIR === "string" ? env.CLAUDE_CONFIG_DIR.trim() : "";
   const dir = configured || join(env.HOME || homedir(), ".claude");
   const path = join(dir, "settings.json");
   try {
     const settings = JSON.parse(await readFile(path, "utf8"));
     const block = settings?.env && typeof settings.env === "object" ? settings.env : {};
-    const found = ["ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"].filter((key) =>
-      Object.hasOwn(block, key),
-    );
-    return found.length > 0 ? { path, keys: found } : null;
+    return { path, block };
   } catch {
-    return null;
+    return { path, block: {} };
   }
+}
+
+const ALIAS_MODELS = new Set(["opus", "sonnet", "haiku"]);
+const SESSION_KEYS = [
+  "ANTHROPIC_BASE_URL",
+  "ANTHROPIC_AUTH_TOKEN",
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_MODEL",
+  "ANTHROPIC_DEFAULT_OPUS_MODEL",
+  "ANTHROPIC_DEFAULT_SONNET_MODEL",
+  "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+  "CLAUDE_CODE_SUBAGENT_MODEL",
+];
+
+/**
+ * Claude Code applies the settings.json env block over the process
+ * environment (measured with claude 2.1.273), so a value there that differs
+ * from what this session sets would silently win. Model aliases (opus, sonnet,
+ * haiku) are not conflicts: they resolve through the ANTHROPIC_DEFAULT_* values
+ * zclaude sets.
+ */
+async function claudeSettingsConflicts(env, childEnv) {
+  const { path, block } = await claudeSettingsEnv(env);
+  const conflicts = [];
+  for (const key of SESSION_KEYS) {
+    if (!Object.hasOwn(block, key)) continue;
+    const theirs = String(block[key]);
+    if (key === "ANTHROPIC_API_KEY") {
+      conflicts.push({ key, theirs: mask(theirs), ours: "(unset)" });
+      continue;
+    }
+    const aliasOk = key === "CLAUDE_CODE_SUBAGENT_MODEL" && ALIAS_MODELS.has(theirs.toLowerCase());
+    if (aliasOk || !Object.hasOwn(childEnv, key) || theirs === childEnv[key]) continue;
+    const secret = key === "ANTHROPIC_AUTH_TOKEN";
+    conflicts.push({ key, theirs: secret ? mask(theirs) : theirs, ours: secret ? mask(childEnv[key]) : childEnv[key] });
+  }
+  return conflicts.length > 0 ? { path, conflicts } : null;
+}
+
+/** Ask what to do about a settings.json env block that would override this session. */
+async function resolveSettingsConflict({ env, childEnv, interactive }) {
+  const found = await claudeSettingsConflicts(env, childEnv);
+  if (!found) return;
+  log.warn("config", "settings.json env block overrides the session", found);
+  const lines = found.conflicts.map((c) => `  ${c.key}: settings.json has ${c.theirs}, this session wants ${c.ours}`);
+  const explanation = `${found.path} has an env block that Claude Code applies over the environment zclaude sets:\n${lines.join("\n")}`;
+  if (flag(env, "ZCLAUDE_ALLOW_SETTINGS_OVERRIDE")) {
+    warn(`${explanation}\nContinuing because ZCLAUDE_ALLOW_SETTINGS_OVERRIDE is set.`);
+    return;
+  }
+  if (!interactive) {
+    throw usageError(
+      `${explanation}\nThe session would not run the way zclaude configured it.`,
+      "Edit that env block, or set ZCLAUDE_ALLOW_SETTINGS_OVERRIDE=1 to launch anyway. zclaude never edits Claude Code's files.",
+    );
+  }
+  process.stderr.write(`${explanation}\n`);
+  const choice = await confirmChoice(
+    "Claude Code will apply those settings.json values. What do you want to do?",
+    [
+      { name: "Quit so I can edit settings.json", value: "quit" },
+      { name: "Launch anyway with the settings.json values in effect", value: "continue" },
+    ],
+    "quit",
+  );
+  log.info("config", "settings conflict decision", { choice });
+  if (choice !== "quit") return;
+  info(`Remove or adjust ${found.conflicts.map((c) => c.key).join(", ")} in ${found.path}, then run zclaude again.`);
+  throw new InterruptedError("Stopped to let you edit settings.json.");
 }
 
 function flagModels(options) {
@@ -505,12 +572,6 @@ async function cmdLaunch({ options, passthrough, env, cwd }) {
   }
 
   const config = zaiConfig(env);
-  const conflict = await claudeSettingsConflicts(env);
-  if (conflict)
-    warn(
-      `${conflict.path} sets ${conflict.keys.join(", ")} in its env block; Claude Code may apply those over this session. Remove them to use zclaude reliably.`,
-    );
-
   const credential = await resolveCredential({ options, env, config, interactive });
   return launchZai({ bin, options, passthrough, env, cwd, layered, interactive, config, credential, extra });
 }
@@ -539,8 +600,9 @@ async function launchZai({ bin, options, passthrough, env, cwd, layered, interac
     const line = formatQuota(quota);
     if (line) (quotaExhausted(quota) ? warn : info)(line);
   }
-  info(`Launching claude on ${models.primary} (subagents: ${models.subagent}, fast: ${models.fast})`);
   const childEnv = buildZaiEnv({ baseEnv: env, apiKey: credential.apiKey, config, models, extra });
+  await resolveSettingsConflict({ env, childEnv, interactive });
+  info(`Launching claude on ${models.primary} (subagents: ${models.subagent}, fast: ${models.fast})`);
   return runClaude(bin, passthrough, childEnv);
 }
 
@@ -648,12 +710,14 @@ async function gatherStatus({ options, env, cwd }) {
   const layered = await loadLayeredConfig({ cwd, env });
   const bin = optionalClaude(env);
   const credential = await storedOrExplicit(env);
-  const [version, inspection, profiles, conflict] = await Promise.all([
+  const [version, inspection, profiles, settingsEnv] = await Promise.all([
     bin ? claudeVersion(bin) : null,
     inspectCredential(credential, config),
     listProfiles(env),
-    claudeSettingsConflicts(env),
+    claudeSettingsEnv(env),
   ]);
+  const overriding = SESSION_KEYS.filter((key) => Object.hasOwn(settingsEnv.block, key));
+  const conflict = overriding.length > 0 ? { path: settingsEnv.path, keys: overriding } : null;
   return {
     zclaude: VERSION,
     claude: { path: bin, version },
@@ -729,7 +793,9 @@ function statusText(status) {
     `${label("wizard")}${status.wizardNeeded ? "will run on the next Z.ai launch (no saved config)" : "not needed (use --reconfigure to change models)"}`,
     `${label("profiles")}${status.profiles.join(", ")}`,
     `${label("log")}${logFilePath() ?? "disabled"}`,
-    status.conflict ? `${label("warning")}${status.conflict.path} sets ${status.conflict.keys.join(", ")}` : null,
+    status.conflict
+      ? `${label("settings")}${status.conflict.path} env block sets ${status.conflict.keys.join(", ")} (applied over this session's environment)`
+      : null,
   ];
   return `${lines.filter(Boolean).join("\n")}\n`;
 }

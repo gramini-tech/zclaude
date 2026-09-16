@@ -121,6 +121,7 @@ Categories are `cli`, `config`, `profile`, `auth`, `callback`, `provision`, `sto
 | `--no-log`, `ZCLAUDE_NO_LOG=1`, `ZCLAUDE_LOG=off` | no run log at all                                                     |
 | `ZCLAUDE_LOG_DIR`                                 | directory for run logs (default `~/.zclaude/logs`)                    |
 | `ZCLAUDE_LOG_KEEP`                                | how many run logs to keep (default 30)                                |
+| `ZCLAUDE_ALLOW_SETTINGS_OVERRIDE=1`               | launch even when settings.json's env block overrides this session     |
 | `--quiet`                                         | terminal shows only warnings and errors (the file is unaffected)      |
 
 When a run fails, the error line on the terminal is followed by the path of that run's log.
@@ -142,6 +143,13 @@ When a run fails, the error line on the terminal is followed by the path of that
 Models with a 1M context (`glm-5.3`, `glm-5.3-flash`, `glm-5.2`) get the `[1m]` suffix Claude Code
 expects. Both the alias variables and the direct ones are set so a `CLAUDE_CODE_SUBAGENT_MODEL=sonnet`
 in your own `settings.json` still resolves to the chosen GLM model.
+
+Claude Code applies the `env` block of its own `settings.json` **over** the process environment (measured
+with claude 2.1.273). If that block sets one of the variables above to a different value, the session would
+silently run with the file's value, so zclaude stops and asks whether to quit and edit the file yourself or
+launch anyway. It never edits the file. Non-interactive runs exit with code 2 in that case;
+`ZCLAUDE_ALLOW_SETTINGS_OVERRIDE=1` launches anyway. Identical values and the `opus`, `sonnet` and `haiku`
+aliases are not conflicts.
 
 ## Configuration
 
@@ -226,6 +234,15 @@ CLIProxyAPI. zclaude does the same:
    find-or-create a key named `zclaude`, copy its secret.
 5. The key is checked against `GET https://api.z.ai/api/coding/paas/v4/models`, which also yields the
    model list for the wizard.
+
+## What zclaude never touches
+
+Everything zclaude tells Claude Code travels in the environment of the one `claude` process it spawns.
+It never edits `~/.claude/settings.json`, `~/.claude.json`, project `.claude/` settings or any other
+Claude Code file. The only interaction with those files is a read of `settings.json` to detect an `env`
+block that would override the session (see above). Quit `claude` and your Claude Code setup is exactly as before.
+A contract test scans the source for writes near Claude paths, and an end-to-end test hashes fake
+config files before and after a run.
 
 ## Security notes
 

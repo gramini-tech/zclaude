@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -144,6 +144,52 @@ describe("end to end", () => {
     });
     assert.equal(none.code, 0);
     assert.equal((await run(["log"], { ...env, ZCLAUDE_LOG_DIR: join(home.dir, "nologs") })).code, 2);
+  });
+
+  it("never modifies Claude Code's own config files; everything reaches claude through the environment", async () => {
+    const claudeDir = join(home.dir, ".claude");
+    await mkdir(claudeDir, { recursive: true });
+    const settings = join(claudeDir, "settings.json");
+    const legacy = join(home.dir, ".claude.json");
+    const settingsText = JSON.stringify(
+      { model: "opus", env: { CLAUDE_CODE_SUBAGENT_MODEL: "sonnet", ANTHROPIC_BASE_URL: "https://elsewhere.example" } },
+      null,
+      2,
+    );
+    const legacyText = JSON.stringify({ hasCompletedOnboarding: true, mcpServers: {} });
+    await writeFile(settings, settingsText);
+    await writeFile(legacy, legacyText);
+    const before = (await readdir(claudeDir)).toSorted((x, y) => x.localeCompare(y));
+    const refused = await run(["--profile", "zai", "-p", "untouched"], { ...env, ZAI_API_KEY: GOOD_KEY });
+    assert.equal(refused.code, 2, "a conflicting env block stops a non-interactive launch");
+    assert.match(refused.stderr, /ANTHROPIC_BASE_URL: settings\.json has https:\/\/elsewhere\.example/u);
+    assert.match(refused.stderr, /never edits Claude Code's files/u);
+    assert.doesNotMatch(refused.stderr, /CLAUDE_CODE_SUBAGENT_MODEL/u, "the sonnet alias is not a conflict");
+    const result = await run(["--profile", "zai", "-p", "untouched"], {
+      ...env,
+      ZAI_API_KEY: GOOD_KEY,
+      ZCLAUDE_ALLOW_SETTINGS_OVERRIDE: "1",
+    });
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(result.stderr, /Continuing because ZCLAUDE_ALLOW_SETTINGS_OVERRIDE/u);
+    assert.equal(await readFile(settings, "utf8"), settingsText);
+    assert.equal(await readFile(legacy, "utf8"), legacyText);
+    assert.deepEqual(
+      (await readdir(claudeDir)).toSorted((x, y) => x.localeCompare(y)),
+      before,
+    );
+    const got = await capture();
+    assert.equal(got.env.ANTHROPIC_BASE_URL, `${zai.base}/api/anthropic`, "override travels in the environment");
+    await writeFile(
+      settings,
+      JSON.stringify({
+        env: { ANTHROPIC_BASE_URL: `${zai.base}/api/anthropic`, CLAUDE_CODE_SUBAGENT_MODEL: "sonnet" },
+      }),
+    );
+    const matching = await run(["--profile", "zai", "-p", "same"], { ...env, ZAI_API_KEY: GOOD_KEY });
+    assert.equal(matching.code, 0, "identical values and aliases are not conflicts");
+    await rm(claudeDir, { recursive: true, force: true });
+    await rm(legacy, { force: true });
   });
 
   it("propagates claude's exit code", async () => {

@@ -3,7 +3,7 @@
 // documentation of every flag and variable.
 
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
@@ -74,6 +74,35 @@ describe("protocol contract", () => {
         "CLAUDE_CODE_SUBAGENT_MODEL",
       ],
     );
+  });
+});
+
+describe("claude config boundary", () => {
+  it("source never writes to Claude Code's own files; the only .claude references are reads", async () => {
+    const dir = join(root, "src");
+    const files = (await readdir(dir, { recursive: true })).filter((name) => name.endsWith(".js"));
+    const writers =
+      /\b(writeFile|writeFileSync|appendFile|appendFileSync|rename|renameSync|rm|rmSync|unlink|unlinkSync|truncate|copyFile|mkdir|mkdirSync)\s*\(/u;
+    const allowedMentions = new Map([
+      ["claude.js", /join\(home, "\.claude", "local"/u],
+      ["cli.js", /join\(env\.HOME \|\| homedir\(\), "\.claude"\)/u],
+    ]);
+    const checkLine = (file, index, line) => {
+      const where = `${file}:${index + 1}`;
+      if (writers.test(line))
+        assert.doesNotMatch(line, /\.claude(?!\/env)\b|claude\.json/u, `${where} writes near a Claude path`);
+      const mentionsClaudePath = /"\.claude"|\.claude\.json|\.claude\//u.test(line) && !line.includes(".zclaude");
+      if (!mentionsClaudePath) return;
+      const allowed = allowedMentions.get(file);
+      assert.ok(
+        allowed && allowed.test(line),
+        `${where} mentions a Claude config path outside the read-only allowlist`,
+      );
+    };
+    for (const file of files) {
+      const lines = (await readFile(join(dir, file), "utf8")).split("\n");
+      for (const [index, line] of lines.entries()) checkLine(file, index, line);
+    }
   });
 });
 
