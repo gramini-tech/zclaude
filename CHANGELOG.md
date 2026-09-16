@@ -26,6 +26,16 @@ Profiles: several Claude Code accounts on one machine, each scoped to the termin
 - `self-uninstall` signs every profile out and names the Keychain items it removes.
 - README and website rewritten around profiles, including what profiles do not isolate: managed
   policy, `~/.claude/.device-keys.json`, and anything you chose to share.
+- Uninstalling signs every profile out of Claude Code. Each profile's credential item lives outside
+  `~/.zclaude`, so both `zclaude self-uninstall` and `install.sh --uninstall` remove it by name;
+  `--keep-config` keeps the profiles and their logins.
+- A profile named by a committed `.zclaude/env` that does not exist on this machine falls back to the
+  menu with a warning. A wrong `--profile` is still an error. A launch that has to recreate a missing
+  profile directory says so, because the credential item is keyed by that path.
+- Guardrails: the profile command group is covered in process for its error and cancellation paths,
+  the pseudo-terminal suite drives the add wizard, a Ctrl-C part way through it, a cancelled removal
+  and both answers to the settings-conflict prompt, and the documentation contract now fails if the
+  README or the website shows a command that does not exist.
 
 ## 0.1.0
 
