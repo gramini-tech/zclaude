@@ -330,6 +330,19 @@ describe("end to end", () => {
     const detail = JSON.parse(shown.stdout);
     assert.match(detail.credentialService, /^Claude Code-credentials-[\da-f]{8}$/u);
 
+    const status = await run(["status", "--json"], env);
+    const report = JSON.parse(status.stdout);
+    assert.deepEqual(
+      report.namedProfiles.map((profile) => profile.name),
+      ["work"],
+    );
+    assert.equal(report.inheritedConfigDir, null);
+    const statusText = await run(["status"], env);
+    assert.match(statusText.stdout, /profiles\s+claude, zai, work/u);
+    assert.match(statusText.stdout, /work anthropic · signed out · shares config \+ history/u);
+    const pinned = await run(["status"], { ...env, CLAUDE_CONFIG_DIR: "/pinned/elsewhere" });
+    assert.match(pinned.stdout, /config dir\s+\/pinned\/elsewhere .*inherited from this shell/u);
+
     const removed = await run(["profile", "remove", "work", "--yes"], env);
     assert.equal(removed.code, 0, removed.stderr);
     assert.equal(JSON.parse((await run(["profile", "list", "--json"], env)).stdout).length, 0);

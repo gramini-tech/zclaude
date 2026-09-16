@@ -26,8 +26,10 @@
 #   ZCLAUDE_NO_KEYCHAIN        set to 1 to leave the macOS Keychain item alone
 #
 #   install.sh --uninstall     removes everything: the app, the private Node, the
-#                              command, ~/.zclaude (settings and logs), the
-#                              Keychain item and the PATH line this script added.
+#                              command, ~/.zclaude (settings, logs and profiles),
+#                              the Keychain items (the Z.ai keys and each
+#                              profile's Claude Code login) and the PATH line
+#                              this script added.
 #                              Add --keep-config to keep ~/.zclaude.
 set -euo pipefail
 
@@ -134,6 +136,31 @@ remove_keychain() {
   return 0
 }
 
+# Claude Code keeps each profile's login in its own Keychain item, keyed by
+# that profile's config directory. Those items sit outside ~/.zclaude, so they
+# have to be removed by name or they outlive the uninstall. The service names
+# are recorded in the registry when the profile is created.
+remove_profile_credentials() {
+  [ "$PLATFORM" = "darwin" ] || return 0
+  if [ -n "${ZCLAUDE_NO_KEYCHAIN:-}" ]; then return 0; fi
+  command -v security >/dev/null 2>&1 || return 0
+  local registry="$ZCLAUDE_HOME/profiles.json"
+  [ -f "$registry" ] || return 0
+  local services removed=0 service
+  services="$(grep -o '"credentialService": *"[^"]*"' "$registry" | sed 's/.*: *"//; s/"$//' || true)"
+  [ -n "$services" ] || return 0
+  while IFS= read -r service; do
+    [ -n "$service" ] || continue
+    if security delete-generic-password -s "$service" >/dev/null 2>&1; then
+      removed=$((removed + 1))
+    fi
+  done <<<"$services"
+  if [ "$removed" -gt 0 ]; then
+    info "Signed $removed profile(s) out of Claude Code"
+  fi
+  return 0
+}
+
 if [ "${1:-}" = "--uninstall" ]; then
   KEEP_CONFIG=""
   [ "${2:-}" = "--keep-config" ] && KEEP_CONFIG=1
@@ -143,10 +170,11 @@ if [ "${1:-}" = "--uninstall" ]; then
   remove_path_lines
   remove_keychain
   if [ -n "$KEEP_CONFIG" ]; then
-    info "Kept $ZCLAUDE_HOME (settings and logs)."
+    info "Kept $ZCLAUDE_HOME (settings, logs and profiles)."
   else
+    remove_profile_credentials
     rm -rf "$ZCLAUDE_HOME"
-    info "Removed $ZCLAUDE_HOME (settings, logs, any credential file)."
+    info "Removed $ZCLAUDE_HOME (settings, logs, profiles, any credential file)."
   fi
   ok "zclaude is gone from this machine."
   info "The API key still exists on your Z.ai account. Revoke it at https://z.ai/manage-apikey/apikey-list if you no longer need it."

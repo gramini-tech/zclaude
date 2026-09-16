@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { readFile, readlink, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, readlink, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, before, describe, it } from "node:test";
@@ -12,6 +12,8 @@ import { tempHome } from "./helpers.js";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const skip = process.platform === "win32" ? "bash installer is not for Windows" : false;
+// Keychain items only exist on macOS; elsewhere the installer skips that work.
+const macOnly = process.platform === "darwin" ? false : "Keychain cleanup is macOS only";
 
 function sh(args, env) {
   return new Promise((resolve) => {
@@ -92,6 +94,79 @@ describe("install.sh", { skip }, () => {
     await assert.rejects(stat(join(home.dir, ".local", "bin", "zclaude")), /ENOENT/u);
     await assert.rejects(stat(join(home.dir, ".zclaude")), /ENOENT/u, "settings and logs are purged by default");
     assert.match(gone.stderr, /gone from this machine/u);
+  });
+
+  // Each profile's Claude Code login lives in a Keychain item outside
+  // ~/.zclaude, so removing the directory is not enough. `security` is faked
+  // here: the real one would prompt, and there is nothing to delete anyway.
+  it("signs every profile out of Claude Code when it removes the config", { skip: macOnly }, async () => {
+    await sh([join(root, "install.sh")], env);
+    const fakeBin = join(home.dir, "fake-bin");
+    const calls = join(home.dir, "security-calls.txt");
+    await mkdir(fakeBin, { recursive: true });
+    await writeFile(join(fakeBin, "security"), `#!/bin/sh\necho "$*" >> "${calls}"\nexit 0\n`);
+    await chmod(join(fakeBin, "security"), 0o755);
+    await mkdir(join(home.dir, ".zclaude"), { recursive: true });
+    await writeFile(
+      join(home.dir, ".zclaude", "profiles.json"),
+      JSON.stringify(
+        {
+          version: 1,
+          profiles: {
+            work: {
+              name: "work",
+              provider: "anthropic",
+              dir: "/x/work",
+              credentialService: "Claude Code-credentials-aaaaaaaa",
+            },
+            personal: {
+              name: "personal",
+              provider: "anthropic",
+              dir: "/x/p",
+              credentialService: "Claude Code-credentials-bbbbbbbb",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    const keychainEnv = { ...env, PATH: `${fakeBin}:${env.PATH}`, ZCLAUDE_NO_KEYCHAIN: "" };
+    const gone = await sh([join(root, "install.sh"), "--uninstall"], keychainEnv);
+    assert.equal(gone.code, 0, gone.stderr);
+    const recorded = (await readFile(calls, "utf8")).trim().split("\n");
+    assert.ok(
+      recorded.includes("delete-generic-password -s Claude Code-credentials-aaaaaaaa"),
+      `wanted the work item removed, got: ${recorded.join(" | ")}`,
+    );
+    assert.ok(recorded.includes("delete-generic-password -s Claude Code-credentials-bbbbbbbb"));
+    assert.ok(recorded.includes("delete-generic-password -s zclaude"), "the Z.ai keys go too");
+    assert.match(gone.stderr, /Signed 2 profile\(s\) out of Claude Code/u);
+  });
+
+  it("keeps a profile's login when it keeps the config", { skip: macOnly }, async () => {
+    await sh([join(root, "install.sh")], env);
+    const fakeBin = join(home.dir, "fake-bin-keep");
+    const calls = join(home.dir, "security-keep.txt");
+    await mkdir(fakeBin, { recursive: true });
+    await writeFile(join(fakeBin, "security"), `#!/bin/sh\necho "$*" >> "${calls}"\nexit 1\n`);
+    await chmod(join(fakeBin, "security"), 0o755);
+    await writeFile(
+      join(home.dir, ".zclaude", "profiles.json"),
+      JSON.stringify({ version: 1, profiles: { work: { credentialService: "Claude Code-credentials-cccccccc" } } }),
+    );
+    const kept = await sh([join(root, "install.sh"), "--uninstall", "--keep-config"], {
+      ...env,
+      PATH: `${fakeBin}:${env.PATH}`,
+      ZCLAUDE_NO_KEYCHAIN: "",
+    });
+    assert.equal(kept.code, 0, kept.stderr);
+    const recorded = await readFile(calls, "utf8").catch(() => "");
+    assert.doesNotMatch(
+      recorded,
+      /Claude Code-credentials-cccccccc/u,
+      "the profiles are still there, so are their logins",
+    );
   });
 
   it("keeps settings with --keep-config", async () => {

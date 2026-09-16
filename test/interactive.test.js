@@ -175,6 +175,22 @@ describe("interactive (pseudo-terminal)", { skip: !hasScript() && "needs macOS s
     await assert.rejects(readFile(join(env.ZCLAUDE_HOME, "profiles", "abandoned", "home", ".claude.json")));
   });
 
+  it("Ctrl-C at the remove confirmation keeps the profile", async () => {
+    const log = join(home.dir, "profile-remove.log");
+    const code = await runInPty({
+      args: ["profile", "remove", "work"],
+      env,
+      keys: [[1500, String.fromCodePoint(3)]],
+      log,
+    });
+    const out = clean(await readFile(log, "utf8"));
+    assert.equal(code, 130, out.slice(-400));
+    assert.match(out, /Remove profile "work"\?/u);
+    assert.match(out, /left alone/u, "the prompt says what survives; it wraps in a narrow terminal");
+    const registry = JSON.parse(await readFile(join(env.ZCLAUDE_HOME, "profiles.json"), "utf8"));
+    assert.ok(registry.profiles.work, "the profile survives a cancelled removal");
+  });
+
   it("exits 130 on Ctrl-C at the menu", async () => {
     const log = join(home.dir, "ctrlc.log");
     const code = await runInPty({ args: ["--", "--never"], env, keys: [[1500, ""]], log });
