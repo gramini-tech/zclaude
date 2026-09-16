@@ -23,7 +23,9 @@ const ROWS = 7;
 function renderWord(word) {
   const rows = [];
   for (let row = 0; row < ROWS; row += 1) {
-    rows.push([...word].map((letter) => FONT[letter][row].replaceAll("#", PIXEL).replaceAll(".", "  ")).join(GAP));
+    rows.push(
+      [...word].map((letter) => [...FONT[letter][row]].map((cell) => (cell === "#" ? PIXEL : "  ")).join("")).join(GAP),
+    );
   }
   return rows;
 }
@@ -49,7 +51,7 @@ export function renderBanner({ columns = 80, color = true } = {}) {
   }
   const left = renderWord("z");
   const right = renderWord("claude");
-  const lines = left.map((row, index) => `${tint(row, "grey")}${GAP}${tint(right[index], "white")}`.replace(/\s+$/u, ""));
+  const lines = left.map((row, index) => `${tint(row, "grey")}${GAP}${tint(right[index].trimEnd(), "white")}`);
   return `${lines.join("\n")}\n\n${tint(tagline, "grey")}\n\n`;
 }
 

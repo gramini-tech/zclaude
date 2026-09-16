@@ -18,21 +18,30 @@ import { isolatedEnv, tempHome } from "./helpers.js";
 
 describe("parseDotenv", () => {
   it("handles comments, export, quotes and inline comments", () => {
-    const { values, warnings } = parseDotenv([
-      "# comment",
-      "",
-      "export A=1",
-      "B = two words # trailing",
-      'C="quoted # not a comment"',
-      "D='single \"inner\"'",
-      'E="line\\nbreak"',
-      "F=",
-    ].join("\n"));
-    assert.deepEqual(values, { A: "1", B: "two words", C: "quoted # not a comment", D: 'single "inner"', E: "line\nbreak", F: "" });
+    const { values, warnings } = parseDotenv(
+      [
+        "# comment",
+        "",
+        "export A=1",
+        "B = two words # trailing",
+        'C="quoted # not a comment"',
+        "D='single \"inner\"'",
+        'E="line\\nbreak"',
+        "F=",
+      ].join("\n"),
+    );
+    assert.deepEqual(values, {
+      A: "1",
+      B: "two words",
+      C: "quoted # not a comment",
+      D: 'single "inner"',
+      E: "line\nbreak",
+      F: "",
+    });
     assert.deepEqual(warnings, []);
   });
   it("warns on malformed lines without throwing", () => {
-    const { values, warnings } = parseDotenv("GOOD=1\nnot a pair\n1BAD=x\nQ=\"unterminated\n", { file: "f" });
+    const { values, warnings } = parseDotenv('GOOD=1\nnot a pair\n1BAD=x\nQ="unterminated\n', { file: "f" });
     assert.deepEqual(values, { GOOD: "1" });
     assert.equal(warnings.length, 3);
     assert.match(warnings[0], /^f:2: expected KEY=value/u);
@@ -74,25 +83,45 @@ describe("resolveModels", () => {
     assert.equal(result.sources.primary, "default");
   });
   it("fileConfiguresModels needs all three slots", () => {
-    assert.equal(fileConfiguresModels({ values: { ZCLAUDE_MODEL: "a", ZCLAUDE_SUBAGENT_MODEL: "b", ZCLAUDE_FAST_MODEL: "c" } }), true);
+    assert.equal(
+      fileConfiguresModels({ values: { ZCLAUDE_MODEL: "a", ZCLAUDE_SUBAGENT_MODEL: "b", ZCLAUDE_FAST_MODEL: "c" } }),
+      true,
+    );
     assert.equal(fileConfiguresModels({ values: { ZCLAUDE_MODEL: "a" } }), false);
   });
   it("extraEnv passes through unmanaged keys, project over user", () => {
-    assert.deepEqual(extraEnv({
-      user: { values: { FOO: "u", BAR: "u", ZCLAUDE_MODEL: "x" } },
-      project: { values: { FOO: "p", ZCLAUDE_ZAI: "1", ZCLAUDE_PROFILE: "zai" } },
-    }), { FOO: "p", BAR: "u" });
+    assert.deepEqual(
+      extraEnv({
+        user: { values: { FOO: "u", BAR: "u", ZCLAUDE_MODEL: "x" } },
+        project: { values: { FOO: "p", ZCLAUDE_ZAI: "1", ZCLAUDE_PROFILE: "zai" } },
+      }),
+      { FOO: "p", BAR: "u" },
+    );
   });
   it("resolveProfileDefault prefers env, then project, then user", () => {
-    assert.deepEqual(resolveProfileDefault({ env: { ZCLAUDE_PROFILE: "e" }, layered: { project: { values: { ZCLAUDE_PROFILE: "p" } } } }), { value: "e", source: "env" });
-    assert.deepEqual(resolveProfileDefault({ env: {}, layered: { project: { values: {} }, user: { values: { ZCLAUDE_PROFILE: "u" } } } }), { value: "u", source: "user" });
+    assert.deepEqual(
+      resolveProfileDefault({
+        env: { ZCLAUDE_PROFILE: "e" },
+        layered: { project: { values: { ZCLAUDE_PROFILE: "p" } } },
+      }),
+      { value: "e", source: "env" },
+    );
+    assert.deepEqual(
+      resolveProfileDefault({
+        env: {},
+        layered: { project: { values: {} }, user: { values: { ZCLAUDE_PROFILE: "u" } } },
+      }),
+      { value: "u", source: "user" },
+    );
     assert.equal(resolveProfileDefault({ env: {}, layered: { project: { values: {} }, user: { values: {} } } }), null);
   });
 });
 
 describe("files", () => {
   let home;
-  before(async () => { home = await tempHome(); });
+  before(async () => {
+    home = await tempHome();
+  });
   after(() => home.cleanup());
 
   it("writes atomically with the header and reads back layered", async () => {
@@ -114,7 +143,10 @@ describe("files", () => {
     assert.equal(models.sources.fast, "project");
   });
   it("reports a missing file without warnings", async () => {
-    const layered = await loadLayeredConfig({ cwd: join(home.dir, "nowhere"), env: isolatedEnv(join(home.dir, "empty")) });
+    const layered = await loadLayeredConfig({
+      cwd: join(home.dir, "nowhere"),
+      env: isolatedEnv(join(home.dir, "empty")),
+    });
     assert.equal(layered.project.exists, false);
     assert.deepEqual(layered.project.warnings, []);
   });

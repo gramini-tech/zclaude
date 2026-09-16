@@ -30,9 +30,12 @@ export async function checkKey(apiKey, config, { fetchImpl, signal, timeoutMs = 
     fetchImpl,
     signal,
   });
-  const detail = typeof response.json?.error?.message === "string"
-    ? response.json.error.message
-    : typeof response.json?.msg === "string" ? response.json.msg : "";
+  const detail =
+    typeof response.json?.error?.message === "string"
+      ? response.json.error.message
+      : typeof response.json?.msg === "string"
+        ? response.json.msg
+        : "";
   if (response.status === 401 || response.status === 403) {
     return { status: "rejected", httpStatus: response.status, models: [], detail };
   }
@@ -42,7 +45,12 @@ export async function checkKey(apiKey, config, { fetchImpl, signal, timeoutMs = 
   if (response.ok) {
     return { status: "valid", httpStatus: response.status, models: describeModels(modelIds(response.json)), detail };
   }
-  return { status: "inconclusive", httpStatus: response.status, models: [], detail: detail || response.text.slice(0, 200) };
+  return {
+    status: "inconclusive",
+    httpStatus: response.status,
+    models: [],
+    detail: detail || response.text.slice(0, 200),
+  };
 }
 
 /** Best-effort quota lookup. Returns null on any failure. */
@@ -81,7 +89,7 @@ const LIMIT_LABELS = {
 };
 
 function resetHint(value) {
-  if (value === null || value === undefined || value === "") return "";
+  if ([null, undefined, ""].includes(value)) return "";
   const date = typeof value === "number" ? new Date(value < 1e12 ? value * 1000 : value) : new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   return ` (resets ${date.toLocaleString()})`;

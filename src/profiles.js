@@ -41,14 +41,17 @@ export function profilesDir(env = process.env) {
 
 export async function listProfiles(env = process.env) {
   const profiles = [...BUILTIN_PROFILES];
-  let entries = [];
+  let entries;
   try {
     entries = await readdir(profilesDir(env), { withFileTypes: true });
   } catch (error) {
     if (error?.code !== "ENOENT") warn(`Could not read ${profilesDir(env)}: ${error.message}`);
     return profiles;
   }
-  const files = entries.filter((entry) => entry.isFile() && entry.name.endsWith(".env")).map((entry) => entry.name).sort();
+  const files = entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".env"))
+    .map((entry) => entry.name)
+    .toSorted((a, b) => a.localeCompare(b));
   for (const file of files) {
     const id = basename(file, ".env");
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(id)) {

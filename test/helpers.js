@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 export function jsonResponse(body, { status = 200 } = {}) {
-  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  return Response.json(body, { status, headers: { "Content-Type": "application/json" } });
 }
 
 export function envelope(data) {
@@ -23,7 +23,7 @@ export function mockFetch(route) {
     const headers = new Headers(init.headers ?? {});
     calls.push({ url: String(url), method, body, authorization: headers.get("authorization") });
     const result = await route({ url: String(url), method, body, headers });
-    if (result === undefined) throw new Error(`unexpected fetch: ${method} ${url}`);
+    if (result === undefined || result === null) throw new Error(`unexpected fetch: ${method} ${url}`);
     return result;
   };
   impl.calls = calls;

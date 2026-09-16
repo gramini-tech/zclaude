@@ -7,20 +7,35 @@ describe("parseArgs", () => {
   const cases = [
     [[], { command: "launch", options: {}, passthrough: [] }],
     [["--profile", "zai", "-p", "hi"], { command: "launch", options: { profile: "zai" }, passthrough: ["-p", "hi"] }],
-    [["--profile=claude", "--no-banner"], { command: "launch", options: { profile: "claude", noBanner: true }, passthrough: [] }],
+    [
+      ["--profile=claude", "--no-banner"],
+      { command: "launch", options: { profile: "claude", noBanner: true }, passthrough: [] },
+    ],
     [["--", "--help"], { command: "launch", options: {}, passthrough: ["--help"] }],
-    [["--model", "glm-5.3", "--", "-p", "x"], { command: "launch", options: { model: "glm-5.3" }, passthrough: ["-p", "x"] }],
+    [
+      ["--model", "glm-5.3", "--", "-p", "x"],
+      { command: "launch", options: { model: "glm-5.3" }, passthrough: ["-p", "x"] },
+    ],
     [["auth", "status"], { command: "launch", options: {}, passthrough: ["auth", "status"] }],
-    [["mcp", "list", "--profile", "zai"], { command: "launch", options: {}, passthrough: ["mcp", "list", "--profile", "zai"] }],
+    [
+      ["mcp", "list", "--profile", "zai"],
+      { command: "launch", options: {}, passthrough: ["mcp", "list", "--profile", "zai"] },
+    ],
     [["-p", "hi", "--verbose"], { command: "launch", options: {}, passthrough: ["-p", "hi", "--verbose"] }],
-    [["login", "--api-key", "--no-store"], { command: "login", options: { apiKey: true, noStore: true }, passthrough: [] }],
+    [
+      ["login", "--api-key", "--no-store"],
+      { command: "login", options: { apiKey: true, noStore: true }, passthrough: [] },
+    ],
     [["status", "--json"], { command: "status", options: { json: true }, passthrough: [] }],
     [["logout"], { command: "logout", options: {}, passthrough: [] }],
     [["models"], { command: "models", options: {}, passthrough: [] }],
     [["--help"], { command: "help", options: {}, passthrough: [] }],
     [["-V"], { command: "version", options: {}, passthrough: [] }],
     [["--customize", "--login"], { command: "launch", options: { reconfigure: true, login: true }, passthrough: [] }],
-    [["--verbose", "--subagent-model=glm-5", "--fast-model", "f"], { command: "launch", options: { verbose: true, subagentModel: "glm-5", fastModel: "f" }, passthrough: [] }],
+    [
+      ["--verbose", "--subagent-model=glm-5", "--fast-model", "f"],
+      { command: "launch", options: { verbose: true, subagentModel: "glm-5", fastModel: "f" }, passthrough: [] },
+    ],
   ];
   for (const [argv, expected] of cases) {
     it(`parses ${JSON.stringify(argv)}`, () => {

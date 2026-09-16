@@ -16,8 +16,8 @@ export function redact(text) {
   for (const secret of secrets) {
     if (secret && out.includes(secret)) out = out.split(secret).join(`****${secret.slice(-4)}`);
   }
-  out = out.replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]{8,}/giu, "$1****");
-  out = out.replace(/\b([A-Za-z0-9]{16,})\.([A-Za-z0-9]{12,})\b/gu, (_, id) => `${id.slice(0, 4)}****`);
+  out = out.replaceAll(/(Bearer\s+)[\w.~+/=-]{8,}/giu, "$1****");
+  out = out.replaceAll(/\b([A-Za-z0-9]{16,})\.([A-Za-z0-9]{12,})\b/gu, (_, id) => `${id.slice(0, 4)}****`);
   return out;
 }
 
@@ -41,7 +41,7 @@ export function safeHost(url) {
 }
 
 function summarize(bodyText) {
-  const text = redact(String(bodyText ?? "").trim()).replace(/\s+/gu, " ");
+  const text = redact(String(bodyText ?? "").trim()).replaceAll(/\s+/gu, " ");
   if (!text) return "";
   return `: ${text.slice(0, 200)}`;
 }
@@ -65,7 +65,15 @@ function classifyNetworkError(error, method, url) {
  * non-2xx status; callers decide what each status means. Throws a network
  * error (exit 6) when the request could not complete at all.
  */
-export async function request({ method = "GET", url, headers = {}, body, timeoutMs = 15_000, fetchImpl = fetch, signal }) {
+export async function request({
+  method = "GET",
+  url,
+  headers = {},
+  body,
+  timeoutMs = 15_000,
+  fetchImpl = fetch,
+  signal,
+}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new DOMException("timeout", "TimeoutError")), timeoutMs);
   const onOuterAbort = () => controller.abort(signal?.reason);
@@ -100,11 +108,10 @@ export async function request({ method = "GET", url, headers = {}, body, timeout
 }
 
 function envelopeSucceeded(body) {
-  if (!body || typeof body !== "object") return false;
-  if (body.success === false) return false;
-  const code = body.code;
+  if (!body || typeof body !== "object" || body.success === false) return false;
+  const { code } = body;
   if (code === undefined || code === null) return true;
-  return code === 0 || code === 200 || code === "0" || code === "200";
+  return [0, 200, "0", "200"].includes(code);
 }
 
 /**

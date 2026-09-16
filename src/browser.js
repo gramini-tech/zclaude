@@ -13,7 +13,9 @@ function run(command, args, { shell = false } = {}) {
       return;
     }
     child.on("error", (error) => resolve({ opened: false, reason: error.message }));
-    child.on("exit", (code) => resolve(code === 0 ? { opened: true } : { opened: false, reason: `${command} exited with status ${code}` }));
+    child.on("exit", (code) =>
+      resolve(code === 0 ? { opened: true } : { opened: false, reason: `${command} exited with status ${code}` }),
+    );
   });
 }
 
@@ -25,7 +27,7 @@ export function browserCommand(platform = process.platform, env = process.env) {
   return { command: "xdg-open", args: [], shell: false };
 }
 
-export async function openUrl(url, { platform = process.platform, env = process.env } = {}) {
+export function openUrl(url, { platform = process.platform, env = process.env } = {}) {
   const { command, args, shell } = browserCommand(platform, env);
   const target = shell ? `"${String(url).replaceAll('"', "")}"` : url;
   return run(command, [...args, target], { shell });

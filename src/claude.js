@@ -2,9 +2,8 @@
 
 import { execFile, spawn } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
-import { homedir } from "node:os";
-import { constants as osConstants } from "node:os";
-import { delimiter, isAbsolute, join, resolve } from "node:path";
+import { constants as osConstants, homedir } from "node:os";
+import { delimiter, isAbsolute, join, resolve as resolvePath } from "node:path";
 
 import { contextWindowFor, formatModelForClaude } from "./config.js";
 import { EXIT, noClaudeError, ZclaudeError } from "./errors.js";
@@ -34,11 +33,13 @@ function candidateNames(platform) {
 export function findClaude({ env = process.env, platform = process.platform, home = homedir() } = {}) {
   const override = typeof env.ZCLAUDE_CLAUDE_BIN === "string" ? env.ZCLAUDE_CLAUDE_BIN.trim() : "";
   if (override) {
-    const path = isAbsolute(override) ? override : resolve(override);
+    const path = isAbsolute(override) ? override : resolvePath(override);
     return isExecutableFile(path) ? path : null;
   }
   const names = candidateNames(platform);
-  const pathEntries = String(env.PATH ?? env.Path ?? "").split(delimiter).filter(Boolean);
+  const pathEntries = String(env.PATH ?? env.Path ?? "")
+    .split(delimiter)
+    .filter(Boolean);
   const fallbackDirs = [
     join(home, ".local", "bin"),
     join(home, ".claude", "local"),
@@ -69,7 +70,7 @@ export function claudeVersion(bin, { timeoutMs = 5000 } = {}) {
         resolve(null);
         return;
       }
-      resolve(String(stdout).trim().split(/\r?\n/u)[0] || null);
+      resolve(String(stdout).trim().split(/\r?\n/u, 1)[0] || null);
     });
   });
 }
@@ -108,7 +109,7 @@ export function buildPlainEnv({ baseEnv = process.env, extra = {} }) {
 /** Signal name -> conventional exit code (128 + number). */
 export function exitCodeForSignal(signal) {
   const number = osConstants.signals[signal];
-  return Number.isInteger(number) ? 128 + number : 1;
+  return Number.isSafeInteger(number) ? 128 + number : 1;
 }
 
 /**
@@ -117,7 +118,7 @@ export function exitCodeForSignal(signal) {
  * the whole foreground process group, so claude handles them itself.
  */
 export function runClaude(bin, args, env, { platform = process.platform } = {}) {
-  return new Promise((resolvePromise, reject) => {
+  return new Promise((resolve, reject) => {
     const useShell = platform === "win32" && /\.(cmd|bat)$/iu.test(bin);
     let child;
     try {
@@ -143,7 +144,7 @@ export function runClaude(bin, args, env, { platform = process.platform } = {}) 
     });
     child.on("exit", (code, signal) => {
       restore();
-      resolvePromise(code ?? exitCodeForSignal(signal));
+      resolve(code ?? exitCodeForSignal(signal));
     });
   });
 }

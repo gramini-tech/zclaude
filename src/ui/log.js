@@ -1,14 +1,14 @@
 // Minimal stderr logger. Colors only when writing to a terminal and the user
 // has not opted out through NO_COLOR or TERM=dumb.
 
-let verbose = false;
+const state = { verbose: false };
 
 export function setVerbose(value) {
-  verbose = Boolean(value);
+  state.verbose = Boolean(value);
 }
 
 export function isVerbose() {
-  return verbose;
+  return state.verbose;
 }
 
 export function colorEnabled(stream = process.stderr, env = process.env) {
@@ -46,7 +46,7 @@ export const success = (message) => write("✓", "green", message);
 export const warn = (message) => write("!", "yellow", message);
 export const error = (message) => write("✗", "red", message);
 export const debug = (message) => {
-  if (verbose) write("»", "grey", paint(message, "grey"));
+  if (state.verbose) write("»", "grey", paint(message, "grey"));
 };
 
 /** Show only the last four characters of a secret. */

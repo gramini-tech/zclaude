@@ -17,11 +17,11 @@ describe("banner", () => {
   it("renders colourless text with the version tagline", () => {
     const out = renderBanner({ columns: 120, color: false });
     assert.ok(out.includes(`v${VERSION}`));
-    assert.doesNotMatch(out, /\[/u);
+    assert.equal(out.includes("\u{1B}["), false);
     assert.equal(out.split("\n").length, 7 + 4);
   });
   it("adds colour when asked", () => {
-    assert.match(renderBanner({ columns: 120, color: true }), /\[90m/u);
+    assert.ok(renderBanner({ columns: 120, color: true }).includes("\u{1B}[90m"));
   });
   it("falls back to a one-liner on narrow terminals", () => {
     const narrow = renderBanner({ columns: MIN_COLUMNS - 1, color: false });

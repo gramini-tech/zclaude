@@ -33,12 +33,21 @@ describe("callbackAppleScript", () => {
 
 describe("journal and restore rules", () => {
   const home = "/Users/test";
-  const good = { appPath: `${home}/Applications/${APP_PREFIX}abc.app`, bundleId: `${BUNDLE_PREFIX}abc`, pid: 1, previousHandler: "", scheme: "zcode" };
+  const good = {
+    appPath: `${home}/Applications/${APP_PREFIX}abc.app`,
+    bundleId: `${BUNDLE_PREFIX}abc`,
+    pid: 1,
+    previousHandler: "",
+    scheme: "zcode",
+  };
   it("accepts only our own app under ~/Applications", () => {
     assert.equal(isManagedJournal(good, home), true);
     assert.equal(isManagedJournal({ ...good, appPath: "/Applications/Safari.app" }, home), false);
     assert.equal(isManagedJournal({ ...good, bundleId: "com.apple.Safari" }, home), false);
-    assert.equal(isManagedJournal({ ...good, appPath: `${home}/Applications/../Desktop/${APP_PREFIX}x.app` }, home), false);
+    assert.equal(
+      isManagedJournal({ ...good, appPath: `${home}/Applications/../Desktop/${APP_PREFIX}x.app` }, home),
+      false,
+    );
     assert.equal(isManagedJournal(null, home), false);
   });
   it("restores real handlers and clears dangling temporary ones", () => {
@@ -58,16 +67,27 @@ describe("recoverStaleHandler", () => {
       const appPath = join(home.dir, "Applications", `${APP_PREFIX}dead.app`);
       await mkdir(appPath, { recursive: true });
       await mkdir(env.ZCLAUDE_HOME, { recursive: true });
-      const record = { appPath, bundleId: `${BUNDLE_PREFIX}dead`, pid: 999_999_999, previousHandler: "com.zai.zcode", scheme: "zcode" };
+      const record = {
+        appPath,
+        bundleId: `${BUNDLE_PREFIX}dead`,
+        pid: 999_999_999,
+        previousHandler: "com.zai.zcode",
+        scheme: "zcode",
+      };
       await writeFile(journalPath(env), JSON.stringify(record));
       const calls = [];
       const runner = async (command, args) => {
         calls.push([command, args]);
-        if (args.includes("-l") && args[3].includes("URLForApplicationToOpenURL")) return { code: 0, stdout: `${record.bundleId}\n`, stderr: "" };
+        if (args.includes("-l") && args[3].includes("URLForApplicationToOpenURL"))
+          return { code: 0, stdout: `${record.bundleId}\n`, stderr: "" };
         return { code: 0, stdout: "0\n", stderr: "" };
       };
       await recoverStaleHandler({ env, home: home.dir, runner });
-      const setCall = calls.find(([, args]) => args.includes("LSSetDefaultHandlerForURLScheme") || (args[3] ?? "").includes("LSSetDefaultHandlerForURLScheme"));
+      const setCall = calls.find(
+        ([, args]) =>
+          args.includes("LSSetDefaultHandlerForURLScheme") ||
+          (args[3] ?? "").includes("LSSetDefaultHandlerForURLScheme"),
+      );
       assert.ok(setCall, "handler restored");
       assert.equal(setCall[1].at(-1), "com.zai.zcode");
       assert.ok(calls.some(([command, args]) => command.endsWith("lsregister") && args[0] === "-u"));
@@ -82,9 +102,18 @@ describe("recoverStaleHandler", () => {
     try {
       const env = { HOME: home.dir, ZCLAUDE_HOME: join(home.dir, ".zclaude") };
       await mkdir(env.ZCLAUDE_HOME, { recursive: true });
-      const record = { appPath: join(home.dir, "Applications", `${APP_PREFIX}live.app`), bundleId: `${BUNDLE_PREFIX}live`, pid: process.ppid, previousHandler: "", scheme: "zcode" };
+      const record = {
+        appPath: join(home.dir, "Applications", `${APP_PREFIX}live.app`),
+        bundleId: `${BUNDLE_PREFIX}live`,
+        pid: process.ppid,
+        previousHandler: "",
+        scheme: "zcode",
+      };
       await writeFile(journalPath(env), JSON.stringify(record));
-      await assert.rejects(recoverStaleHandler({ env, home: home.dir, runner: async () => ({ code: 0, stdout: "", stderr: "" }) }), /already waiting/u);
+      await assert.rejects(
+        recoverStaleHandler({ env, home: home.dir, runner: async () => ({ code: 0, stdout: "", stderr: "" }) }),
+        /already waiting/u,
+      );
     } finally {
       await home.cleanup();
     }
@@ -94,9 +123,25 @@ describe("recoverStaleHandler", () => {
     try {
       const env = { HOME: home.dir, ZCLAUDE_HOME: join(home.dir, ".zclaude") };
       await mkdir(env.ZCLAUDE_HOME, { recursive: true });
-      await writeFile(journalPath(env), JSON.stringify({ appPath: "/Applications/Safari.app", bundleId: "com.apple.Safari", pid: 1, previousHandler: "", scheme: "zcode" }));
+      await writeFile(
+        journalPath(env),
+        JSON.stringify({
+          appPath: "/Applications/Safari.app",
+          bundleId: "com.apple.Safari",
+          pid: 1,
+          previousHandler: "",
+          scheme: "zcode",
+        }),
+      );
       let ran = false;
-      await recoverStaleHandler({ env, home: home.dir, runner: async () => { ran = true; return { code: 0, stdout: "", stderr: "" }; } });
+      await recoverStaleHandler({
+        env,
+        home: home.dir,
+        runner: async () => {
+          ran = true;
+          return { code: 0, stdout: "", stderr: "" };
+        },
+      });
       assert.equal(ran, false);
       await assert.rejects(readFile(journalPath(env)), /ENOENT/u);
     } finally {
@@ -108,7 +153,16 @@ describe("recoverStaleHandler", () => {
 describe("createNativeReceiver", () => {
   it("rejects off macOS and on bad schemes without touching the system", async () => {
     await assert.rejects(createNativeReceiver({ scheme: "zcode", platform: "linux" }), /only available on macOS/u);
-    await assert.rejects(createNativeReceiver({ scheme: "Bad Scheme", platform: "darwin", runner: async () => { throw new Error("must not run"); } }), /invalid scheme/u);
+    await assert.rejects(
+      createNativeReceiver({
+        scheme: "Bad Scheme",
+        platform: "darwin",
+        runner: async () => {
+          throw new Error("must not run");
+        },
+      }),
+      /invalid scheme/u,
+    );
   });
   it("cleans up when a setup step fails", async () => {
     const home = await tempHome();
@@ -118,11 +172,18 @@ describe("createNativeReceiver", () => {
       const runner = async (command, args) => {
         calls.push([command, args]);
         if (command.endsWith("osacompile")) return { code: 1, stdout: "", stderr: "syntax error" };
-        if ((args[3] ?? "").includes("URLForApplicationToOpenURL")) return { code: 0, stdout: "com.zai.zcode\n", stderr: "" };
+        if ((args[3] ?? "").includes("URLForApplicationToOpenURL"))
+          return { code: 0, stdout: "com.zai.zcode\n", stderr: "" };
         return { code: 0, stdout: "0\n", stderr: "" };
       };
-      await assert.rejects(createNativeReceiver({ scheme: "zcode", platform: "darwin", env, home: home.dir, runner }), /compiling the callback app: osacompile failed: syntax error/u);
-      assert.ok(!calls.some(([, args]) => (args[3] ?? "").includes("LSSetDefaultHandlerForURLScheme")), "handler never changed");
+      await assert.rejects(
+        createNativeReceiver({ scheme: "zcode", platform: "darwin", env, home: home.dir, runner }),
+        /compiling the callback app: osacompile failed: syntax error/u,
+      );
+      assert.ok(
+        calls.every(([, args]) => !(args[3] ?? "").includes("LSSetDefaultHandlerForURLScheme")),
+        "handler never changed",
+      );
       await assert.rejects(readFile(journalPath(env)), /ENOENT/u);
     } finally {
       await home.cleanup();

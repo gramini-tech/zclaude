@@ -15,7 +15,7 @@ export const MANAGED_KEYS = Object.freeze({
 });
 const MANAGED_SET = new Set(Object.values(MANAGED_KEYS));
 
-const KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/u;
+const KEY_PATTERN = /^[A-Za-z_]\w*$/u;
 
 export function projectEnvPath(cwd = process.cwd()) {
   return join(cwd, ".zclaude", "env");
@@ -54,33 +54,35 @@ function parseQuoted(rest, quote) {
 export function parseDotenv(text, { file = "(text)" } = {}) {
   const values = {};
   const warnings = [];
-  const lines = String(text ?? "").replace(/^\uFEFF/u, "").split(/\r?\n/u);
-  lines.forEach((rawLine, index) => {
+  const lines = String(text ?? "")
+    .replace(/^\u{FEFF}/u, "")
+    .split(/\r?\n/u);
+  for (const [index, rawLine] of lines.entries()) {
     const line = rawLine.trim();
-    if (!line || line.startsWith("#")) return;
+    if (!line || line.startsWith("#")) continue;
     const body = line.startsWith("export ") ? line.slice(7).trim() : line;
     const eq = body.indexOf("=");
     if (eq === -1) {
       warnings.push(`${file}:${index + 1}: expected KEY=value, ignoring "${line.slice(0, 40)}"`);
-      return;
+      continue;
     }
     const key = body.slice(0, eq).trim();
     const rest = body.slice(eq + 1).trim();
     if (!KEY_PATTERN.test(key)) {
       warnings.push(`${file}:${index + 1}: invalid variable name "${key}"`);
-      return;
+      continue;
     }
     if (rest.startsWith('"') || rest.startsWith("'")) {
       const parsed = parseQuoted(rest, rest[0]);
       if (parsed === null) {
         warnings.push(`${file}:${index + 1}: unterminated quote for ${key}`);
-        return;
+        continue;
       }
       values[key] = parsed;
-      return;
+      continue;
     }
     values[key] = stripInlineComment(rest);
-  });
+  }
   return { values, warnings };
 }
 
@@ -101,13 +103,13 @@ export function updateDotenv(existingText, updates, { header } = {}) {
   const pending = new Map(Object.entries(updates));
   const output = [];
   const lines = String(existingText ?? "").split(/\r?\n/u);
-  if (lines.length && lines[lines.length - 1] === "") lines.pop();
+  if (lines.length > 0 && lines.at(-1) === "") lines.pop();
   for (const rawLine of lines) {
     const line = rawLine.trim();
     const body = line.startsWith("export ") ? line.slice(7).trim() : line;
     const eq = body.indexOf("=");
     const key = eq > 0 && !line.startsWith("#") ? body.slice(0, eq).trim() : null;
-    if (key && key in updates) {
+    if (key && Object.hasOwn(updates, key)) {
       if (pending.has(key)) {
         output.push(`${key}=${formatValue(updates[key])}`);
         pending.delete(key);
@@ -116,7 +118,7 @@ export function updateDotenv(existingText, updates, { header } = {}) {
     }
     output.push(rawLine);
   }
-  if (output.length === 0 && header) output.push(...header.split("\n"));
+  if (header && output.length === 0) output.push(...header.split("\n"));
   for (const [key, value] of pending) output.push(`${key}=${formatValue(value)}`);
   return `${output.join("\n")}\n`;
 }
@@ -199,7 +201,9 @@ export function resolveModels({ flags = {}, env = process.env, layered }) {
 /** Did the file explicitly set all three model slots? */
 export function fileConfiguresModels(fileRecord) {
   const values = fileRecord?.values ?? {};
-  return ["primary", "subagent", "fast"].every((slot) => typeof values[MANAGED_KEYS[slot]] === "string" && values[MANAGED_KEYS[slot]].trim());
+  return ["primary", "subagent", "fast"].every(
+    (slot) => typeof values[MANAGED_KEYS[slot]] === "string" && values[MANAGED_KEYS[slot]].trim(),
+  );
 }
 
 export function resolveProfileDefault({ env = process.env, layered } = {}) {
@@ -214,11 +218,9 @@ export function resolveProfileDefault({ env = process.env, layered } = {}) {
 /** Non-managed KEY=value lines, user file first so the project file wins. */
 export function extraEnv(layered) {
   const merged = {};
+  const isPassthrough = ([key]) => key !== "ZCLAUDE_ZAI" && !MANAGED_SET.has(key);
   for (const record of [layered?.user, layered?.project]) {
-    for (const [key, value] of Object.entries(record?.values ?? {})) {
-      if (MANAGED_SET.has(key) || key === "ZCLAUDE_ZAI") continue;
-      merged[key] = value;
-    }
+    Object.assign(merged, Object.fromEntries(Object.entries(record?.values ?? {}).filter(isPassthrough)));
   }
   return merged;
 }

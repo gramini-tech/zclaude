@@ -54,6 +54,26 @@ zclaude models                  models your plan can use
 zclaude --reconfigure           re-run the model wizard
 ```
 
+### Options
+
+All zclaude options go before any argument meant for `claude`.
+
+| Option                          | Effect                                                                   |
+| ------------------------------- | ------------------------------------------------------------------------ |
+| `--profile <claude\|zai\|name>` | skip the menu                                                            |
+| `--reconfigure`, `--customize`  | run the model wizard even when config exists                             |
+| `--login`                       | sign in to Z.ai again before launching                                   |
+| `--model <id>`                  | primary model for the Z.ai profile; forwarded to `claude` otherwise      |
+| `--subagent-model <id>`         | subagent model (`CLAUDE_CODE_SUBAGENT_MODEL`)                            |
+| `--fast-model <id>`             | haiku-class helper model                                                 |
+| `--no-store`                    | keep the key in memory for this session only                             |
+| `--no-browser`, `--paste`       | login: print the URL instead of opening a browser; always paste the code |
+| `--api-key`                     | login: paste a key from the Z.ai console instead of the browser flow     |
+| `--json`                        | status: machine-readable output                                          |
+| `--no-banner`                   | skip the splash                                                          |
+| `--verbose`                     | show each step (use `zclaude -- --verbose` to pass it to `claude`)       |
+| `--help`, `--version`           | zclaude help and versions (`zclaude -- --help` for claude's own)         |
+
 ### First Z.ai launch
 
 1. The menu offers **Claude Code** and **Claude Code + Z.ai GLM Coding Plan**.
@@ -71,16 +91,16 @@ Later launches skip straight from the menu to `claude`.
 
 ## What gets set in the child process
 
-| Variable | Value |
-|---|---|
-| `ANTHROPIC_AUTH_TOKEN` | the stored key |
-| `ANTHROPIC_BASE_URL` | `https://api.z.ai/api/anthropic` |
-| `ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_OPUS_MODEL` | primary model |
-| `ANTHROPIC_DEFAULT_SONNET_MODEL`, `CLAUDE_CODE_SUBAGENT_MODEL` | subagent model |
-| `ANTHROPIC_DEFAULT_HAIKU_MODEL` | fast model |
-| `CLAUDE_CODE_AUTO_COMPACT_WINDOW` | context window of the primary model |
-| `API_TIMEOUT_MS` | `3000000` |
-| `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` | `1` |
+| Variable                                                       | Value                               |
+| -------------------------------------------------------------- | ----------------------------------- |
+| `ANTHROPIC_AUTH_TOKEN`                                         | the stored key                      |
+| `ANTHROPIC_BASE_URL`                                           | `https://api.z.ai/api/anthropic`    |
+| `ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_OPUS_MODEL`              | primary model                       |
+| `ANTHROPIC_DEFAULT_SONNET_MODEL`, `CLAUDE_CODE_SUBAGENT_MODEL` | subagent model                      |
+| `ANTHROPIC_DEFAULT_HAIKU_MODEL`                                | fast model                          |
+| `CLAUDE_CODE_AUTO_COMPACT_WINDOW`                              | context window of the primary model |
+| `API_TIMEOUT_MS`                                               | `3000000`                           |
+| `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`                     | `1`                                 |
 
 `ANTHROPIC_API_KEY` is removed from the child environment to avoid Claude Code's auth-conflict prompt.
 Models with a 1M context (`glm-5.3`, `glm-5.3-flash`, `glm-5.2`) get the `[1m]` suffix Claude Code
@@ -124,33 +144,33 @@ MY_TEAM_MCP_TOKEN=...
 
 ### Environment variables
 
-| Variable | Effect |
-|---|---|
-| `ZAI_API_KEY` | use this key for the Z.ai profile, never store it, fail loudly if rejected |
-| `ZCLAUDE_PROFILE` | default profile, skips the menu |
-| `ZCLAUDE_HOME` | config directory (default `~/.zclaude`) |
-| `ZCLAUDE_CLAUDE_BIN` | path to `claude` |
-| `ZCLAUDE_NO_STORE=1` | never persist the key |
-| `ZCLAUDE_NO_KEYCHAIN=1` | use the file store even on macOS |
-| `ZCLAUDE_NO_NATIVE_CALLBACK=1` | always paste the redirect URL |
-| `ZCLAUDE_NO_BANNER=1` | skip the splash |
-| `ZCLAUDE_LOGIN_TIMEOUT` | seconds to wait for the browser (default 300) |
-| `ZCLAUDE_KEY_NAME` | name of the key minted on your Z.ai account (default `zclaude`) |
-| `ZCLAUDE_BASE_URL` | API base (default `https://api.z.ai`) |
-| `ZAI_OAUTH_CLIENT_ID`, `ZAI_OAUTH_AUTHORIZE_URL`, `ZAI_OAUTH_TOKEN_URL`, `ZAI_OAUTH_REDIRECT_URI` | endpoint overrides if Z.ai changes its allowlist |
+| Variable                                                                                                                                             | Effect                                                                     |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `ZAI_API_KEY`                                                                                                                                        | use this key for the Z.ai profile, never store it, fail loudly if rejected |
+| `ZCLAUDE_PROFILE`                                                                                                                                    | default profile, skips the menu                                            |
+| `ZCLAUDE_HOME`                                                                                                                                       | config directory (default `~/.zclaude`)                                    |
+| `ZCLAUDE_CLAUDE_BIN`                                                                                                                                 | path to `claude`                                                           |
+| `ZCLAUDE_NO_STORE=1`                                                                                                                                 | never persist the key                                                      |
+| `ZCLAUDE_NO_KEYCHAIN=1`                                                                                                                              | use the file store even on macOS                                           |
+| `ZCLAUDE_NO_NATIVE_CALLBACK=1`                                                                                                                       | always paste the redirect URL                                              |
+| `ZCLAUDE_NO_BANNER=1`                                                                                                                                | skip the splash                                                            |
+| `ZCLAUDE_LOGIN_TIMEOUT`                                                                                                                              | seconds to wait for the browser (default 300)                              |
+| `ZCLAUDE_KEY_NAME`                                                                                                                                   | name of the key minted on your Z.ai account (default `zclaude`)            |
+| `ZCLAUDE_BASE_URL`                                                                                                                                   | API base (default `https://api.z.ai`)                                      |
+| `ZAI_OAUTH_CLIENT_ID`, `ZAI_OAUTH_AUTHORIZE_URL`, `ZAI_OAUTH_TOKEN_URL`, `ZAI_OAUTH_REDIRECT_URI`, `ZAI_BIZ_LOGIN_URL`, `ZCLAUDE_ANTHROPIC_BASE_URL` | endpoint overrides if Z.ai changes its allowlist or paths                  |
 
 ## Exit codes
 
-| Code | Meaning |
-|---|---|
-| claude's | `claude` ran; its exit code is passed through (128+n for signals) |
-| 1 | unexpected error (re-run with `--verbose`) |
-| 2 | usage error, or no terminal where one is needed |
-| 3 | `claude` not installed |
-| 4 | Z.ai sign-in or key provisioning failed |
-| 5 | a key you supplied (`ZAI_API_KEY` or inherited `ANTHROPIC_AUTH_TOKEN`) was rejected |
-| 6 | Z.ai unreachable |
-| 130 | interrupted |
+| Code     | Meaning                                                                             |
+| -------- | ----------------------------------------------------------------------------------- |
+| claude's | `claude` ran; its exit code is passed through (128+n for signals)                   |
+| 1        | unexpected error (re-run with `--verbose`)                                          |
+| 2        | usage error, or no terminal where one is needed                                     |
+| 3        | `claude` not installed                                                              |
+| 4        | Z.ai sign-in or key provisioning failed                                             |
+| 5        | a key you supplied (`ZAI_API_KEY` or inherited `ANTHROPIC_AUTH_TOKEN`) was rejected |
+| 6        | Z.ai unreachable                                                                    |
+| 130      | interrupted                                                                         |
 
 Non-interactive use (CI, scripts) never prompts: pass `--profile`, provide `ZAI_API_KEY` or a key stored by
 an earlier interactive `zclaude login`, and models come from config or defaults.

@@ -18,12 +18,30 @@ describe("redact", () => {
 describe("requestEnvelope", () => {
   const url = "https://api.z.ai/x";
   it("accepts code 0, 200, '0', missing code, and success:true", async () => {
-    for (const body of [{ code: 0, data: 1 }, { code: 200, data: 1 }, { code: "0", data: 1 }, { data: 1 }, { success: true, data: 1 }]) {
-      assert.equal(await requestEnvelope({ url, fetchImpl: mockFetch(() => jsonResponse(body)) }, { operation: "op", exitCode: EXIT.AUTH }), 1);
+    for (const body of [
+      { code: 0, data: 1 },
+      { code: 200, data: 1 },
+      { code: "0", data: 1 },
+      { data: 1 },
+      { success: true, data: 1 },
+    ]) {
+      assert.equal(
+        await requestEnvelope(
+          { url, fetchImpl: mockFetch(() => jsonResponse(body)) },
+          { operation: "op", exitCode: EXIT.AUTH },
+        ),
+        1,
+      );
     }
   });
   it("returns the body when data is absent", async () => {
-    assert.deepEqual(await requestEnvelope({ url, fetchImpl: mockFetch(() => jsonResponse({ code: 0, value: 2 })) }, { operation: "op", exitCode: 1 }), { code: 0, value: 2 });
+    assert.deepEqual(
+      await requestEnvelope(
+        { url, fetchImpl: mockFetch(() => jsonResponse({ code: 0, value: 2 })) },
+        { operation: "op", exitCode: 1 },
+      ),
+      { code: 0, value: 2 },
+    );
   });
   it("rejects failing envelopes, success:false, non-JSON and HTTP errors with the given exit code", async () => {
     const cases = [
@@ -34,11 +52,14 @@ describe("requestEnvelope", () => {
       [new Response("Service Unavailable", { status: 503 }), /GET api\.z\.ai returned HTTP 503: Service Unavailable/u],
     ];
     for (const [response, pattern] of cases) {
-      await assert.rejects(requestEnvelope({ url, fetchImpl: mockFetch(() => response) }, { operation: "op", exitCode: EXIT.AUTH }), (error) => {
-        assert.match(error.message, pattern);
-        assert.equal(error.exitCode, EXIT.AUTH);
-        return true;
-      });
+      await assert.rejects(
+        requestEnvelope({ url, fetchImpl: mockFetch(() => response) }, { operation: "op", exitCode: EXIT.AUTH }),
+        (error) => {
+          assert.match(error.message, pattern);
+          assert.equal(error.exitCode, EXIT.AUTH);
+          return true;
+        },
+      );
     }
   });
   it("serialises JSON bodies with the content type", async () => {
@@ -47,7 +68,10 @@ describe("requestEnvelope", () => {
       assert.deepEqual(body, { a: 1 });
       return jsonResponse({ code: 0, data: "ok" });
     });
-    assert.equal(await requestEnvelope({ url, method: "POST", body: { a: 1 }, fetchImpl }, { operation: "op", exitCode: 1 }), "ok");
+    assert.equal(
+      await requestEnvelope({ url, method: "POST", body: { a: 1 }, fetchImpl }, { operation: "op", exitCode: 1 }),
+      "ok",
+    );
   });
   it("request never throws on status codes", async () => {
     const result = await request({ url, fetchImpl: mockFetch(() => new Response("nope", { status: 418 })) });

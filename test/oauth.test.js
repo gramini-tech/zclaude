@@ -35,10 +35,16 @@ describe("authorize url", () => {
 
 describe("parseCallback", () => {
   it("accepts the full zcode:// redirect", () => {
-    assert.deepEqual(parseCallback(`zcode://zai-auth/callback?code=abc&state=${STATE}`, STATE), { code: "abc", state: STATE });
+    assert.deepEqual(parseCallback(`zcode://zai-auth/callback?code=abc&state=${STATE}`, STATE), {
+      code: "abc",
+      state: STATE,
+    });
   });
   it("accepts an https URL with the same params", () => {
-    assert.deepEqual(parseCallback(`https://example.com/cb?state=${STATE}&code=xyz`, STATE), { code: "xyz", state: STATE });
+    assert.deepEqual(parseCallback(`https://example.com/cb?state=${STATE}&code=xyz`, STATE), {
+      code: "xyz",
+      state: STATE,
+    });
   });
   it("accepts a bare code, code#state and code=…&state=… text", () => {
     assert.deepEqual(parseCallback("  bare-code  ", STATE), { code: "bare-code", state: STATE });
@@ -50,8 +56,14 @@ describe("parseCallback", () => {
     assert.throws(() => parseCallback(`qrs#${"b".repeat(64)}`, STATE), /state mismatch/u);
     assert.throws(() => parseCallback("", STATE), /No authorization code/u);
     assert.throws(() => parseCallback("zcode://other/callback?code=abc", STATE), /not the Z.ai/u);
-    assert.throws(() => parseCallback("zcode://zai-auth/callback?error=access_denied&error_description=User+denied", STATE), /User denied/u);
-    assert.throws(() => parseCallback("zcode://zai-auth/callback?state=x", STATE), /does not contain an authorization code/u);
+    assert.throws(
+      () => parseCallback("zcode://zai-auth/callback?error=access_denied&error_description=User+denied", STATE),
+      /User denied/u,
+    );
+    assert.throws(
+      () => parseCallback("zcode://zai-auth/callback?state=x", STATE),
+      /does not contain an authorization code/u,
+    );
   });
   it("every failure carries the auth exit code", () => {
     try {
@@ -65,12 +77,19 @@ describe("parseCallback", () => {
 
 describe("exchangeCode", () => {
   it("posts the ZCode body and extracts token, email and user id", async () => {
-    const fetchImpl = mockFetch(({ url }) => (url === config.tokenUrl
-      ? envelope({ token: "jwt", zai: { access_token: "short-lived" }, user: { email: "Me@Example.com", id: "u-1" } })
-      : undefined));
+    const fetchImpl = mockFetch(({ url }) =>
+      url === config.tokenUrl
+        ? envelope({ token: "jwt", zai: { access_token: "short-lived" }, user: { email: "Me@Example.com", id: "u-1" } })
+        : undefined,
+    );
     const result = await exchangeCode({ code: "abc", state: STATE }, config, { fetchImpl });
     assert.deepEqual(result, { accessToken: "short-lived", email: "me@example.com", userId: "u-1" });
-    assert.deepEqual(fetchImpl.calls[0].body, { provider: "zai", code: "abc", redirect_uri: config.redirectUri, state: STATE });
+    assert.deepEqual(fetchImpl.calls[0].body, {
+      provider: "zai",
+      code: "abc",
+      redirect_uri: config.redirectUri,
+      state: STATE,
+    });
     assert.equal(fetchImpl.calls[0].method, "POST");
   });
   it("turns an envelope failure into an auth error with a retry hint", async () => {
@@ -88,6 +107,9 @@ describe("exchangeCode", () => {
   });
   it("reports HTTP failures with host and status", async () => {
     const fetchImpl = mockFetch(() => new Response("gateway down", { status: 502 }));
-    await assert.rejects(exchangeCode({ code: "x", state: STATE }, config, { fetchImpl }), /POST zcode\.z\.ai returned HTTP 502/u);
+    await assert.rejects(
+      exchangeCode({ code: "x", state: STATE }, config, { fetchImpl }),
+      /POST zcode\.z\.ai returned HTTP 502/u,
+    );
   });
 });

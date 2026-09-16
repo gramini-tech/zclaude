@@ -39,7 +39,7 @@ process.on("unhandledRejection", (reason) => {
 
 try {
   const code = await main(process.argv.slice(2));
-  process.exitCode = Number.isInteger(code) ? code : EXIT.OK;
+  process.exitCode = Number.isSafeInteger(code) ? code : EXIT.OK;
 } catch (error) {
   handle(error);
 }

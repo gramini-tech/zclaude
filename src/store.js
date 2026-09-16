@@ -3,6 +3,7 @@
 // the Keychain is unavailable: a 0600 JSON file under ~/.zclaude.
 
 import { spawn } from "node:child_process";
+import { timingSafeEqual } from "node:crypto";
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -41,8 +42,12 @@ function runSecurity(args, { stdinText } = {}) {
     const child = spawn("security", args, { stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
     child.on("error", (error) => resolve({ code: -1, stdout, stderr: error.message }));
     child.on("close", (code) => resolve({ code: code ?? -1, stdout, stderr }));
     if (stdinText !== undefined) child.stdin.write(stdinText);
@@ -61,7 +66,8 @@ export function keychainAvailable(env = process.env, platform = process.platform
 async function keychainFind(security = runSecurity) {
   const result = await security(["find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"]);
   if (result.code === KEYCHAIN_NOT_FOUND) return null;
-  if (result.code !== 0) throw new Error(`security find-generic-password failed: ${result.stderr.trim() || `exit ${result.code}`}`);
+  if (result.code !== 0)
+    throw new Error(`security find-generic-password failed: ${result.stderr.trim() || `exit ${result.code}`}`);
   const secret = result.stdout.replace(/\r?\n$/u, "");
   return secret || null;
 }
@@ -71,7 +77,8 @@ async function keychainDeleteAll(security = runSecurity) {
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const result = await security(["delete-generic-password", "-s", KEYCHAIN_SERVICE]);
     if (result.code === KEYCHAIN_NOT_FOUND) break;
-    if (result.code !== 0) throw new Error(`security delete-generic-password failed: ${result.stderr.trim() || `exit ${result.code}`}`);
+    if (result.code !== 0)
+      throw new Error(`security delete-generic-password failed: ${result.stderr.trim() || `exit ${result.code}`}`);
     removed += 1;
   }
   return removed;
@@ -85,8 +92,11 @@ async function keychainAdd(account, secret, security = runSecurity) {
   if (result.code !== 0 || /error|failed/iu.test(result.stderr)) {
     throw new Error(`security add-generic-password failed: ${result.stderr.trim() || `exit ${result.code}`}`);
   }
-  const stored = await keychainFind(security);
-  if (stored !== secret) throw new Error("Keychain read-back did not match the stored secret.");
+  const stored = Buffer.from(String((await keychainFind(security)) ?? ""));
+  const expected = Buffer.from(secret);
+  if (stored.length !== expected.length || !timingSafeEqual(stored, expected)) {
+    throw new Error("Keychain read-back did not match the stored secret.");
+  }
 }
 
 // --------------------------------------------------------------- json files
@@ -112,7 +122,7 @@ export async function writeJsonAtomic(path, value, { mode = 0o600 } = {}) {
   await rename(tmp, path);
 }
 
-export async function readProfile(env = process.env) {
+export function readProfile(env = process.env) {
   return readJson(storePaths(env).profileFile);
 }
 
@@ -188,21 +198,29 @@ export async function saveCredential(
       createdAt: new Date().toISOString(),
     });
   }
-  await writeJsonAtomic(paths.profileFile, {
-    version: 1,
-    email,
-    userId,
-    keyName,
-    source,
-    location,
-    createdAt: new Date().toISOString(),
-  }, { mode: 0o600 });
+  await writeJsonAtomic(
+    paths.profileFile,
+    {
+      version: 1,
+      email,
+      userId,
+      keyName,
+      source,
+      location,
+      createdAt: new Date().toISOString(),
+    },
+    { mode: 0o600 },
+  );
   debug(`Credential saved to ${location}`);
   return { location };
 }
 
 /** Remove every stored copy. Returns { removed: [...] }. */
-export async function deleteCredential({ env = process.env, platform = process.platform, security = runSecurity } = {}) {
+export async function deleteCredential({
+  env = process.env,
+  platform = process.platform,
+  security = runSecurity,
+} = {}) {
   const removed = [];
   const paths = storePaths(env);
   if (keychainAvailable(env, platform)) {

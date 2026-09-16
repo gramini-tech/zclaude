@@ -11,14 +11,15 @@
 import { execFile } from "node:child_process";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { basename, join, resolve, sep } from "node:path";
+import { basename, join, resolve as resolvePath, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 
 import { zclaudeHome } from "../config.js";
 import { InterruptedError, ZclaudeError } from "../errors.js";
 import { debug } from "../ui/log.js";
 
-const LSREGISTER = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
+const LSREGISTER =
+  "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
 const OSASCRIPT = "/usr/bin/osascript";
 const OSACOMPILE = "/usr/bin/osacompile";
 const PLUTIL = "/usr/bin/plutil";
@@ -46,9 +47,9 @@ function run(argv) {
 `;
 
 export function defaultRunner(command, args) {
-  return new Promise((resolvePromise) => {
+  return new Promise((resolve) => {
     execFile(command, args, { maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
-      resolvePromise({
+      resolve({
         code: error ? (typeof error.code === "number" ? error.code : 1) : 0,
         stdout: String(stdout ?? ""),
         stderr: String(stderr ?? "") || (error && typeof error.code !== "number" ? error.message : ""),
@@ -66,12 +67,22 @@ async function checkedRun(runner, command, args, step) {
   return result.stdout.trim();
 }
 
-export async function currentHandler(runner, scheme) {
-  return checkedRun(runner, OSASCRIPT, ["-l", "JavaScript", "-e", currentHandlerJxa, scheme], "reading the current URL handler");
+export function currentHandler(runner, scheme) {
+  return checkedRun(
+    runner,
+    OSASCRIPT,
+    ["-l", "JavaScript", "-e", currentHandlerJxa, scheme],
+    "reading the current URL handler",
+  );
 }
 
 export async function setHandler(runner, scheme, bundleId, step = "registering the callback handler") {
-  const status = await checkedRun(runner, OSASCRIPT, ["-l", "JavaScript", "-e", setHandlerJxa, scheme, bundleId || "none"], step);
+  const status = await checkedRun(
+    runner,
+    OSASCRIPT,
+    ["-l", "JavaScript", "-e", setHandlerJxa, scheme, bundleId || "none"],
+    step,
+  );
   if (status !== "0") throw new Error(`${step}: LSSetDefaultHandlerForURLScheme returned ${status}`);
 }
 
@@ -121,14 +132,24 @@ export function applicationsDir(home) {
 export function isManagedJournal(record, home) {
   if (!record || typeof record !== "object") return false;
   const { appPath, bundleId, pid, previousHandler, scheme } = record;
-  if (typeof appPath !== "string" || typeof bundleId !== "string" || typeof pid !== "number"
-    || typeof previousHandler !== "string" || typeof scheme !== "string") return false;
-  const root = `${resolve(applicationsDir(home))}${sep}`;
-  return resolve(appPath).startsWith(root) && basename(appPath).startsWith(APP_PREFIX) && bundleId.startsWith(BUNDLE_PREFIX);
+  if (
+    typeof appPath !== "string" ||
+    typeof bundleId !== "string" ||
+    typeof pid !== "number" ||
+    typeof previousHandler !== "string" ||
+    typeof scheme !== "string"
+  )
+    return false;
+  const root = `${resolvePath(applicationsDir(home))}${sep}`;
+  return (
+    resolvePath(appPath).startsWith(root) &&
+    basename(appPath).startsWith(APP_PREFIX) &&
+    bundleId.startsWith(BUNDLE_PREFIX)
+  );
 }
 
 function processAlive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
   try {
     process.kill(pid, 0);
     return true;
@@ -148,11 +169,11 @@ async function readJournal(path, home) {
 
 /** Should a restore put back `previous`, or clear the handler entirely? */
 export function restoreTarget(previous) {
-  if (!previous) return "none";
-  if (previous.startsWith(BUNDLE_PREFIX)) return "none";
-  // Other tools' temporary handlers (oh-my-pi, zcode-cli) that are gone by now.
-  if (/^dev\.(omp|zcode\.cli)\.oauth-callback\./u.test(previous)) return "none";
-  return previous;
+  // Our own leftovers, or other tools' temporary handlers (oh-my-pi, zcode-cli)
+  // that are gone by now, must not be re-registered.
+  const isTemporary =
+    !previous || previous.startsWith(BUNDLE_PREFIX) || /^dev\.(omp|zcode\.cli)\.oauth-callback\./u.test(previous);
+  return isTemporary ? "none" : previous;
 }
 
 async function unregisterApp(runner, appPath) {
@@ -178,7 +199,12 @@ export async function recoverStaleHandler({ env = process.env, home = homedir(),
   debug(`Cleaning up stale OAuth handler ${record.bundleId}`);
   const current = await currentHandler(runner, record.scheme).catch(() => "");
   if (current === record.bundleId) {
-    await setHandler(runner, record.scheme, restoreTarget(record.previousHandler), "restoring the previous URL handler").catch(() => {});
+    await setHandler(
+      runner,
+      record.scheme,
+      restoreTarget(record.previousHandler),
+      "restoring the previous URL handler",
+    ).catch(() => {});
   }
   await unregisterApp(runner, record.appPath);
   await rm(record.appPath, { recursive: true, force: true });
@@ -186,19 +212,19 @@ export async function recoverStaleHandler({ env = process.env, home = homedir(),
 }
 
 function sleep(ms, signal) {
-  return new Promise((resolvePromise, reject) => {
+  return new Promise((resolve, reject) => {
     if (signal?.aborted) {
       reject(signal.reason ?? new InterruptedError());
       return;
     }
-    const timer = setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
-      resolvePromise();
-    }, ms);
     const onAbort = () => {
       clearTimeout(timer);
       reject(signal.reason ?? new InterruptedError());
     };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
     signal?.addEventListener("abort", onAbort, { once: true });
   });
 }
@@ -207,7 +233,13 @@ function sleep(ms, signal) {
  * Create the receiver. Resolves to { waitForCallback(signal), dispose() }.
  * Throws when any setup step fails; the caller then falls back to pasting.
  */
-export async function createNativeReceiver({ scheme, env = process.env, home = homedir(), runner = defaultRunner, platform = process.platform } = {}) {
+export async function createNativeReceiver({
+  scheme,
+  env = process.env,
+  home = homedir(),
+  runner = defaultRunner,
+  platform = process.platform,
+} = {}) {
   if (platform !== "darwin") throw new Error("native scheme capture is only available on macOS");
   if (!/^[a-z][a-z0-9+.-]*$/u.test(scheme)) throw new Error(`invalid scheme "${scheme}"`);
 
@@ -226,7 +258,9 @@ export async function createNativeReceiver({ scheme, env = process.env, home = h
   const cleanup = async () => {
     const current = await currentHandler(runner, scheme).catch(() => "");
     if (handlerChanged && current === bundleId) {
-      await setHandler(runner, scheme, restoreTarget(previousHandler), "restoring the previous URL handler").catch(() => {});
+      await setHandler(runner, scheme, restoreTarget(previousHandler), "restoring the previous URL handler").catch(
+        () => {},
+      );
     }
     await unregisterApp(runner, appPath);
     await rm(appPath, { recursive: true, force: true });
@@ -243,15 +277,24 @@ export async function createNativeReceiver({ scheme, env = process.env, home = h
     await writeFile(callbackFile, "", { mode: 0o600 });
     await chmod(callbackFile, 0o600);
 
-    const compileArgs = ["-o", appPath];
-    for (const line of callbackAppleScript(callbackFile, scheme, restoreTarget(previousHandler))) compileArgs.push("-e", line);
+    const scriptLines = callbackAppleScript(callbackFile, scheme, restoreTarget(previousHandler));
+    const compileArgs = ["-o", appPath, ...scriptLines.flatMap((line) => ["-e", line])];
     await checkedRun(runner, OSACOMPILE, compileArgs, "compiling the callback app");
     const plist = join(appPath, "Contents", "Info.plist");
-    await checkedRun(runner, PLUTIL, ["-insert", "CFBundleIdentifier", "-string", bundleId, plist], "setting CFBundleIdentifier");
+    await checkedRun(
+      runner,
+      PLUTIL,
+      ["-insert", "CFBundleIdentifier", "-string", bundleId, plist],
+      "setting CFBundleIdentifier",
+    );
     await checkedRun(runner, PLUTIL, ["-insert", "LSUIElement", "-bool", "true", plist], "setting LSUIElement");
     await checkedRun(runner, LSREGISTER, ["-f", appPath], "registering the callback app");
 
-    await writeFile(journal, `${JSON.stringify({ appPath, bundleId, pid: process.pid, previousHandler, scheme }, null, 2)}\n`, { mode: 0o600 });
+    await writeFile(
+      journal,
+      `${JSON.stringify({ appPath, bundleId, pid: process.pid, previousHandler, scheme }, null, 2)}\n`,
+      { mode: 0o600 },
+    );
     await setHandler(runner, scheme, bundleId);
     handlerChanged = true;
     debug(`Registered ${bundleId} as the ${scheme}:// handler`);
@@ -266,12 +309,7 @@ export async function createNativeReceiver({ scheme, env = process.env, home = h
     async waitForCallback(signal) {
       for (;;) {
         if (signal?.aborted) throw signal.reason ?? new InterruptedError();
-        let text = "";
-        try {
-          text = await readFile(callbackFile, "utf8");
-        } catch {
-          text = "";
-        }
+        const text = await readFile(callbackFile, "utf8").catch(() => "");
         if (text.trim()) return text.trim();
         await sleep(250, signal);
       }

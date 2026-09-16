@@ -21,7 +21,8 @@ export class ZclaudeError extends Error {
 export const usageError = (message, hint) => new ZclaudeError(message, { exitCode: EXIT.USAGE, hint });
 export const authError = (message, hint, cause) => new ZclaudeError(message, { exitCode: EXIT.AUTH, hint, cause });
 export const keyRejectedError = (message, hint) => new ZclaudeError(message, { exitCode: EXIT.KEY_REJECTED, hint });
-export const networkError = (message, hint, cause) => new ZclaudeError(message, { exitCode: EXIT.NETWORK, hint, cause });
+export const networkError = (message, hint, cause) =>
+  new ZclaudeError(message, { exitCode: EXIT.NETWORK, hint, cause });
 export const noClaudeError = (message, hint) => new ZclaudeError(message, { exitCode: EXIT.NO_CLAUDE, hint });
 
 export class InterruptedError extends ZclaudeError {
@@ -34,8 +35,9 @@ export class InterruptedError extends ZclaudeError {
 /** True for Ctrl-C style aborts from inquirer, AbortSignal, or our own class. */
 export function isInterrupt(error) {
   if (!error) return false;
-  if (error instanceof InterruptedError) return true;
-  if (error.name === "ExitPromptError") return true;
-  if (error.name === "AbortError" && error.interrupted) return true;
-  return false;
+  return Boolean(
+    error instanceof InterruptedError ||
+    error.name === "ExitPromptError" ||
+    (error.name === "AbortError" && error.interrupted),
+  );
 }

@@ -42,8 +42,8 @@ export const DEFAULT_MODELS = Object.freeze({
 });
 
 export const TIMEOUTS = Object.freeze({
-  validateMs: 8_000,
-  quotaMs: 3_000,
+  validateMs: 8000,
+  quotaMs: 3000,
   authMs: 15_000,
   loginDefaultSec: 300,
 });
@@ -55,7 +55,8 @@ function pick(env, name, fallback) {
 
 /** Resolve endpoint configuration for a given environment. */
 export function zaiConfig(env = process.env) {
-  const apiBase = pick(env, "ZCLAUDE_BASE_URL", DEFAULTS.apiBase).replace(/\/+$/u, "");
+  let apiBase = pick(env, "ZCLAUDE_BASE_URL", DEFAULTS.apiBase);
+  while (apiBase.endsWith("/")) apiBase = apiBase.slice(0, -1);
   return {
     clientId: pick(env, "ZAI_OAUTH_CLIENT_ID", DEFAULTS.clientId),
     authorizeUrl: pick(env, "ZAI_OAUTH_AUTHORIZE_URL", DEFAULTS.authorizeUrl),
@@ -88,8 +89,8 @@ export function zclaudeHome(env = process.env) {
 }
 
 export function loginTimeoutMs(env = process.env) {
-  const raw = Number.parseInt(pick(env, "ZCLAUDE_LOGIN_TIMEOUT", ""), 10);
-  const seconds = Number.isFinite(raw) && raw > 0 ? raw : TIMEOUTS.loginDefaultSec;
+  const raw = Number(pick(env, "ZCLAUDE_LOGIN_TIMEOUT", ""));
+  const seconds = Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : TIMEOUTS.loginDefaultSec;
   return seconds * 1000;
 }
 
@@ -100,7 +101,10 @@ export function flag(env, name) {
 
 /** Strip a Claude Code [1m] suffix and lowercase for lookup. */
 export function normalizeModelId(model) {
-  return String(model ?? "").trim().replace(/\[1m\]$/iu, "").toLowerCase();
+  return String(model ?? "")
+    .trim()
+    .replace(/\[1m\]$/iu, "")
+    .toLowerCase();
 }
 
 export function contextWindowFor(model) {
@@ -112,8 +116,7 @@ export function contextWindowFor(model) {
 /** Claude Code enables its 1M-context path only for ids ending in [1m]. */
 export function formatModelForClaude(model) {
   const id = String(model ?? "").trim();
-  if (!id) return id;
-  if (/\[1m\]$/iu.test(id)) return id;
+  if (!id || /\[1m\]$/iu.test(id)) return id;
   return contextWindowFor(id) >= 1_000_000 ? `${id}[1m]` : id;
 }
 

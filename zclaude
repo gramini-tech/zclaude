@@ -67,7 +67,7 @@ find_node() {
     while IFS= read -r bin; do
       [ -n "$bin" ] || continue
       if version_ok "$bin"; then echo "$bin"; return 0; fi
-    done < <(ls -1d "$dir"/*/bin/node "$dir"/*/installation/bin/node 2>/dev/null | sort -rV)
+    done < <(find "$dir" -maxdepth 4 -type f -path '*/bin/node' 2>/dev/null | sort -rV)
   done
   return 1
 }

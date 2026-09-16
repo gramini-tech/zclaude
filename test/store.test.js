@@ -2,7 +2,15 @@ import assert from "node:assert/strict";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { after, before, describe, it } from "node:test";
 
-import { deleteCredential, keychainAvailable, loadCredential, readState, saveCredential, storePaths, writeState } from "../src/store.js";
+import {
+  deleteCredential,
+  keychainAvailable,
+  loadCredential,
+  readState,
+  saveCredential,
+  storePaths,
+  writeState,
+} from "../src/store.js";
 import { isolatedEnv, tempHome } from "./helpers.js";
 
 describe("file store", () => {
@@ -22,7 +30,10 @@ describe("file store", () => {
 
   it("saves 0600, loads, and deletes", async () => {
     assert.equal(await loadCredential({ env, platform: "linux" }), null);
-    const { location } = await saveCredential({ apiKey: "abcdefghijklmnop.secretsecretsecret", email: "a@b.c", keyName: "zclaude" }, { env, platform: "linux" });
+    const { location } = await saveCredential(
+      { apiKey: "abcdefghijklmnop.secretsecretsecret", email: "a@b.c", keyName: "zclaude" },
+      { env, platform: "linux" },
+    );
     assert.equal(location, "file");
     const paths = storePaths(env);
     assert.equal((await stat(paths.credentialsFile)).mode & 0o777, 0o600);
@@ -57,7 +68,10 @@ describe("file store", () => {
 describe("keychain wrapper", () => {
   function fakeSecurity(store) {
     return async (args, { stdinText } = {}) => {
-      if (args[0] === "find-generic-password") return store.secret ? { code: 0, stdout: `${store.secret}\n`, stderr: "" } : { code: 44, stdout: "", stderr: "not found" };
+      if (args[0] === "find-generic-password")
+        return store.secret
+          ? { code: 0, stdout: `${store.secret}\n`, stderr: "" }
+          : { code: 44, stdout: "", stderr: "not found" };
       if (args[0] === "delete-generic-password") {
         if (!store.secret) return { code: 44, stdout: "", stderr: "" };
         store.secret = null;
@@ -79,9 +93,15 @@ describe("keychain wrapper", () => {
       const env = { HOME: home.dir, ZCLAUDE_HOME: `${home.dir}/.zclaude` };
       const store = { secret: null };
       const security = fakeSecurity(store);
-      const { location } = await saveCredential({ apiKey: "abcdefghijklmnop.secretsecretsecret", email: "me@x.y" }, { env, platform: "darwin", security });
+      const { location } = await saveCredential(
+        { apiKey: "abcdefghijklmnop.secretsecretsecret", email: "me@x.y" },
+        { env, platform: "darwin", security },
+      );
       assert.equal(location, "keychain");
-      assert.match(store.command, /add-generic-password -a "me@x.y" -s "zclaude" -w "abcdefghijklmnop.secretsecretsecret" -U/u);
+      assert.match(
+        store.command,
+        /add-generic-password -a "me@x.y" -s "zclaude" -w "abcdefghijklmnop.secretsecretsecret" -U/u,
+      );
       const loaded = await loadCredential({ env, platform: "darwin", security });
       assert.equal(loaded.source, "keychain");
       assert.equal(loaded.email, "me@x.y");
@@ -98,7 +118,10 @@ describe("keychain wrapper", () => {
     try {
       const env = { HOME: home.dir, ZCLAUDE_HOME: `${home.dir}/.zclaude` };
       const security = async () => ({ code: 1, stdout: "", stderr: "User interaction is not allowed." });
-      const { location } = await saveCredential({ apiKey: "abcdefghijklmnop.secretsecretsecret" }, { env, platform: "darwin", security });
+      const { location } = await saveCredential(
+        { apiKey: "abcdefghijklmnop.secretsecretsecret" },
+        { env, platform: "darwin", security },
+      );
       assert.equal(location, "file");
       const loaded = await loadCredential({ env, platform: "darwin", security });
       assert.equal(loaded.source, "file");

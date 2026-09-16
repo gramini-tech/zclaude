@@ -11,7 +11,12 @@ describe("buildZaiEnv", () => {
   const config = zaiConfig({});
   const models = { primary: "glm-5.3", subagent: "glm-5.3-flash", fast: "glm-4.7" };
   it("sets the Z.ai variables, strips ANTHROPIC_API_KEY and applies [1m] where known", () => {
-    const env = buildZaiEnv({ baseEnv: { PATH: "/bin", ANTHROPIC_API_KEY: "sk-ant", KEEP: "1" }, apiKey: "id.secret", config, models });
+    const env = buildZaiEnv({
+      baseEnv: { PATH: "/bin", ANTHROPIC_API_KEY: "sk-ant", KEEP: "1" },
+      apiKey: "id.secret",
+      config,
+      models,
+    });
     assert.equal(env.ANTHROPIC_API_KEY, undefined);
     assert.equal(env.KEEP, "1");
     assert.equal(env.ANTHROPIC_AUTH_TOKEN, "id.secret");
@@ -39,7 +44,12 @@ describe("buildZaiEnv", () => {
     assert.equal(env.FOO, "1");
   });
   it("keeps an explicit [1m] suffix and unknown ids untouched", () => {
-    const env = buildZaiEnv({ baseEnv: {}, apiKey: "k", config, models: { primary: "custom-x[1m]", subagent: "mystery", fast: "mystery" } });
+    const env = buildZaiEnv({
+      baseEnv: {},
+      apiKey: "k",
+      config,
+      models: { primary: "custom-x[1m]", subagent: "mystery", fast: "mystery" },
+    });
     assert.equal(env.ANTHROPIC_MODEL, "custom-x[1m]");
     assert.equal(env.CLAUDE_CODE_SUBAGENT_MODEL, "mystery");
     assert.equal(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, "200000");
@@ -57,15 +67,27 @@ describe("findClaude and runClaude", () => {
     const dir = join(home.dir, "bin");
     await mkdir(dir, { recursive: true });
     fakeBin = join(dir, "claude");
-    await writeFile(fakeBin, "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo fake 1.0; exit 0; fi\necho \"$ZC_TEST_VAR\"\nexit \"${1:-0}\"\n");
+    await writeFile(
+      fakeBin,
+      '#!/bin/sh\nif [ "$1" = "--version" ]; then echo fake 1.0; exit 0; fi\necho "$ZC_TEST_VAR"\nexit "${1:-0}"\n',
+    );
     await chmod(fakeBin, 0o755);
   });
   after(() => home.cleanup());
 
   it("finds claude on PATH, honours the override, returns null otherwise", () => {
-    assert.equal(findClaude({ env: { PATH: `/nonexistent:${join(home.dir, "bin")}` }, platform: "linux", home: home.dir }), fakeBin);
-    assert.equal(findClaude({ env: { PATH: "", ZCLAUDE_CLAUDE_BIN: fakeBin }, platform: "linux", home: "/nowhere" }), fakeBin);
-    assert.equal(findClaude({ env: { PATH: "", ZCLAUDE_CLAUDE_BIN: "/missing/claude" }, platform: "linux", home: "/nowhere" }), null);
+    assert.equal(
+      findClaude({ env: { PATH: `/nonexistent:${join(home.dir, "bin")}` }, platform: "linux", home: home.dir }),
+      fakeBin,
+    );
+    assert.equal(
+      findClaude({ env: { PATH: "", ZCLAUDE_CLAUDE_BIN: fakeBin }, platform: "linux", home: "/nowhere" }),
+      fakeBin,
+    );
+    assert.equal(
+      findClaude({ env: { PATH: "", ZCLAUDE_CLAUDE_BIN: "/missing/claude" }, platform: "linux", home: "/nowhere" }),
+      null,
+    );
     assert.equal(findClaude({ env: { PATH: "/nonexistent" }, platform: "linux", home: "/nowhere" }), null);
   });
   it("falls back to ~/.local/bin", async () => {
@@ -76,7 +98,10 @@ describe("findClaude and runClaude", () => {
     assert.equal(findClaude({ env: { PATH: "" }, platform: "linux", home: home.dir }), join(local, "claude"));
   });
   it("propagates the child's exit code and environment", async () => {
-    assert.equal(await runClaude(fakeBin, ["7"], { PATH: "/usr/bin:/bin", ZC_TEST_VAR: "x" }, { platform: "linux" }), 7);
+    assert.equal(
+      await runClaude(fakeBin, ["7"], { PATH: "/usr/bin:/bin", ZC_TEST_VAR: "x" }, { platform: "linux" }),
+      7,
+    );
     assert.equal(await runClaude(fakeBin, [], { PATH: "/usr/bin:/bin" }, { platform: "linux" }), 0);
   });
   it("maps signals to 128+n", () => {
