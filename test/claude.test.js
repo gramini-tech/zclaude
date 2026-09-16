@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmod, mkdir, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 
@@ -62,14 +62,25 @@ describe("buildZaiEnv", () => {
 describe("findClaude and runClaude", () => {
   let home;
   let fakeBin;
+  let log;
   before(async () => {
     home = await tempHome();
     const dir = join(home.dir, "bin");
     await mkdir(dir, { recursive: true });
     fakeBin = join(dir, "claude");
+    // runClaude inherits stdio, and under the test runner that is the runner's
+    // own stream: a child writing to stdout there corrupts its protocol (Node
+    // 20 reports "Unable to deserialize cloned data"). So the child records
+    // what it saw in a file, which is what the assertions read anyway.
+    log = join(home.dir, "ran.txt");
     await writeFile(
       fakeBin,
-      '#!/bin/sh\nif [ "$1" = "--version" ]; then echo fake 1.0; exit 0; fi\necho "$ZC_TEST_VAR"\nexit "${1:-0}"\n',
+      [
+        "#!/bin/sh",
+        'if [ "$1" = "--version" ]; then echo fake 1.0; exit 0; fi',
+        `printf '%s' "$ZC_TEST_VAR" > "${log}"`,
+        'exit "${1:-0}"',
+      ].join("\n"),
     );
     await chmod(fakeBin, 0o755);
   });
@@ -102,7 +113,9 @@ describe("findClaude and runClaude", () => {
       await runClaude(fakeBin, ["7"], { PATH: "/usr/bin:/bin", ZC_TEST_VAR: "x" }, { platform: "linux" }),
       7,
     );
+    assert.equal(await readFile(log, "utf8"), "x", "the environment reached the child");
     assert.equal(await runClaude(fakeBin, [], { PATH: "/usr/bin:/bin" }, { platform: "linux" }), 0);
+    assert.equal(await readFile(log, "utf8"), "", "and nothing of ours leaks into it");
   });
   it("maps signals to 128+n", () => {
     assert.equal(exitCodeForSignal("SIGINT"), 130);
