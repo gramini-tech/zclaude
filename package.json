@@ -1,6 +1,6 @@
 {
   "name": "zclaude",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Interactive preloader for Claude Code: pick your Anthropic account or your Z.ai GLM Coding Plan per launch, with browser sign-in, Keychain-stored keys and per-project model config",
   "type": "module",
   "bin": {
@@ -28,7 +28,8 @@
     "lint:sh": "sh scripts/lint-shell.sh",
     "lint:fix": "eslint . --fix && prettier --write .",
     "check": "npm run -s lint && npm run -s test:coverage && npm pack --dry-run",
-    "prepare": "node scripts/install-hooks.js"
+    "prepare": "node scripts/install-hooks.js",
+    "render:logo": "node scripts/render-logo.js"
   },
   "dependencies": {
     "@inquirer/prompts": "^8.7.2"
@@ -37,7 +38,7 @@
     "type": "git",
     "url": "git+https://github.com/vipincr/zclaude.git"
   },
-  "homepage": "https://github.com/vipincr/zclaude#readme",
+  "homepage": "https://vipincr.github.io/zclaude/",
   "bugs": {
     "url": "https://github.com/vipincr/zclaude/issues"
   },

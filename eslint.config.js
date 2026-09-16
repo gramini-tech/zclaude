@@ -168,6 +168,16 @@ export default [
     rules: strictCore,
   },
   {
+    files: ["site/**/*.js"],
+    languageOptions: { globals: { ...globals.browser } },
+    rules: {
+      "n/no-unsupported-features/node-builtins": "off",
+      "n/no-unsupported-features/es-builtins": "off",
+      "n/no-unsupported-features/es-syntax": "off",
+      "unicorn/prefer-query-selector": "off",
+    },
+  },
+  {
     files: ["test/**/*.js"],
     rules: {
       "max-nested-callbacks": ["error", 6],

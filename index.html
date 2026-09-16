@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>zclaude</title>
+    <meta
+      name="description"
+      content="Run Claude Code on your Z.ai GLM Coding Plan. Pick the account per launch, sign in through the browser, choose models for the main agent and its subagents."
+    />
+    <meta name="color-scheme" content="dark light" />
+    <link rel="canonical" href="https://vipincr.github.io/zclaude/" />
+    <link rel="icon" href="site/favicon.svg" type="image/svg+xml" />
+    <meta property="og:title" content="zclaude" />
+    <meta
+      property="og:description"
+      content="Claude Code on your Z.ai GLM Coding Plan, one command away. Open source, MIT licensed."
+    />
+    <meta property="og:url" content="https://vipincr.github.io/zclaude/" />
+    <meta property="og:type" content="website" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="site/style.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="wrap top-inner">
+        <a class="brand" href="#top" aria-label="zclaude home">
+          <img src="site/favicon.svg" alt="" width="24" height="24" />
+          <span>zclaude</span>
+        </a>
+        <nav aria-label="Sections">
+          <a href="#install">Install</a>
+          <a href="#how">How it works</a>
+          <a href="#usage">Usage</a>
+          <a href="#faq">FAQ</a>
+          <a href="https://github.com/vipincr/zclaude">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="hero wrap">
+        <img class="logo" src="site/logo.svg" alt="zclaude" width="670" height="130" />
+        <h1>Claude Code on your Z.ai GLM Coding Plan</h1>
+        <p class="lede">
+          zclaude asks which account a session should use, signs you in to Z.ai in the browser, lets you choose the GLM
+          models for the main agent and its subagents, and then starts Claude Code with all of it passed through the
+          environment.
+        </p>
+
+        <div class="install" id="install">
+          <div class="tabs" role="tablist" aria-label="Install method">
+            <input type="radio" name="method" id="tab-curl" checked />
+            <label for="tab-curl" role="tab">curl</label>
+            <input type="radio" name="method" id="tab-npx" />
+            <label for="tab-npx" role="tab">npx</label>
+            <input type="radio" name="method" id="tab-npm" />
+            <label for="tab-npm" role="tab">npm</label>
+            <input type="radio" name="method" id="tab-git" />
+            <label for="tab-git" role="tab">git</label>
+
+            <div class="panel" data-for="tab-curl">
+              <pre><code id="cmd-curl">curl -fsSL https://vipincr.github.io/zclaude/install | bash</code></pre>
+              <button class="copy" type="button" data-copy="cmd-curl">Copy</button>
+              <p class="hint">
+                For a new Mac or Linux machine. Uses your Node.js when it is 20.17 or newer and brings a private copy
+                only when it is missing or older. Installs Claude Code too if you do not have it.
+              </p>
+            </div>
+            <div class="panel" data-for="tab-npx">
+              <pre><code id="cmd-npx">npx github:vipincr/zclaude self-install</code></pre>
+              <button class="copy" type="button" data-copy="cmd-npx">Copy</button>
+              <p class="hint">
+                Node.js already installed. <code>npx github:vipincr/zclaude</code> on its own runs it once without
+                keeping anything.
+              </p>
+            </div>
+            <div class="panel" data-for="tab-npm">
+              <pre><code id="cmd-npm">npm install -g github:vipincr/zclaude</code></pre>
+              <button class="copy" type="button" data-copy="cmd-npm">Copy</button>
+              <p class="hint">A regular global npm install straight from GitHub.</p>
+            </div>
+            <div class="panel" data-for="tab-git">
+              <pre><code id="cmd-git">git clone https://github.com/vipincr/zclaude.git &amp;&amp; cd zclaude &amp;&amp; npm install &amp;&amp; ln -s "$PWD/zclaude" ~/.local/bin/zclaude</code></pre>
+              <button class="copy" type="button" data-copy="cmd-git">Copy</button>
+              <p class="hint">Work from a clone. The bash runner finds a suitable Node on its own.</p>
+            </div>
+          </div>
+        </div>
+
+        <p class="then">Then open a new terminal and type <code>zclaude</code>.</p>
+      </section>
+
+      <section class="wrap demo" id="how" aria-labelledby="how-title">
+        <h2 id="how-title">A first run, start to finish</h2>
+        <div
+          class="terminal"
+          role="img"
+          aria-label="Terminal session showing the zclaude menu, sign-in, model choices and launch"
+        >
+          <div class="terminal-bar"><span></span><span></span><span></span></div>
+          <pre><span class="prompt">$</span> zclaude
+<span class="q">?</span> What do you want to launch?
+  Claude Code
+<span class="sel">❯ Claude Code + Z.ai GLM Coding Plan</span>
+<span class="dim">· Sign in to Z.ai in your browser to authorize zclaude.</span>
+<span class="ok">✓</span> Signed in as you@example.com. Key "zclaude" created and stored in keychain.
+<span class="q">?</span> Primary model (what you talk to): <span class="ans">glm-5.3  (1M context)</span>
+<span class="q">?</span> Subagent model (background agents, Task tool): <span class="ans">glm-5.3-flash  (1M context)</span>
+<span class="q">?</span> Fast model (haiku-class helpers, summaries): <span class="ans">glm-5.3-flash  (1M context)</span>
+<span class="q">?</span> Save these choices? <span class="ans">This project</span>
+<span class="ok">✓</span> Saved to ./.zclaude/env
+<span class="dim">· Z.ai GLM Coding Plan (max) · 5h credits 12% · weekly credits 17%</span>
+<span class="dim">· Launching claude on glm-5.3 (subagents: glm-5.3-flash, fast: glm-5.3-flash)</span></pre>
+        </div>
+        <p class="after">
+          The next launch skips straight from the menu to Claude Code. Quit it and your shell is exactly as it was.
+        </p>
+      </section>
+
+      <section class="wrap features" aria-labelledby="features-title">
+        <h2 id="features-title">What it does for you</h2>
+        <ul class="grid">
+          <li>
+            <h3>Choose per launch</h3>
+            <p>
+              A menu picks your Anthropic account or the Z.ai plan each time. Add your own entries as files in
+              <code>~/.zclaude/profiles</code>.
+            </p>
+          </li>
+          <li>
+            <h3>Browser sign-in</h3>
+            <p>
+              Z.ai's own authorization page issues a coding-plan key named <code>zclaude</code>. On macOS the redirect
+              is caught automatically; elsewhere you paste one URL.
+            </p>
+          </li>
+          <li>
+            <h3>Key in the Keychain</h3>
+            <p>
+              The key lives in the macOS Keychain, or a 0600 file on Linux. It never lands in a shell rc file or in
+              Claude Code's settings.
+            </p>
+          </li>
+          <li>
+            <h3>Separate models</h3>
+            <p>
+              The main agent, subagents and background helpers each get a model from the list your plan returns, with
+              context sizes shown.
+            </p>
+          </li>
+          <li>
+            <h3>Per-project choices</h3>
+            <p>
+              Choices save to <code>./.zclaude/env</code> or <code>~/.zclaude/settings</code>. Neither holds secrets, so
+              the project file can be committed.
+            </p>
+          </li>
+          <li>
+            <h3>Environment only</h3>
+            <p>
+              Everything reaches Claude Code through its process environment. Your <code>~/.claude</code> files are read
+              and never written.
+            </p>
+          </li>
+          <li>
+            <h3>Run logs</h3>
+            <p>
+              Each run writes a redacted JSON log. <code>zclaude log</code> shows the last one when something needs a
+              closer look.
+            </p>
+          </li>
+          <li>
+            <h3>Updates itself</h3>
+            <p>
+              Every push is a new version. A daily check tells you when one is out, and
+              <code>zclaude self-update</code> installs it.
+            </p>
+          </li>
+        </ul>
+      </section>
+
+      <section class="wrap usage" id="usage" aria-labelledby="usage-title">
+        <h2 id="usage-title">Usage</h2>
+        <div class="table-scroll">
+          <table>
+            <tbody>
+              <tr>
+                <td><code>zclaude</code></td>
+                <td>Menu, then launch. Signs in first if no valid key is stored.</td>
+              </tr>
+              <tr>
+                <td><code>zclaude -p "explain this repo"</code></td>
+                <td>Any arguments after zclaude's own options go to <code>claude</code>.</td>
+              </tr>
+              <tr>
+                <td><code>zclaude --profile zai</code></td>
+                <td>Skip the menu. <code>--profile claude</code> launches your normal Claude Code.</td>
+              </tr>
+              <tr>
+                <td><code>zclaude --reconfigure</code></td>
+                <td>Choose the models again and save them per project or as your default.</td>
+              </tr>
+              <tr>
+                <td><code>zclaude login</code></td>
+                <td>Sign in now, then optionally pick models and launch.</td>
+              </tr>
+              <tr>
+                <td><code>zclaude status</code></td>
+                <td>Key, quota, models, config files and the current log file.</td>
+              </tr>
+              <tr>
+                <td><code>zclaude models</code></td>
+                <td>Models your plan can use.</td>
+              </tr>
+              <tr>
+                <td><code>zclaude log</code></td>
+                <td>The last run's log, for post-mortems. Add <code>--json</code> to share it.</td>
+              </tr>
+              <tr>
+                <td><code>zclaude self-update</code></td>
+                <td>Update the same way zclaude was installed.</td>
+              </tr>
+              <tr>
+                <td><code>zclaude logout</code></td>
+                <td>Forget the stored key on this machine.</td>
+              </tr>
+              <tr>
+                <td><code>zclaude -- --help</code></td>
+                <td>Claude Code's own help. <code>zclaude --help</code> shows zclaude's.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Saved choices</h3>
+        <pre class="code"><code># ./.zclaude/env  (or ~/.zclaude/settings for your default)
+ZCLAUDE_MODEL=glm-5.3
+ZCLAUDE_SUBAGENT_MODEL=glm-5.3-flash
+ZCLAUDE_FAST_MODEL=glm-5.3-flash
+ZCLAUDE_PROFILE=zai        # optional: skip the menu in this project</code></pre>
+        <p>
+          A command-line flag beats the environment, which beats the project file, which beats your user default. Every
+          option and variable is listed in the
+          <a href="https://github.com/vipincr/zclaude#readme">README</a>.
+        </p>
+      </section>
+
+      <section class="wrap faq" id="faq" aria-labelledby="faq-title">
+        <h2 id="faq-title">FAQ</h2>
+
+        <details>
+          <summary>What is zclaude?</summary>
+          <p>
+            A small launcher for Claude Code. It keeps your normal Claude Code setup untouched and, when you pick the
+            Z.ai profile, starts Claude Code pointed at Z.ai's Anthropic-compatible endpoint with your coding-plan key
+            and the GLM models you chose.
+          </p>
+        </details>
+
+        <details>
+          <summary>Is it made by Anthropic or Z.ai?</summary>
+          <p>
+            No. zclaude is an independent open-source project under the MIT license. It uses the environment variables
+            Claude Code documents and the same browser sign-in that Z.ai's ZCode desktop app uses.
+          </p>
+        </details>
+
+        <details>
+          <summary>What do I need?</summary>
+          <p>
+            A Z.ai GLM Coding Plan subscription and a Mac or Linux machine. The curl installer adds Claude Code if it is
+            missing, and Node.js only if yours is missing or older than 20.17. On Windows, install with npm; the sign-in
+            asks you to paste the redirect URL.
+          </p>
+        </details>
+
+        <details>
+          <summary>Does it change my Claude Code settings?</summary>
+          <p>
+            No. It never writes to <code>~/.claude/settings.json</code>, <code>~/.claude.json</code> or any project
+            <code>.claude</code> folder. Everything is passed in the environment of the one <code>claude</code> process
+            it starts, so the moment you quit, nothing is left behind. The test suite checks this on every change.
+          </p>
+        </details>
+
+        <details>
+          <summary>My settings.json already sets ANTHROPIC_* variables. What happens?</summary>
+          <p>
+            Claude Code applies the <code>env</code> block of its settings file over the process environment, which
+            would quietly undo the session zclaude set up. So zclaude shows each conflicting variable with both values
+            and asks whether to stop so you can edit the file, or launch anyway. It does not edit the file for you.
+          </p>
+        </details>
+
+        <details>
+          <summary>Where is my key, and how do I remove it?</summary>
+          <p>
+            In the macOS Keychain under the service name <code>zclaude</code>, or in
+            <code>~/.zclaude/credentials.json</code> with 0600 permissions on Linux. <code>zclaude logout</code> removes
+            the local copy. The key also exists on your Z.ai account; revoke it in the Z.ai API key console when you no
+            longer need it.
+          </p>
+        </details>
+
+        <details>
+          <summary>Which models can I pick?</summary>
+          <p>
+            Whatever Z.ai's model list returns for your plan, such as <code>glm-5.3</code>,
+            <code>glm-5.3-flash</code> and <code>glm-4.7</code>. The wizard also accepts a custom model id. Models with
+            a 1M context window are passed to Claude Code with the <code>[1m]</code> suffix it expects.
+          </p>
+        </details>
+
+        <details>
+          <summary>How do I go back to my usual Claude Code?</summary>
+          <p>
+            Pick "Claude Code" in the menu, run <code>zclaude --profile claude</code>, or just run
+            <code>claude</code> as before. Nothing about your usual setup was changed.
+          </p>
+        </details>
+
+        <details>
+          <summary>Will the installer replace my Node.js?</summary>
+          <p>
+            No. If <code>node</code> is 20.17 or newer it is used as is. If it is missing or older, the installer
+            downloads an official, checksum-verified build into <code>~/.zclaude/node</code> for zclaude alone and
+            leaves your system Node and your PATH for Node untouched.
+          </p>
+        </details>
+
+        <details>
+          <summary>How do I update or uninstall?</summary>
+          <p>
+            <code>zclaude self-update</code> updates it the same way it was installed. To remove an installer-based
+            setup, run <code>curl -fsSL https://vipincr.github.io/zclaude/install | bash -s -- --uninstall</code>; your
+            settings and logs stay in <code>~/.zclaude</code> until you delete them. For npm installs, use
+            <code>npm uninstall -g zclaude</code>.
+          </p>
+        </details>
+
+        <details>
+          <summary>Something went wrong. What should I look at?</summary>
+          <p>
+            Run <code>zclaude log</code>. Every run records the profile, config files, key source and validation, each
+            HTTP call with its status and timing, and how Claude Code was started and exited. Keys are redacted, so
+            <code>zclaude log --json</code> is safe to attach to an issue.
+          </p>
+        </details>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <div class="wrap foot-inner">
+        <p>
+          <strong>zclaude</strong> · MIT License · <a href="https://github.com/vipincr/zclaude">GitHub</a> ·
+          <a href="https://github.com/vipincr/zclaude#readme">README</a> ·
+          <a href="https://github.com/vipincr/zclaude/blob/main/CHANGELOG.md">Changelog</a> ·
+          <a href="https://github.com/vipincr/zclaude/issues">Report an issue</a>
+        </p>
+        <p class="fine">
+          Independent project, not affiliated with or endorsed by Anthropic or Z.ai. Claude Code is a product of
+          Anthropic. GLM and the GLM Coding Plan are products of Z.ai.
+        </p>
+      </div>
+    </footer>
+
+    <script type="module" src="site/main.js"></script>
+  </body>
+</html>

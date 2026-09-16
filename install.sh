@@ -169,7 +169,7 @@ fi
 [ -f "$STAGE/package.json" ] && [ -f "$STAGE/bin/zclaude.js" ] || die "The downloaded archive does not look like zclaude."
 
 info "Installing zclaude's runtime dependency"
-(cd "$STAGE" && PATH="$NODE_BIN_DIR:$PATH" "$NPM_BIN" install --omit=dev --ignore-scripts --no-fund --no-audit --loglevel=error) || die "npm install failed."
+(cd "$STAGE" && PATH="$NODE_BIN_DIR:$PATH" "$NPM_BIN" install --omit=dev --ignore-scripts --no-fund --no-audit --no-update-notifier --loglevel=error) || die "npm install failed."
 
 mkdir -p "$(dirname "$APP_DIR")"
 rm -rf "$APP_DIR.tmp"

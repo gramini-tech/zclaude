@@ -4,15 +4,11 @@ Interactive preloader for [Claude Code](https://claude.com/claude-code). Type `z
 this session runs on your Anthropic account or on your [Z.ai GLM Coding Plan](https://z.ai/subscribe),
 and it hands off to `claude` with the right environment injected into that one child process.
 
-```
-                    ████                              ██
-                      ██                              ██
-████████    ██████    ██      ██████  ██    ██    ██████    ████
-      ██  ██          ██          ██  ██    ██  ██    ██  ██    ██
-    ██    ██          ██      ██████  ██    ██  ██    ██  ████████
-  ██      ██          ██    ██    ██  ██    ██  ██    ██  ██
-████████    ██████  ██████    ██████    ██████    ██████    ██████
-```
+<p align="center">
+  <img src="site/logo.svg" alt="zclaude" width="560">
+</p>
+
+<p align="center"><a href="https://vipincr.github.io/zclaude/">vipincr.github.io/zclaude</a></p>
 
 Why it exists: every published recipe for GLM in Claude Code writes the API key in plaintext into
 `~/.claude/settings.json` or a shell rc file, and then Claude Code is stuck on Z.ai until you edit it

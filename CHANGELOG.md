@@ -15,6 +15,9 @@ First release.
   5-hour and weekly windows and when a nearly used-up window resets.
 - A settings.json env block that would override the session is a prompt (quit to edit, or launch
   anyway), never a silent warning; zclaude never writes Claude Code files.
+- Website at https://vipincr.github.io/zclaude/ with install tabs, a first-run walkthrough, usage and
+  FAQ. Higher-resolution wordmark (half-block pixels, gradient, shadow) shared by the terminal banner,
+  the site logo and the favicon.
 - `install.sh` for bare machines (downloads Node if needed, installs Claude Code), `self-install`
   and `self-update` commands, daily update notice, patch version bumped on every commit.
 - Structured per-run log under `~/.zclaude/logs` with level and category filters, `zclaude log`
