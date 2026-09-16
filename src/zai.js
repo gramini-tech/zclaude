@@ -13,14 +13,19 @@ function modelIds(json) {
   return ids;
 }
 
-export function describeModels(ids) {
+function describeModels(ids) {
   return ids.map((id) => ({ id, contextWindow: contextWindowFor(id) }));
 }
+
+/** @typedef {{fetchImpl?: typeof fetch, signal?: AbortSignal, timeoutMs?: number}} FetchOptions */
 
 /**
  * Check a key against the models endpoint (the same call Z.ai's own helper
  * uses). Returns { status, httpStatus, models, detail } where status is one of
  * valid | rejected | throttled | inconclusive. Throws only on network failure.
+ * @param {string} apiKey
+ * @param {{modelsUrl: string}} config
+ * @param {FetchOptions} [options]
  */
 export async function checkKey(apiKey, config, { fetchImpl, signal, timeoutMs = TIMEOUTS.validateMs } = {}) {
   const response = await request({
@@ -53,7 +58,12 @@ export async function checkKey(apiKey, config, { fetchImpl, signal, timeoutMs = 
   };
 }
 
-/** Best-effort quota lookup. Returns null on any failure. */
+/**
+ * Best-effort quota lookup. Returns null on any failure.
+ * @param {string} apiKey
+ * @param {{quotaUrl: string}} config
+ * @param {FetchOptions} [options]
+ */
 export async function fetchQuota(apiKey, config, { fetchImpl, signal } = {}) {
   try {
     const response = await request({

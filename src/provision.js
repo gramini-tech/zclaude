@@ -117,6 +117,9 @@ async function copySecret(authed, keysUrl, apiKeyId) {
 /**
  * Mint (or reuse) the durable key. Returns { apiKey, keyName, created,
  * organizationId, projectId }. apiKey is "<id>.<secret>".
+ * @param {string} oauthAccessToken
+ * @param {{apiBase: string, bizLoginUrl: string, keyName: string}} config
+ * @param {{fetchImpl?: typeof fetch, signal?: AbortSignal, onProgress?: (step: string) => void}} [options]
  */
 export async function mintApiKey(oauthAccessToken, config, { fetchImpl, signal, onProgress } = {}) {
   const token = str(oauthAccessToken);

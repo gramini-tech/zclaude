@@ -26,7 +26,7 @@ const PLUTIL = "/usr/bin/plutil";
 
 export const BUNDLE_PREFIX = "dev.zclaude.oauth-callback.";
 export const APP_PREFIX = "zclaude OAuth Callback ";
-export const JOURNAL_NAME = "oauth-handler-recovery.json";
+const JOURNAL_NAME = "oauth-handler-recovery.json";
 
 const currentHandlerJxa = String.raw`
 ObjC.import("AppKit");
@@ -46,7 +46,7 @@ function run(argv) {
 }
 `;
 
-export function defaultRunner(command, args) {
+function defaultRunner(command, args) {
   return new Promise((resolve) => {
     execFile(command, args, { maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
       resolve({
@@ -67,7 +67,7 @@ async function checkedRun(runner, command, args, step) {
   return result.stdout.trim();
 }
 
-export function currentHandler(runner, scheme) {
+function currentHandler(runner, scheme) {
   return checkedRun(
     runner,
     OSASCRIPT,
@@ -76,7 +76,7 @@ export function currentHandler(runner, scheme) {
   );
 }
 
-export async function setHandler(runner, scheme, bundleId, step = "registering the callback handler") {
+async function setHandler(runner, scheme, bundleId, step = "registering the callback handler") {
   const status = await checkedRun(
     runner,
     OSASCRIPT,
@@ -124,7 +124,7 @@ export function journalPath(env = process.env) {
   return join(zclaudeHome(env), JOURNAL_NAME);
 }
 
-export function applicationsDir(home) {
+function applicationsDir(home) {
   return join(home, "Applications");
 }
 
@@ -232,6 +232,7 @@ function sleep(ms, signal) {
 /**
  * Create the receiver. Resolves to { waitForCallback(signal), dispose() }.
  * Throws when any setup step fails; the caller then falls back to pasting.
+ * @param {{scheme: string, env?: NodeJS.ProcessEnv, home?: string, runner?: typeof defaultRunner, platform?: NodeJS.Platform}} options
  */
 export async function createNativeReceiver({
   scheme,
@@ -239,7 +240,7 @@ export async function createNativeReceiver({
   home = homedir(),
   runner = defaultRunner,
   platform = process.platform,
-} = {}) {
+}) {
   if (platform !== "darwin") throw new Error("native scheme capture is only available on macOS");
   if (!/^[a-z][a-z0-9+.-]*$/u.test(scheme)) throw new Error(`invalid scheme "${scheme}"`);
 

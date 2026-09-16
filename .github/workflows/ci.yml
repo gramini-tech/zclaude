@@ -6,26 +6,26 @@ on:
   pull_request:
 
 jobs:
-  test:
+  check:
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        node: ["20", "22"]
+        node: ["20", "22", "24"]
     runs-on: ${{ matrix.os }}
+    env:
+      CI: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
           cache: npm
+      - name: Install shellcheck
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then sudo apt-get update && sudo apt-get install -y shellcheck; else brew install shellcheck; fi
       - run: npm ci
-      - run: npm test
+      - run: npm run lint
+      - run: npm run test:coverage
       - run: ./zclaude --help
       - run: npm pack --dry-run
-  shellcheck:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y shellcheck
-      - run: shellcheck zclaude

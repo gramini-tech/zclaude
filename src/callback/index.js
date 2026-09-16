@@ -56,8 +56,21 @@ function translateFailure(error, controller, timeoutMs) {
 }
 
 /**
- * Options: timeoutMs, allowNative, allowPaste, env, platform, onReady(mode).
+ * @typedef {object} ReceiveOptions
+ * @property {number} timeoutMs
+ * @property {boolean} [allowNative]
+ * @property {boolean} [allowPaste]
+ * @property {NodeJS.ProcessEnv} [env]
+ * @property {NodeJS.Platform} [platform]
+ * @property {boolean} [interactive]
+ * @property {(mode: {native: boolean, paste: boolean}) => void | Promise<void>} [onReady]
+ * @property {typeof createNativeReceiver} [createNative]
+ * @property {typeof promptForCallback} [promptPaste]
+ */
+
+/**
  * Resolves with { value, from } where value is the raw pasted or captured text.
+ * @param {ReceiveOptions} options
  */
 export async function receiveCallback({
   timeoutMs,
@@ -69,7 +82,7 @@ export async function receiveCallback({
   onReady = () => {},
   createNative = createNativeReceiver,
   promptPaste = promptForCallback,
-} = {}) {
+}) {
   const pasteAvailable = allowPaste && interactive;
   const native = await setupNative({
     wanted: allowNative && platform === "darwin" && !flag(env, "ZCLAUDE_NO_NATIVE_CALLBACK"),

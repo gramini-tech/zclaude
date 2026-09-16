@@ -12,6 +12,7 @@ const { EXIT, isInterrupt, ZclaudeError } = await import("../src/errors.js");
 const { error: logError, isVerbose, warn } = await import("../src/ui/log.js");
 const { redact } = await import("../src/http.js");
 
+/** @param {any} error */
 function handle(error) {
   if (isInterrupt(error)) {
     process.stderr.write("\n");
@@ -22,7 +23,8 @@ function handle(error) {
     logError(redact(error.message));
     if (error.hint) warn(redact(error.hint));
     if (isVerbose() && error.stack) process.stderr.write(`${redact(error.stack)}\n`);
-    if (isVerbose() && error.cause?.stack) process.stderr.write(`caused by: ${redact(error.cause.stack)}\n`);
+    const { cause } = /** @type {{cause?: any}} */ (error);
+    if (isVerbose() && cause?.stack) process.stderr.write(`caused by: ${redact(cause.stack)}\n`);
     process.exitCode = error.exitCode;
     return;
   }

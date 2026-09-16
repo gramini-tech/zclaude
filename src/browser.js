@@ -19,7 +19,7 @@ function run(command, args, { shell = false } = {}) {
   });
 }
 
-export function browserCommand(platform = process.platform, env = process.env) {
+function browserCommand(platform = process.platform, env = process.env) {
   const custom = typeof env.BROWSER === "string" ? env.BROWSER.trim() : "";
   if (custom) return { command: custom, args: [], shell: false };
   if (platform === "darwin") return { command: "/usr/bin/open", args: [], shell: false };

@@ -8,7 +8,7 @@ import { delimiter, isAbsolute, join, resolve as resolvePath } from "node:path";
 import { contextWindowFor, formatModelForClaude } from "./config.js";
 import { EXIT, noClaudeError, ZclaudeError } from "./errors.js";
 
-export const INSTALL_HINT = [
+const INSTALL_HINT = [
   "Install Claude Code first:",
   "  curl -fsSL https://claude.ai/install.sh | bash",
   "  or: npm install -g @anthropic-ai/claude-code",
@@ -134,7 +134,7 @@ export function runClaude(bin, args, env, { platform = process.platform } = {}) 
       process.off("SIGINT", ignore);
       process.off("SIGTERM", ignore);
     };
-    child.on("error", (error) => {
+    child.on("error", (/** @type {NodeJS.ErrnoException} */ error) => {
       restore();
       if (error?.code === "ENOENT") {
         reject(noClaudeError(`claude disappeared from ${bin} before it could start.`, INSTALL_HINT));

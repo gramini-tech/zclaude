@@ -33,7 +33,7 @@ export const MODEL_CONTEXT_WINDOWS = {
   "glm-4.7": 200_000,
   "glm-4.5-air": 128_000,
 };
-export const FALLBACK_CONTEXT_WINDOW = 200_000;
+const FALLBACK_CONTEXT_WINDOW = 200_000;
 
 export const DEFAULT_MODELS = Object.freeze({
   primary: "glm-5.3",
@@ -100,7 +100,7 @@ export function flag(env, name) {
 }
 
 /** Strip a Claude Code [1m] suffix and lowercase for lookup. */
-export function normalizeModelId(model) {
+function normalizeModelId(model) {
   return String(model ?? "")
     .trim()
     .replace(/\[1m\]$/iu, "")

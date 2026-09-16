@@ -57,5 +57,5 @@ export function renderBanner({ columns = 80, color = true } = {}) {
 
 export function printBanner({ stream = process.stdout, env = process.env } = {}) {
   if (!stream.isTTY) return;
-  stream.write(renderBanner({ columns: stream.columns ?? 80, color: colorEnabled(stream, env) }));
+  stream.write(renderBanner({ columns: stream.columns || 80, color: colorEnabled(stream, env) }));
 }

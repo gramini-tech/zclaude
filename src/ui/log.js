@@ -11,6 +11,9 @@ export function isVerbose() {
   return state.verbose;
 }
 
+/** @typedef {{isTTY?: boolean, columns?: number}} StreamLike */
+
+/** @param {StreamLike} [stream] @param {NodeJS.ProcessEnv} [env] */
 export function colorEnabled(stream = process.stderr, env = process.env) {
   if (env.NO_COLOR !== undefined && env.NO_COLOR !== "") return false;
   if (env.FORCE_COLOR !== undefined && env.FORCE_COLOR !== "0") return true;
@@ -19,17 +22,23 @@ export function colorEnabled(stream = process.stderr, env = process.env) {
 }
 
 const CODES = {
-  reset: "[0m",
-  bold: "[1m",
-  dim: "[2m",
-  red: "[31m",
-  green: "[32m",
-  yellow: "[33m",
-  cyan: "[36m",
-  grey: "[90m",
-  white: "[97m",
+  reset: "\u{1B}[0m",
+  bold: "\u{1B}[1m",
+  dim: "\u{1B}[2m",
+  red: "\u{1B}[31m",
+  green: "\u{1B}[32m",
+  yellow: "\u{1B}[33m",
+  cyan: "\u{1B}[36m",
+  grey: "\u{1B}[90m",
+  white: "\u{1B}[97m",
 };
 
+/**
+ * @param {string} text
+ * @param {keyof typeof CODES} style
+ * @param {StreamLike} [stream]
+ * @param {NodeJS.ProcessEnv} [env]
+ */
 export function paint(text, style, stream = process.stderr, env = process.env) {
   if (!colorEnabled(stream, env)) return text;
   const code = CODES[style];

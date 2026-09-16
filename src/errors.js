@@ -10,6 +10,10 @@ export const EXIT = Object.freeze({
 });
 
 export class ZclaudeError extends Error {
+  /**
+   * @param {string} message
+   * @param {{exitCode?: number, hint?: string, cause?: unknown}} [options]
+   */
   constructor(message, { exitCode = EXIT.INTERNAL, hint, cause } = {}) {
     super(message, cause ? { cause } : undefined);
     this.name = "ZclaudeError";

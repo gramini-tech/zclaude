@@ -203,10 +203,18 @@ CLIProxyAPI. zclaude does the same:
 ## Development
 
 ```sh
-npm test               # node:test, no extra dependencies
-shellcheck zclaude     # the bash runner
-npm pack --dry-run     # what would be published
+npm test               # node:test unit, contract and end-to-end suites
+npm run lint           # eslint (recommended + unicorn + n + promise + security + sonarjs), prettier, knip, tsc --checkJs, shellcheck
+npm run test:coverage  # same tests with coverage thresholds (80% lines, 75% branches and functions)
+npm run check          # everything CI runs, plus npm pack --dry-run
 ```
+
+`npm install` points git at `.githooks`, so the pre-commit hook runs `npm run lint` and the coverage-gated
+tests before every commit (`ZCLAUDE_SKIP_HOOKS=1` bypasses it). Three suites protect the core against
+regressions: `test/contract.test.js` pins the Z.ai endpoints, the child environment, the exit codes and
+the documentation of every flag and variable; `test/e2e.test.js` runs the real binary against a fake Z.ai
+server and a fake `claude`; `test/interactive.test.js` drives the menu inside a real pseudo-terminal on
+macOS.
 
 Publishing to npm: `npm publish --access public` from a clean checkout.
 

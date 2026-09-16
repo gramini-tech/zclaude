@@ -19,9 +19,14 @@
   "scripts": {
     "test": "node --test test/",
     "test:coverage": "node --test --experimental-test-coverage --test-coverage-lines=80 --test-coverage-branches=75 --test-coverage-functions=75 --test-coverage-include='src/**' --test-coverage-include='bin/**' --test-coverage-exclude='src/ui/menu.js' --test-coverage-exclude='src/ui/wizard.js' --test-coverage-exclude='src/callback/paste.js' test/",
-    "lint": "eslint . && prettier --check . && shellcheck zclaude",
+    "lint": "npm run -s lint:js && npm run -s lint:format && npm run -s lint:dead && npm run -s typecheck && npm run -s lint:sh",
+    "lint:js": "eslint .",
+    "lint:format": "prettier --check .",
+    "lint:dead": "knip --no-progress",
+    "typecheck": "tsc -p jsconfig.json",
+    "lint:sh": "sh scripts/lint-shell.sh",
     "lint:fix": "eslint . --fix && prettier --write .",
-    "check": "npm run lint && npm run test:coverage && npm pack --dry-run",
+    "check": "npm run -s lint && npm run -s test:coverage && npm pack --dry-run",
     "prepare": "node scripts/install-hooks.js"
   },
   "dependencies": {
@@ -47,6 +52,7 @@
   "license": "MIT",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/node": "^22.20.3",
     "eslint": "^10.10.0",
     "eslint-plugin-n": "^18.3.0",
     "eslint-plugin-promise": "^7.3.0",
@@ -54,7 +60,8 @@
     "eslint-plugin-sonarjs": "^4.2.1",
     "eslint-plugin-unicorn": "^75.0.0",
     "globals": "^17.12.0",
+    "knip": "^5.88.1",
     "prettier": "^3.9.7",
-    "shellcheck": "^4.1.0"
+    "typescript": "^5.9.3"
   }
 }

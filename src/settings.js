@@ -50,9 +50,16 @@ function parseQuoted(rest, quote) {
   return null;
 }
 
-/** Parse dotenv text into { values, warnings }. Never throws. */
+/**
+ * Parse dotenv text into { values, warnings }. Never throws.
+ * @param {string} text
+ * @param {{file?: string}} [options]
+ * @returns {{values: Record<string, string>, warnings: string[]}}
+ */
 export function parseDotenv(text, { file = "(text)" } = {}) {
+  /** @type {Record<string, string>} */
   const values = {};
+  /** @type {string[]} */
   const warnings = [];
   const lines = String(text ?? "")
     .replace(/^\u{FEFF}/u, "")
@@ -99,6 +106,11 @@ export function formatValue(value) {
  * key are replaced in place (first occurrence kept, duplicates dropped),
  * unrelated lines are preserved, missing keys are appended.
  */
+/**
+ * @param {string} existingText
+ * @param {Record<string, string>} updates
+ * @param {{header?: string}} [options]
+ */
 export function updateDotenv(existingText, updates, { header } = {}) {
   const pending = new Map(Object.entries(updates));
   const output = [];
@@ -123,7 +135,7 @@ export function updateDotenv(existingText, updates, { header } = {}) {
   return `${output.join("\n")}\n`;
 }
 
-export async function readSettingsFile(path) {
+async function readSettingsFile(path) {
   let text;
   try {
     text = await readFile(path, "utf8");
@@ -134,7 +146,7 @@ export async function readSettingsFile(path) {
   return { path, exists: true, ...parseDotenv(text, { file: path }) };
 }
 
-export const FILE_HEADER = [
+const FILE_HEADER = [
   "# managed by zclaude (https://github.com/vipincr/zclaude)",
   "# Model choices for Claude Code on the Z.ai GLM Coding Plan.",
   "# Credentials never live here; this file is safe to commit.",
@@ -206,6 +218,7 @@ export function fileConfiguresModels(fileRecord) {
   );
 }
 
+/** @param {{env?: NodeJS.ProcessEnv, layered?: any}} [options] */
 export function resolveProfileDefault({ env = process.env, layered } = {}) {
   const found = firstDefined([
     ["env", env.ZCLAUDE_PROFILE],
@@ -218,7 +231,7 @@ export function resolveProfileDefault({ env = process.env, layered } = {}) {
 /** Non-managed KEY=value lines, user file first so the project file wins. */
 export function extraEnv(layered) {
   const merged = {};
-  const isPassthrough = ([key]) => key !== "ZCLAUDE_ZAI" && !MANAGED_SET.has(key);
+  const isPassthrough = (entry) => entry[0] !== "ZCLAUDE_ZAI" && !MANAGED_SET.has(entry[0]);
   for (const record of [layered?.user, layered?.project]) {
     Object.assign(merged, Object.fromEntries(Object.entries(record?.values ?? {}).filter(isPassthrough)));
   }

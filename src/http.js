@@ -21,7 +21,7 @@ export function redact(text) {
   return out;
 }
 
-export class HttpError extends ZclaudeError {
+class HttpError extends ZclaudeError {
   constructor({ method, url, status, bodyText, exitCode }) {
     const host = safeHost(url);
     super(`${method} ${host} returned HTTP ${status}${summarize(bodyText)}`, { exitCode });
@@ -32,7 +32,7 @@ export class HttpError extends ZclaudeError {
   }
 }
 
-export function safeHost(url) {
+function safeHost(url) {
   try {
     return new URL(url).host;
   } catch {
@@ -61,9 +61,22 @@ function classifyNetworkError(error, method, url) {
 }
 
 /**
+ * @typedef {object} RequestOptions
+ * @property {string} [method]
+ * @property {string} url
+ * @property {Record<string, string>} [headers]
+ * @property {unknown} [body] JSON-encoded unless already a string
+ * @property {number} [timeoutMs]
+ * @property {typeof fetch} [fetchImpl]
+ * @property {AbortSignal} [signal]
+ */
+
+/**
  * Perform a request and return { status, text, json, ok }. Never throws on a
  * non-2xx status; callers decide what each status means. Throws a network
  * error (exit 6) when the request could not complete at all.
+ * @param {RequestOptions} options
+ * @returns {Promise<{status: number, text: string, json: any, ok: boolean}>}
  */
 export async function request({
   method = "GET",
@@ -117,6 +130,9 @@ function envelopeSucceeded(body) {
 /**
  * Perform a request against a Z.ai envelope endpoint ({code, msg, data}) and
  * return `data`. Non-2xx or a failing envelope raises with `exitCode`.
+ * @param {RequestOptions} options
+ * @param {{operation: string, exitCode: number}} meta
+ * @returns {Promise<any>}
  */
 export async function requestEnvelope(options, { operation, exitCode }) {
   const { method = "GET", url } = options;

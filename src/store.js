@@ -11,7 +11,7 @@ import { flag, zclaudeHome } from "./config.js";
 import { registerSecret } from "./http.js";
 import { debug, warn } from "./ui/log.js";
 
-export const KEYCHAIN_SERVICE = "zclaude";
+const KEYCHAIN_SERVICE = "zclaude";
 const KEYCHAIN_NOT_FOUND = 44;
 
 export function storePaths(env = process.env) {
@@ -24,7 +24,7 @@ export function storePaths(env = process.env) {
   };
 }
 
-export async function ensureHome(env = process.env) {
+async function ensureHome(env = process.env) {
   const { home } = storePaths(env);
   await mkdir(home, { recursive: true, mode: 0o700 });
   try {
@@ -37,6 +37,11 @@ export async function ensureHome(env = process.env) {
 
 // ---------------------------------------------------------------- utilities
 
+/**
+ * @param {string[]} args
+ * @param {{stdinText?: string}} [options]
+ * @returns {Promise<{code: number, stdout: string, stderr: string}>}
+ */
 function runSecurity(args, { stdinText } = {}) {
   return new Promise((resolve) => {
     const child = spawn("security", args, { stdio: ["pipe", "pipe", "pipe"] });
@@ -111,7 +116,7 @@ async function readJson(path) {
   }
 }
 
-export async function writeJsonAtomic(path, value, { mode = 0o600 } = {}) {
+async function writeJsonAtomic(path, value, { mode = 0o600 } = {}) {
   const tmp = `${path}.${process.pid}.tmp`;
   await writeFile(tmp, `${JSON.stringify(value, null, 2)}\n`, { mode });
   try {
@@ -122,7 +127,7 @@ export async function writeJsonAtomic(path, value, { mode = 0o600 } = {}) {
   await rename(tmp, path);
 }
 
-export function readProfile(env = process.env) {
+function readProfile(env = process.env) {
   return readJson(storePaths(env).profileFile);
 }
 

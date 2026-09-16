@@ -9,6 +9,18 @@ import { flag, zclaudeHome } from "./config.js";
 import { parseDotenv } from "./settings.js";
 import { warn } from "./ui/log.js";
 
+/**
+ * @typedef {object} Profile
+ * @property {string} id
+ * @property {string} label
+ * @property {string} description
+ * @property {boolean} zai route through the Z.ai credential and model steps
+ * @property {Record<string, string>} env extra variables for the child process
+ * @property {boolean} builtin
+ * @property {string} [path]
+ */
+
+/** @type {readonly Profile[]} */
 export const BUILTIN_PROFILES = Object.freeze([
   Object.freeze({
     id: "claude",
@@ -35,11 +47,12 @@ function commentField(text, name) {
   return match ? match[1].trim() : "";
 }
 
-export function profilesDir(env = process.env) {
+function profilesDir(env = process.env) {
   return join(zclaudeHome(env), "profiles");
 }
 
 export async function listProfiles(env = process.env) {
+  /** @type {Profile[]} */
   const profiles = [...BUILTIN_PROFILES];
   let entries;
   try {

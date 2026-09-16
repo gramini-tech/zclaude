@@ -112,7 +112,12 @@ function str(value) {
   return typeof value === "string" && value.trim() ? value.trim() : "";
 }
 
-/** Exchange the code for the short-lived Z.ai OAuth access token. */
+/**
+ * Exchange the code for the short-lived Z.ai OAuth access token.
+ * @param {{code: string, state: string}} grant
+ * @param {{tokenUrl: string, redirectUri: string}} config
+ * @param {{fetchImpl?: typeof fetch, signal?: AbortSignal}} [options]
+ */
 export async function exchangeCode({ code, state }, config, { fetchImpl, signal } = {}) {
   let data;
   try {
