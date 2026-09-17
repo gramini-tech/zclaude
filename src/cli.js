@@ -39,7 +39,7 @@ import { registerSecret } from "./redact.js";
 import { buildAuthorizeUrl, exchangeCode, generateState, parseCallback } from "./oauth.js";
 import { configureLogger, formatEntry, listLogs, log, logFilePath, readLog } from "./logger.js";
 import { cmdProfile, describeShare, forgetAllProfiles, launchContext, profileSummaries } from "./profile-commands.js";
-import { listProfiles } from "./profiles.js";
+import { findProfile, listProfiles, takeProfileArgument } from "./profiles.js";
 import { getRegistered } from "./profiles/registry.js";
 import { mintApiKey } from "./provision.js";
 import {
@@ -181,8 +181,10 @@ export function parseArgs(argv) {
 export const HELP = `zclaude ${VERSION} — interactive preloader for Claude Code
 
 Usage
-  zclaude [zclaude options] [claude args...]   pick a profile, then launch claude
-  zclaude --profile <name> [claude args...]    launch that profile straight away
+  zclaude                                      pick a profile from the menu, then launch claude
+  zclaude <profile> [claude args...]           launch that profile straight away
+  zclaude [zclaude options] [claude args...]   pick a profile, then launch claude with them
+  zclaude --profile <name> [claude args...]    the same as naming it first
   zclaude -- [claude args...]                  pass everything after -- to claude
   zclaude profile <subcommand>                 manage profiles (see below)
   zclaude login [--no-browser] [--paste] [--api-key] [--no-store]
@@ -581,9 +583,8 @@ const PROFILE_SOURCES = Object.freeze({
   user: "your ~/.zclaude/settings",
 });
 
-async function selectProfile({ options, env, layered, interactive }) {
-  const profiles = await listProfiles(env);
-  const known = (id) => profiles.some((item) => item.id === id);
+async function selectProfile({ options, env, layered, interactive, profiles }) {
+  const known = (id) => Boolean(findProfile(profiles, id));
   const configured = resolveProfileDefault({ env, layered });
   let via = options.profile ? "flag" : (configured?.source ?? "menu");
   let profileId = options.profile ?? configured?.value ?? null;
@@ -609,7 +610,7 @@ async function selectProfile({ options, env, layered, interactive }) {
     profileId = await chooseProfile(profiles, { defaultId: state.lastProfile });
     await writeState({ lastProfile: profileId }, env).catch((error) => debug(`state not saved: ${error.message}`));
   }
-  const profile = profiles.find((item) => item.id === profileId);
+  const profile = findProfile(profiles, profileId);
   log.info("profile", "profile selected", {
     id: profileId,
     known: Boolean(profile),
@@ -633,7 +634,19 @@ async function cmdLaunch({ options, passthrough, env, cwd }) {
     const newer = await checkForUpdate({ env });
     if (newer) info(`zclaude ${newer} is available (you have ${VERSION}). Update with: zclaude self-update`);
   }
-  const profile = await selectProfile({ options, env, layered, interactive });
+  // `zclaude work` is `zclaude --profile work`; anything that is not a profile
+  // name is left alone and reaches claude as before.
+  const profiles = await listProfiles(env);
+  const shortcut = options.profile ? { profile: null, args: passthrough } : takeProfileArgument(passthrough, profiles);
+  const claudeInput = shortcut.args;
+  if (shortcut.profile) log.info("profile", "profile named as the first argument", { id: shortcut.profile });
+  const profile = await selectProfile({
+    options: shortcut.profile ? { ...options, profile: shortcut.profile } : options,
+    env,
+    layered,
+    interactive,
+    profiles,
+  });
   const extra = { ...extraEnv(layered), ...profile.env };
   // A named profile brings its own config directory and shared settings file;
   // the built-in profiles bring neither, and must not, because setting
@@ -643,7 +656,7 @@ async function cmdLaunch({ options, passthrough, env, cwd }) {
   const claudeArgs = prepared?.claudeArgs ?? [];
 
   if (!profile.zai) {
-    const args = [...claudeArgs, ...(options.model ? ["--model", options.model] : []), ...passthrough];
+    const args = [...claudeArgs, ...(options.model ? ["--model", options.model] : []), ...claudeInput];
     const childEnv = prepared
       ? buildProfileEnv({ baseEnv: env, configDir: prepared.configDir, extra })
       : buildPlainEnv({ baseEnv: env, extra });
@@ -657,7 +670,7 @@ async function cmdLaunch({ options, passthrough, env, cwd }) {
   return launchZai({
     bin,
     options,
-    passthrough,
+    passthrough: claudeInput,
     env,
     cwd,
     layered,

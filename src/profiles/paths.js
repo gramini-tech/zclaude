@@ -10,8 +10,53 @@ import { isAbsolute, join, normalize, resolve, sep } from "node:path";
 import { zclaudeHome } from "../config.js";
 import { usageError } from "../errors.js";
 
+/**
+ * Claude Code's own commands. `zclaude <name>` starts a profile, so a profile
+ * called "mcp" would shadow `zclaude mcp list`. Reserving these keeps the one
+ * word in front of zclaude unambiguous.
+ */
+export const CLAUDE_COMMANDS = Object.freeze([
+  "agents",
+  "attach",
+  "auth",
+  "auto-mode",
+  "config",
+  "doctor",
+  "fix",
+  "gateway",
+  "import",
+  "install",
+  "logs",
+  "mcp",
+  "migrate-installer",
+  "plugin",
+  "plugins",
+  "project",
+  "respawn",
+  "resume",
+  "review",
+  "rm",
+  "serve",
+  "sessions",
+  "setup-token",
+  "stop",
+  "ultrareview",
+  "update",
+  "upgrade",
+  "worktree",
+]);
+
 /** Ids that belong to the built-in profiles or would read as a keyword. */
-export const RESERVED_NAMES = Object.freeze(["claude", "zai", "default", "none", "all", "list", "add"]);
+export const RESERVED_NAMES = Object.freeze([
+  "claude",
+  "zai",
+  "default",
+  "none",
+  "all",
+  "list",
+  "add",
+  ...CLAUDE_COMMANDS,
+]);
 
 const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/u;
 const MAX_NAME_LENGTH = 64;

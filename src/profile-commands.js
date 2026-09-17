@@ -14,7 +14,7 @@ import { EXIT, InterruptedError, usageError } from "./errors.js";
 import { log } from "./logger.js";
 import { claudeCredentialService } from "./profiles/keychain-name.js";
 import { createProfile, defaultConfigDir, deleteProfile, prepareLaunch } from "./profiles/launch.js";
-import { canonicalConfigDir } from "./profiles/paths.js";
+import { canonicalConfigDir, CLAUDE_COMMANDS } from "./profiles/paths.js";
 import { authStatus, forgetCredential, probeProfile } from "./profiles/probe.js";
 import { getRegistered, listRegistered, PROVIDERS } from "./profiles/registry.js";
 import { mcpServersWithSecrets, readDefaultConfig, trustedProjects } from "./profiles/seed.js";
@@ -392,6 +392,12 @@ async function checkProfile(record, env) {
     problems.push({
       what: `${record.name}: ${detached.join(", ")} stopped being shared (a write replaced the link)`,
       fix: "Run `zclaude profile doctor --fix` to relink after moving the local copy aside.",
+    });
+  }
+  if (CLAUDE_COMMANDS.includes(record.name)) {
+    problems.push({
+      what: `${record.name}: shares a name with a claude command, so \`zclaude ${record.name}\` starts the profile`,
+      fix: `Use \`zclaude -- ${record.name}\` to reach claude's own command, or rename the profile.`,
     });
   }
   const probe = await probeProfile(record);

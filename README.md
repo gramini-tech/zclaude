@@ -87,13 +87,14 @@ ones, and tells you to `git pull` in a checkout.
 ## Quick start
 
 ```sh
-zclaude                                    # menu: your default login, or Z.ai
+zclaude                                    # menu of everything you have set up
 zclaude profile add work                   # a second account, with its own login
-zclaude --profile work                     # this terminal runs on that account
+zclaude work                               # this terminal runs on that account
 ```
 
-That is the whole idea. `zclaude` on its own shows a menu of everything available; `--profile <name>`
-skips it.
+That is the whole idea. `zclaude` on its own shows a menu; naming a profile skips it. Anything else
+you type is passed to `claude`, so `zclaude mcp list` and `zclaude -p "hi"` still work, and profile
+names can never be one of claude's own commands.
 
 ## Profiles
 
@@ -132,11 +133,17 @@ in place, which is what keeps the credential out of your default account's Keych
 ### Using one
 
 ```sh
-zclaude --profile work                     # one launch
-zclaude --profile work -p "review this diff"
+zclaude work                               # one launch
+zclaude work -p "review this diff"         # everything after the name goes to claude
+zclaude --profile work                     # the explicit form, for scripts and aliases
 zclaude profile shell work                 # a subshell where plain `claude` is that account
 ZCLAUDE_PROFILE=work zclaude               # same thing through the environment
 ```
+
+The first word is treated as a profile only when a profile by that name exists. Anything else is
+claude's: `zclaude mcp list` reaches claude's MCP command, and since profile names cannot be one of
+claude's commands, the two can never collide. A name that matches nothing brings up the menu, with
+your arguments still passed through.
 
 `zclaude profile shell` is the honest way to pin a terminal: it starts your shell with the profile in
 place and tells you when you leave. `zclaude profile env work` prints the same variables for scripts,
@@ -176,9 +183,9 @@ zclaude profile add personal --provider anthropic --share none
 Then, in three terminals:
 
 ```sh
-zclaude --profile company        # terminal 1
-zclaude --profile client         # terminal 2
-zclaude --profile personal       # terminal 3
+zclaude company        # terminal 1
+zclaude client         # terminal 2
+zclaude personal       # terminal 3
 ```
 
 All three run at once. Your original login is untouched, so a fourth terminal running plain `claude`,
@@ -290,9 +297,10 @@ Not isolated, and worth knowing:
 ## Command reference
 
 ```
-zclaude                                    menu, then launch
+zclaude                                    menu of every profile, then launch
+zclaude <profile> [claude args...]         launch that profile, pass the rest to claude
 zclaude -p "explain this repo"             menu, then launch claude with those arguments
-zclaude --profile <name>                   skip the menu
+zclaude --profile <name>                   the same as naming the profile first
 zclaude -- --help                          claude's own help
 zclaude profile add [name]                 create a profile (wizard)
 zclaude profile list                       every profile, with its account and sharing
@@ -315,7 +323,7 @@ All zclaude options go before any argument meant for `claude`.
 
 | Option                                  | Effect                                                                   |
 | --------------------------------------- | ------------------------------------------------------------------------ |
-| `--profile <name>`                      | skip the menu (`claude`, `zai` or a profile you added)                   |
+| `--profile <name>`                      | the same as naming the profile first; useful in scripts and aliases      |
 | `--provider <anthropic\|zai>`           | `profile add`: what the profile signs in to                              |
 | `--share <all\|config\|history\|none>`  | `profile add`: what it borrows from your main setup                      |
 | `--sso`, `--console`, `--email <addr>`  | passed to `claude auth login` for an Anthropic profile                   |

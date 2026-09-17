@@ -369,6 +369,35 @@ describe("end to end", () => {
     await rm(claudeDir, { recursive: true, force: true });
   });
 
+  it("names a profile as the first argument, and leaves claude's own arguments alone", async () => {
+    await run(["profile", "add", "work", "--provider", "anthropic", "--share", "none", "--yes"], env);
+    const named = await run(["work", "-p", "hi"], env);
+    assert.equal(named.code, 0, named.stderr);
+    const got = await capture();
+    assert.equal(got.env.CLAUDE_CONFIG_DIR, join(env.ZCLAUDE_HOME, "profiles", "work", "home"));
+    assert.deepEqual(got.argv, ["-p", "hi"], "only the profile name is consumed");
+
+    const builtin = await run(["claude", "-p", "plain"], env);
+    assert.equal(builtin.code, 0, builtin.stderr);
+    assert.equal((await capture()).env.CLAUDE_CONFIG_DIR, undefined, "the built-in name still means the default");
+
+    // `mcp` is one of claude's commands, so it must reach claude untouched.
+    // Without a terminal there is no menu, which is what exit 2 says here.
+    const passthrough = await run(["mcp", "list"], env);
+    assert.equal(passthrough.code, 2);
+    assert.match(passthrough.stderr, /No profile selected and no terminal to ask/u);
+    const explicit = await run(["--profile", "claude", "mcp", "list"], env);
+    assert.equal(explicit.code, 0, explicit.stderr);
+    assert.deepEqual((await capture()).argv, ["mcp", "list"]);
+
+    assert.match(
+      (await run(["profile", "add", "mcp", "--provider", "anthropic", "--yes"], env)).stderr,
+      /"mcp" is reserved/u,
+      "a profile can never shadow one of claude's commands",
+    );
+    assert.equal((await run(["profile", "remove", "work", "--yes"], env)).code, 0);
+  });
+
   it("a Z.ai profile keeps its own key and ignores ZAI_API_KEY from the shell", async () => {
     const added = await run(["profile", "add", "glm", "--provider", "zai", "--share", "none", "--yes"], env);
     assert.equal(added.code, 0, added.stderr);

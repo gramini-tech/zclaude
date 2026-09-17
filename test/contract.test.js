@@ -11,6 +11,7 @@ import { describe, it } from "node:test";
 import { buildPlainEnv, buildProfileEnv, buildZaiEnv } from "../src/claude.js";
 import { COMMAND_NAMES, HELP } from "../src/cli.js";
 import { PROFILE_SUBCOMMANDS } from "../src/profile-commands.js";
+import { CLAUDE_COMMANDS } from "../src/profiles/paths.js";
 import { CALLBACK_SCHEME, CONSOLE_KEYS_URL, DEFAULT_MODELS, MODEL_CONTEXT_WINDOWS, zaiConfig } from "../src/config.js";
 import { EXIT } from "../src/errors.js";
 
@@ -173,7 +174,11 @@ describe("documentation contract", () => {
       ...Array.from(html.matchAll(/<(?:code|pre)[^>]*>([\s\S]*?)<\/(?:code|pre)>/gu), (match) => match[1]),
     ];
     const lines = spans.flatMap((span) => span.split("\n")).map((line) => line.split("#", 1)[0]);
-    const known = new Set([...COMMAND_NAMES, ...PROFILE_SUBCOMMANDS]);
+    // The docs also show profile names, because `zclaude work` is how you
+    // start one, and claude's own commands, because those pass through. A
+    // word that is none of the three is an invented command and fails.
+    const examples = ["work", "company", "client", "personal", "glm", "glm-work", "glm2"];
+    const known = new Set([...COMMAND_NAMES, ...PROFILE_SUBCOMMANDS, ...CLAUDE_COMMANDS, ...examples]);
     let checked = 0;
     for (const line of lines) {
       for (const [, sub] of line.matchAll(/\bzclaude profile (?! )([a-z][a-z-]+)/gu)) {

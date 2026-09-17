@@ -109,12 +109,12 @@
 <span class="dim">· Signing in to "work". Claude Code will open your browser.</span>
 <span class="ok">✓</span> "work" is signed in as you@company.com.
 
-<span class="prompt">$</span> zclaude --profile work
+<span class="prompt">$</span> zclaude work
 <span class="dim">· claude · you@company.com · ~/.zclaude/profiles/work/home</span></pre>
           </div>
           <div class="terminal" role="img" aria-label="Terminal two, running the personal profile">
             <div class="terminal-bar"><span></span><span></span><span></span></div>
-            <pre><span class="prompt">$</span> zclaude --profile personal
+            <pre><span class="prompt">$</span> zclaude personal
 <span class="dim">· claude · you@gmail.com · ~/.zclaude/profiles/personal/home</span>
 
 <span class="prompt">$</span> zclaude profile list
@@ -147,7 +147,7 @@
                 <td>Create one. The wizard asks for the provider, sharing, MCP servers, trust and sign-in.</td>
               </tr>
               <tr>
-                <td><code>zclaude --profile work</code></td>
+                <td><code>zclaude work</code></td>
                 <td>Launch Claude Code on that account, for this terminal only.</td>
               </tr>
               <tr>
@@ -295,7 +295,11 @@
             <tbody>
               <tr>
                 <td><code>zclaude</code></td>
-                <td>Menu of everything available, then launch.</td>
+                <td>Menu of every profile you have set up, then launch.</td>
+              </tr>
+              <tr>
+                <td><code>zclaude work</code></td>
+                <td>Name a profile to skip the menu. Everything after it goes to <code>claude</code>.</td>
               </tr>
               <tr>
                 <td><code>zclaude -p "explain this repo"</code></td>
@@ -303,7 +307,7 @@
               </tr>
               <tr>
                 <td><code>zclaude --profile work</code></td>
-                <td>Skip the menu. <code>--profile claude</code> launches your normal Claude Code.</td>
+                <td>The explicit form, for scripts. <code>--profile claude</code> is your normal Claude Code.</td>
               </tr>
               <tr>
                 <td><code>zclaude --reconfigure</code></td>
@@ -480,6 +484,16 @@ ZCLAUDE_PROFILE=work       # optional: pick a profile for this project</code></p
             Whatever Z.ai's model list returns for your plan, such as <code>glm-5.3</code>,
             <code>glm-5.3-flash</code> and <code>glm-4.7</code>. The wizard also accepts a custom model id. Models with
             a 1M context window are passed to Claude Code with the <code>[1m]</code> suffix it expects.
+          </p>
+        </details>
+
+        <details>
+          <summary>What if a profile is named like one of claude's commands?</summary>
+          <p>
+            It cannot be. <code>zclaude mcp list</code> has to reach claude's MCP command, so claude's own command names
+            are reserved and a profile cannot take one. The first word after <code>zclaude</code> is treated as a
+            profile only when a profile by that name exists; anything else is passed straight through, and a name that
+            matches nothing brings up the menu with your arguments intact.
           </p>
         </details>
 

@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 
-import { BUILTIN_PROFILES, getProfile, listProfiles } from "../src/profiles.js";
+import { BUILTIN_PROFILES, findProfile, getProfile, listProfiles, takeProfileArgument } from "../src/profiles.js";
 import { isolatedEnv, tempHome } from "./helpers.js";
 
 describe("profiles", () => {
@@ -52,5 +52,36 @@ describe("profiles", () => {
   it("getProfile finds by id", async () => {
     assert.equal((await getProfile("zai", env)).builtin, true);
     assert.equal(await getProfile("missing", env), null);
+  });
+});
+
+describe("naming a profile as the first argument", () => {
+  const profiles = [{ id: "claude" }, { id: "zai" }, { id: "work" }, { id: "glm-2" }];
+
+  it("takes a name that exists and hands the rest to claude", () => {
+    assert.deepEqual(takeProfileArgument(["work", "-p", "hi"], profiles, "linux"), {
+      profile: "work",
+      args: ["-p", "hi"],
+    });
+    assert.deepEqual(takeProfileArgument(["zai"], profiles, "linux"), { profile: "zai", args: [] });
+    assert.deepEqual(
+      takeProfileArgument(["glm-2", "--", "--help"], profiles, "linux"),
+      { profile: "glm-2", args: ["--help"] },
+      "the separator has done its job once the name is taken",
+    );
+  });
+
+  it("leaves claude's own arguments alone", () => {
+    for (const args of [["mcp", "list"], ["-p", "hi"], ["--continue"], ["auth", "status"], []]) {
+      assert.deepEqual(takeProfileArgument(args, profiles, "linux"), { profile: null, args });
+    }
+  });
+
+  it("folds case only where the filesystem does", () => {
+    assert.equal(takeProfileArgument(["Work"], profiles, "darwin").profile, "work");
+    assert.equal(takeProfileArgument(["Work"], profiles, "linux").profile, null);
+    assert.equal(findProfile(profiles, "WORK", "win32")?.id, "work");
+    assert.equal(findProfile(profiles, "missing", "darwin"), null);
+    assert.equal(findProfile(profiles, "", "darwin"), null);
   });
 });
