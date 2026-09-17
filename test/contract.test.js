@@ -11,6 +11,7 @@ import { describe, it } from "node:test";
 import { buildPlainEnv, buildProfileEnv, buildZaiEnv } from "../src/claude.js";
 import { COMMAND_NAMES, HELP } from "../src/cli.js";
 import { PROFILE_SUBCOMMANDS } from "../src/profile-commands.js";
+import { SWITCH_SUBCOMMANDS } from "../src/swap-commands.js";
 import { CLAUDE_COMMANDS } from "../src/profiles/paths.js";
 import { CALLBACK_SCHEME, CONSOLE_KEYS_URL, DEFAULT_MODELS, MODEL_CONTEXT_WINDOWS, zaiConfig } from "../src/config.js";
 import { EXIT } from "../src/errors.js";
@@ -99,13 +100,34 @@ describe("installer contract", () => {
   });
 });
 
+// The files allowed to write Claude Code's own state, and the exact line each
+// one may name a Claude path on. This list is the whole permission: everything
+// else under src/ may only read. `switch` is the reason it is not empty — it
+// moves the login the user asked it to move — and the behavioural proof that it
+// touches nothing else lives in test/swap.test.js, which hashes ~/.claude and
+// deep-compares every other key of the config file.
+const WRITE_ALLOWED = new Map([
+  // The basename it writes, and the comment lines that explain which file that
+  // is. Code that named any other Claude path would not match.
+  ["swap/identity.js", /^(const CONFIG_BASENAME = "\.claude\.json";| \* .*~\/\.claude\.json[^"]*)$/u],
+]);
+
 describe("claude config boundary", () => {
-  it("source never writes to Claude Code's own files; the only .claude references are reads", async () => {
+  it("names every file allowed to write Claude Code's own state", () => {
+    assert.deepEqual(
+      WRITE_ALLOWED.keys().toArray(),
+      ["swap/identity.js"],
+      "adding a writer here is a deliberate act; say why in the commit and prove it in test/swap.test.js",
+    );
+  });
+
+  it("source never writes to Claude Code's own files, apart from the swap; the rest are reads", async () => {
     const dir = join(root, "src");
     const files = (await readdir(dir, { recursive: true })).filter((name) => name.endsWith(".js"));
     const writers =
       /\b(writeFile|writeFileSync|appendFile|appendFileSync|rename|renameSync|rm|rmSync|unlink|unlinkSync|truncate|copyFile|mkdir|mkdirSync)\s*\(/u;
     const allowedMentions = new Map([
+      ...WRITE_ALLOWED,
       ["claude.js", /join\(home, "\.claude", "local"/u],
       // Reading Claude Code's settings tiers, never writing them.
       [
@@ -121,7 +143,7 @@ describe("claude config boundary", () => {
     ]);
     const checkLine = (file, index, line) => {
       const where = `${file}:${index + 1}`;
-      if (writers.test(line))
+      if (writers.test(line) && !WRITE_ALLOWED.has(file))
         assert.doesNotMatch(line, /\.claude(?!\/env)\b|claude\.json/u, `${where} writes near a Claude path`);
       const mentionsClaudePath = /"\.claude"|\.claude\.json|\.claude\//u.test(line) && !line.includes(".zclaude");
       if (!mentionsClaudePath) return;
@@ -147,6 +169,17 @@ describe("documentation contract", () => {
     for (const flag of flags) {
       assert.ok(HELP.includes(flag), `${flag} missing from --help`);
       assert.ok(readme.includes(flag), `${flag} missing from README`);
+    }
+  });
+
+  it("every switch subcommand is listed in --help and the README", async () => {
+    const readme = await readFile(join(root, "README.md"), "utf8");
+    for (const sub of SWITCH_SUBCOMMANDS) {
+      // Two spellings by design: `switch --status` reads better as a flag,
+      // `switch capture` as a verb. Either one counts as documented.
+      const shown = (text) => text.includes(`switch ${sub}`) || text.includes(`switch --${sub}`);
+      assert.ok(shown(HELP), `switch ${sub} missing from --help`);
+      assert.ok(shown(readme), `switch ${sub} missing from README`);
     }
   });
 

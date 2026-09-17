@@ -55,6 +55,11 @@ export const RESERVED_NAMES = Object.freeze([
   "all",
   "list",
   "add",
+  // zclaude's own commands: `zclaude <name>` starts a profile, so a profile
+  // called "switch" would shadow `zclaude switch`.
+  "switch",
+  "vscode",
+  "renew",
   ...CLAUDE_COMMANDS,
 ]);
 

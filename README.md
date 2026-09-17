@@ -289,6 +289,47 @@ Claude Code keys its credential store by the config directory: the Keychain item
 where the suffix is a hash of the directory path. `zclaude profile show <name>` prints the exact item
 name, which is what you would look for in Keychain Access.
 
+## Switching the global login
+
+Profiles cover the terminals you start with zclaude. They do nothing for plain `claude`, for the VS
+Code extension, or for anything else that shells out to Claude Code: those use the machine's one
+global login. `switch` moves that login to a profile's account, in place.
+
+```sh
+zclaude switch work              # the global login is now work's account
+zclaude switch --status          # who holds it, and what is backed up
+zclaude switch --restore         # put the previous one back
+zclaude switch work --dry-run    # say what would change, change nothing
+zclaude --switch work            # the same as the first line
+```
+
+Your projects, history, sessions and MCP logins stay exactly where they are: an account is two
+things, and only those two move. The credential in the Keychain item Claude Code reads, and the
+`oauthAccount` block of `~/.claude.json`. Everything else in that file — the trust decisions, the
+tool permissions, your MCP servers, the machine id — is read, kept and written back untouched.
+
+What happens on a switch, in order:
+
+1. The locks Claude Code uses for its own token refresh are taken first, so a swap cannot land in
+   the middle of one.
+2. The login being replaced is **captured back** into the profile it belongs to. Claude Code
+   refreshes tokens as it works and the server rotates the refresh token when it does, so the live
+   copy can be a generation ahead of the profile's own. Without this step a round trip would strand
+   that account.
+3. It is backed up and the backup is read back. A backup that cannot be verified stops the switch
+   before anything is overwritten.
+4. The new credential is written, then the identity. A failure at either step puts back what was
+   there.
+
+`zclaude switch --status` shows the account in the slot, which profile it belongs to, and the
+backups it can restore (the last ten are kept). Two things it will refuse: a profile with no stored
+login or a dead refresh token, and a Z.ai profile — a GLM plan is an endpoint plus a key, which
+reach Claude Code through the environment rather than through its credential store, so the answer
+there stays `zclaude <profile>`.
+
+A Claude Code session that is already running keeps the credential it read at startup; on macOS that
+cache lasts about half a minute, so a switch reaches a live session shortly rather than instantly.
+
 ## Z.ai GLM Coding Plan
 
 The `zai` profile signs in through Z.ai's own browser flow, mints a coding-plan key on your account,
@@ -379,9 +420,8 @@ Not isolated, and worth knowing:
   `/etc/claude-code/`) are machine-wide. They apply to every profile, including a personal one, and
   no profile can opt out. `zclaude profile doctor` reports them.
 - **`~/.claude/.device-keys.json`** is written by Claude Code in your home directory whatever the
-  config directory says. zclaude itself never writes anything under `~/.claude`, and a contract test
-  plus an end-to-end hash check enforce that, but this one file is Claude Code's own and it will
-  appear.
+  config directory says. zclaude writes nothing under `~/.claude` at all, and a contract test plus an
+  end-to-end hash check enforce that, but this one file is Claude Code's own and it will appear.
 - **Your Z.ai API key** is an account-level object. Two profiles pointed at the same Z.ai account
   share that account's quota.
 - **Anything you chose to share**, obviously. `zclaude profile list` always shows the choice.
@@ -405,6 +445,10 @@ zclaude profile shell <name>               a subshell pinned to that profile
 zclaude profile env <name>                 print the exports, with a warning
 zclaude profile remove <name>              delete it, its login and its directory
 zclaude profile doctor                     check every profile and this shell
+zclaude switch <profile>                   move the global claude login to that profile
+zclaude switch --status [--json]           which account plain claude uses right now
+zclaude switch --restore                   put the previous global login back
+zclaude switch capture                     store the live login back into its profile
 zclaude login                              sign in to Z.ai now, then offer to launch
 zclaude logout                             forget the stored Z.ai key
 zclaude status                             what would happen on the next launch
@@ -424,6 +468,10 @@ All zclaude options go before any argument meant for `claude`.
 | `--yes`                                 | `profile remove`: do not ask                                             |
 | `--fix`                                 | `profile doctor`: relink what it can                                     |
 | `--force`                               | `self-update`: install even when the check says you are current          |
+| `--switch <name>`                       | the same as `zclaude switch <name>`                                      |
+| `--dry-run`                             | `switch`: say what would change, change nothing                          |
+| `--status`                              | `switch`: report the account in the global slot                          |
+| `--restore`                             | `switch`: put the previous global login back                             |
 | `--usage`                               | `profile list`: fetch how much of each plan is used                      |
 | `--no-usage`                            | menu: skip the usage lookup and its network calls                        |
 | `--reconfigure`, `--customize`          | run the model wizard even when config exists                             |
@@ -583,14 +631,21 @@ stored by an earlier interactive `zclaude login`, and models come from config or
 ## Security and privacy
 
 - Everything zclaude tells Claude Code travels in the environment of the one `claude` process it
-  spawns, plus the profile's own directory. It never edits `~/.claude/settings.json`, `~/.claude.json`
-  or your project's `.claude/` files. It reads them, to seed a profile you asked for and to detect an
-  `env` block that would override the session.
+  spawns, plus the profile's own directory. It never edits `~/.claude/settings.json` or your
+  project's `.claude/` files, and it writes nothing under `~/.claude`. It reads them, to seed a
+  profile you asked for and to detect an `env` block that would override the session.
+- **`switch` is the exception, and it is the whole exception.** When you name a profile to switch to,
+  zclaude replaces the credential in Claude Code's Keychain item and the `oauthAccount` block of
+  `~/.claude.json` — those two things and nothing else. Both are backed up and verified first, and
+  `zclaude switch --restore` puts them back. A contract test names the single source file allowed to
+  write there, and `test/swap.test.js` proves a switch changes no other key of that file and no file
+  under `~/.claude`.
 - Z.ai keys: macOS Keychain, service `zclaude`, one item per profile, written over stdin to the
   `security` tool so the secret never appears in a process listing. Elsewhere a 0600 file under the
   profile's directory.
-- Anthropic logins are stored by Claude Code itself, keyed by the config directory. zclaude never
-  reads them. `profile list` only asks whether an item exists.
+- Anthropic logins are stored by Claude Code itself, keyed by the config directory. zclaude reads one
+  only to move it where you asked, or to ask a plan how much quota is left; `profile list` only asks
+  whether an item exists. Every write is read back before it is called done.
 - The `zclaude` key on your Z.ai account is durable. `zclaude logout` and `zclaude profile logout`
   remove the local copy; revoke the key itself at https://z.ai/manage-apikey/apikey-list.
 - Uninstalling signs every profile out: each profile's Claude Code credential item sits outside
@@ -632,9 +687,11 @@ every commit (`ZCLAUDE_SKIP_HOOKS=1` bypasses it).
 
 Guardrails worth knowing about before changing anything: `test/contract.test.js` pins the Z.ai
 endpoints, the child environment, the exit codes, the credential-key derivation and the documentation
-of every flag, subcommand and variable, and it fails if any source file writes near a Claude Code
-path; `test/profile-launch.test.js` hashes `~/.claude` before and after creating and deleting a
-profile; `test/e2e.test.js` runs the real binary against a fake Z.ai server and a fake `claude`;
+of every flag, subcommand and variable, and it names the one source file allowed to write a Claude
+Code path (`src/swap/identity.js`) — every other file that tried would fail the build;
+`test/swap.test.js` earns that permission by proving a switch changes one key of the config file and
+nothing else; `test/profile-launch.test.js` hashes `~/.claude` before and after creating and deleting
+a profile; `test/e2e.test.js` runs the real binary against a fake Z.ai server and a fake `claude`;
 `test/interactive.test.js` drives the menu inside a real pseudo-terminal on macOS.
 
 Publishing to npm: `npm publish --access public` from a clean checkout.

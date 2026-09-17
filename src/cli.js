@@ -39,6 +39,8 @@ import { registerSecret } from "./redact.js";
 import { buildAuthorizeUrl, exchangeCode, generateState, parseCallback } from "./oauth.js";
 import { configureLogger, formatEntry, listLogs, log, logFilePath, readLog } from "./logger.js";
 import { cmdProfile, describeShare, forgetAllProfiles, launchContext, profileSummaries } from "./profile-commands.js";
+import { cmdSwitchGroup } from "./swap-commands.js";
+import { clearBackups } from "./swap/backup.js";
 import { findProfile, listProfiles, takeProfileArgument } from "./profiles.js";
 import { DEFAULT_CREDENTIAL_SERVICE } from "./profiles/keychain-name.js";
 import { defaultConfigDir } from "./profiles/launch.js";
@@ -79,6 +81,7 @@ import { checkKey, fetchQuota, formatQuota, quotaExhausted } from "./zai.js";
 
 export const COMMAND_NAMES = Object.freeze([
   "profile",
+  "switch",
   "login",
   "logout",
   "status",
@@ -91,9 +94,10 @@ export const COMMAND_NAMES = Object.freeze([
 ]);
 const COMMANDS = new Set(COMMAND_NAMES);
 // Commands that take their own subcommand and names, collected into options.args.
-const COMMAND_GROUPS = new Set(["profile"]);
+const COMMAND_GROUPS = new Set(["profile", "switch"]);
 const VALUE_FLAGS = Object.freeze({
   "--profile": "profile",
+  "--switch": "switch",
   "--provider": "provider",
   "--share": "share",
   "--email": "email",
@@ -120,6 +124,9 @@ const BOOL_FLAGS = Object.freeze({
   "--path": "pathOnly",
   "--yes": "yes",
   "--fix": "fix",
+  "--dry-run": "dryRun",
+  "--restore": "restore",
+  "--status": "status",
   "--force": "force",
   "--usage": "usage",
   "--no-usage": "noUsage",
@@ -195,6 +202,11 @@ Usage
   zclaude --profile <name> [claude args...]    the same as naming it first
   zclaude -- [claude args...]                  pass everything after -- to claude
   zclaude profile <subcommand>                 manage profiles (see below)
+  zclaude switch <profile>                     move the global claude login to that profile
+  zclaude switch --status [--json]             which account plain claude uses right now
+  zclaude switch --restore                     put the previous global login back
+  zclaude switch capture                       store the live login back into its profile
+  zclaude --switch <profile>                   the same as "zclaude switch <profile>"
   zclaude login [--no-browser] [--paste] [--api-key] [--no-store]
   zclaude logout                               forget the stored Z.ai key
   zclaude status [--json]                      show credential, config and model state
@@ -236,6 +248,9 @@ Options (must come before any claude argument or profile name)
   --force                      self-update: install even when the check says you are current
   --usage                      profile list: fetch how much of each plan is used
   --no-usage                   menu: skip the usage lookup and its network calls
+  --dry-run                    switch: say what would change, change nothing
+  --status                     switch: report the account in the global slot
+  --restore                    switch: put the previous global login back
   --no-store                   keep the key in memory for this session only
   --no-banner                  skip the splash
   --verbose                    show what zclaude is doing
@@ -858,6 +873,10 @@ function zaiLoginFor({ env, options, profile = null }) {
   return options.apiKey ? manualKeyLogin(context) : loginWithRetries(context);
 }
 
+function cmdSwitchGroup_(context) {
+  return cmdSwitchGroup(context, { interactive: isInteractive() });
+}
+
 function cmdProfileGroup(context) {
   return cmdProfile(context, { zaiLogin: zaiLoginFor, interactive: isInteractive() });
 }
@@ -1106,6 +1125,12 @@ async function cmdSelfUninstall({ options, env }) {
   if (profiles.forgotten.length > 0) info(`Signed out of: ${profiles.forgotten.join(", ")}.`);
   if (!keepConfig && profiles.profiles.length > 0)
     info(`Removing ${profiles.profiles.length} profile director${profiles.profiles.length === 1 ? "y" : "ies"}.`);
+  if (!keepConfig) {
+    // Swap backups hold the credential that was in the global slot, in zclaude's
+    // own Keychain items. Removing the directory would leave those behind.
+    const cleared = await clearBackups({ env });
+    if (cleared > 0) info(`Removed ${cleared} saved copy of a previous global login.`);
+  }
 
   if (kind === "checkout") {
     info("This is a git checkout: delete the clone and any symlink you made to it.");
@@ -1287,6 +1312,7 @@ const COMMAND_HANDLERS = {
   "self-update": cmdSelfUpdate,
   "self-uninstall": cmdSelfUninstall,
   profile: cmdProfileGroup,
+  switch: cmdSwitchGroup_,
   launch: cmdLaunch,
 };
 
