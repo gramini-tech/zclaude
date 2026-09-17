@@ -364,6 +364,27 @@ describe("profile commands", () => {
     assert.doesNotMatch(result.err, /same key/u);
   });
 
+  // Seen on a real machine: the profile that also holds the global login had
+  // its token rotated by Claude Code, and its own copy was then rejected. That
+  // reads as "login expired" and is nothing of the sort.
+  it("doctor spots a profile the global slot has moved past", async () => {
+    await addWork();
+    const record = await getRegistered("work", env);
+    const account = {
+      accountUuid: "uuid-1",
+      emailAddress: "me@x.y",
+      organizationUuid: "org-1",
+      organizationName: "Acme",
+    };
+    await writeFile(join(home.dir, ".claude.json"), JSON.stringify({ oauthAccount: account }));
+    await writeFile(join(record.dir, ".claude.json"), JSON.stringify({ oauthAccount: account }));
+    const result = await profile(["doctor"]);
+    // Without a Keychain the credentials cannot be compared, so this asserts
+    // the check runs and stays quiet rather than inventing a problem.
+    assert.doesNotMatch(result.err, /fallen behind/u);
+    assert.equal(result.value, 0);
+  });
+
   it("doctor reports a deleted directory without trying to repair it", async () => {
     await addWork();
     const record = await getRegistered("work", env);

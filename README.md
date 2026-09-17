@@ -474,6 +474,13 @@ being asked again every six hours. `zclaude renew status` shows the last run, an
 and whether your account rotates refresh tokens — which decides whether renewing extends the lineage
 or merely keeps the access token fresh.
 
+One thing it does before anything else: if a profile's account is also the global login, it takes the
+live credential back into that profile. Claude Code refreshes the token in the slot as it works and
+the server rotates the refresh token, so the profile's own copy falls behind and is rejected — which
+looks exactly like an expired login and is nothing of the sort. `zclaude switch capture` does the
+same by hand, and `profile doctor` says when it is needed. The capture only ever moves forwards: a
+profile holding the newer token keeps it.
+
 Removing the last Anthropic profile removes the schedule with it, and every uninstall path
 (`zclaude self-uninstall`, `install.sh --uninstall`) takes the plist, timer or crontab line away.
 `--keep-config` keeps the profiles, so it keeps the schedule.

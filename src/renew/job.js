@@ -11,14 +11,17 @@
 //     by Claude Code itself and this does nothing to it.
 //   - it works one profile at a time, and the first dead refresh lineage ends
 //     the run rather than marching through the rest.
-//   - it never touches the global slot. Whatever is signed in there belongs to
-//     Claude Code, and to `zclaude switch`.
+//   - it never writes the global slot. Whatever is signed in there belongs to
+//     Claude Code, and to `zclaude switch`. It does read it once, to take a
+//     rotated token back into the profile that owns the account, because
+//     otherwise that profile's own copy is the one the server rejects.
 //   - a Keychain that will not answer stops the run with a message instead of
 //     being retried in a loop.
 
 import { log } from "../logger.js";
 import { claudeCredentialService } from "../profiles/keychain-name.js";
 import { listRegistered } from "../profiles/registry.js";
+import { captureBack } from "../swap/index.js";
 import { parseCredential, readCredential, writeCredential } from "../swap/keychain.js";
 import { refreshCredential } from "../usage/anthropic.js";
 import { isQuarantined, readRenewState, tokenFingerprint, withoutProfile, writeRenewState } from "./state.js";
@@ -43,6 +46,17 @@ export async function runRenewal({
   const results = [];
   let stopped = null;
 
+  // A profile whose account is also the global login goes stale on its own:
+  // Claude Code refreshes the token in the slot as it works and the server
+  // rotates the refresh token, leaving the profile's copy a generation behind
+  // and rejected. Taking the live one back first is what stops this job then
+  // quarantining a profile that was never actually broken.
+  const captured = await captureBack({ env, security }).catch((error) => {
+    log.debug("renew", "capture-back skipped", { error });
+    return { captured: false, reason: error.message, profile: null };
+  });
+  if (captured.captured) log.info("renew", "captured the live login back", { profile: captured.profile });
+
   for (const profile of profiles) {
     const outcome = await renewOne(profile, { env, security, fetchImpl, now, horizonMs, force, state });
     results.push({ profile: profile.name, ...outcome });
@@ -55,6 +69,7 @@ export async function runRenewal({
 
   const finished = {
     ...state,
+    captured: captured.captured ? captured.profile : null,
     lastRun: new Date(now).toISOString(),
     results: Object.fromEntries(
       results.map((entry) => [entry.profile, { state: entry.state_, at: new Date(now).toISOString() }]),

@@ -20,7 +20,8 @@ import { getRegistered, listRegistered, PROVIDERS } from "./profiles/registry.js
 import { mcpServersWithSecrets, readDefaultConfig, trustedProjects } from "./profiles/seed.js";
 import { detachedShares } from "./profiles/share.js";
 import { deleteCredential, loadCredential } from "./store.js";
-import { formatCredits, formatUsage, usageForAll, usageRows } from "./usage/index.js";
+import { credentialHealth, formatCredits, formatUsage, usageForAll, usageRows } from "./usage/index.js";
+import { swapStatus } from "./swap/index.js";
 import { info, mask, paint, success, warn } from "./ui/log.js";
 import { askCopyMcp, askCopyTrust, askProfileName, askProvider, askSharing, askSignIn } from "./ui/profile-wizard.js";
 import { confirmChoice } from "./ui/wizard.js";
@@ -495,10 +496,35 @@ async function checkSharedZaiKey(records, env) {
   return [];
 }
 
+/**
+ * A profile whose account is also the global login, holding a credential the
+ * slot has moved past. Claude Code refreshes the slot as it works and the
+ * server rotates the refresh token, so the profile's own copy stops working —
+ * which looks exactly like an expired login until you know why.
+ */
+async function checkOvertakenByTheSlot(env) {
+  const status = await swapStatus({ env }).catch(() => null);
+  if (!status?.owner || !status.credential) return [];
+  const record = await getRegistered(status.owner, env);
+  if (!record) return [];
+  const theirs = await credentialHealth({ provider: "anthropic", dir: record.dir }, { env });
+  if (!theirs || !theirs.accessExpired || status.credential.accessExpired) return [];
+  return [
+    {
+      what: `"${status.owner}" holds the global login, and its own stored copy has fallen behind`,
+      fix: "Claude Code rotates the token in the slot as it works. `zclaude switch capture` puts the live one back; the renewal job does it on its own schedule.",
+    },
+  ];
+}
+
 async function cmdDoctor({ env, options }) {
   const records = await listRegistered(env);
   /** @type {{what: string, fix?: string}[]} */
-  const found = [...(await environmentChecks(env)), ...(await checkSharedZaiKey(records, env))];
+  const found = [
+    ...(await environmentChecks(env)),
+    ...(await checkSharedZaiKey(records, env)),
+    ...(await checkOvertakenByTheSlot(env)),
+  ];
   for (const record of records) found.push(...(await checkProfile(record, env)));
 
   if (options.fix) {

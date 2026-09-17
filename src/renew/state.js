@@ -30,9 +30,11 @@ export async function readRenewState(env = process.env) {
       results: parsed?.results && typeof parsed.results === "object" ? parsed.results : {},
       quarantined: parsed?.quarantined && typeof parsed.quarantined === "object" ? parsed.quarantined : {},
       rotates: typeof parsed?.rotates === "boolean" ? parsed.rotates : null,
+      // The profile whose token the last run took back out of the global slot.
+      captured: typeof parsed?.captured === "string" ? parsed.captured : null,
     };
   } catch {
-    return { lastRun: null, results: {}, quarantined: {}, rotates: null };
+    return { lastRun: null, results: {}, quarantined: {}, rotates: null, captured: null };
   }
 }
 

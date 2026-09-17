@@ -19,6 +19,17 @@ Two fixes for a status bar item that was installed, active, and useless.
 
 Extension 0.3.1.
 
+- **A profile whose account also holds the global login went stale on its own.**
+  Claude Code refreshes the token in the slot as it works and the server rotates
+  the refresh token into the global Keychain item; the profile's own copy is
+  then a generation behind and the server rejects it, which reads as "login
+  expired" and is nothing of the sort. Found on a live machine, where `gramini`
+  held a superseded token while the slot's was good for another eight hours. The
+  renewal job now takes the live credential back into the profile that owns the
+  account before it judges anything, `profile doctor` reports when that is
+  needed, and the capture only ever moves forwards so a profile holding the
+  newer token keeps it.
+
 ## 0.2.26
 
 Knowing which accounts are already in use.

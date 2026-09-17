@@ -65,7 +65,55 @@ async function setup(profiles) {
 const DEFAULT_GRANT = { access_token: "new-access", expires_in: 3600 };
 const grant = (body) => async () => Response.json(body ?? DEFAULT_GRANT);
 
+const identity = (who) => ({
+  accountUuid: `uuid-${who}`,
+  emailAddress: `${who}@example.com`,
+  organizationUuid: "org-acme",
+  organizationName: "Acme",
+  seatTier: "team_tier_1",
+});
+
+/**
+ * A machine where one profile's account is also the global login: the config
+ * file at home root and the profile's own both name the same account.
+ */
+async function shareTheGlobalLogin(home, env, name) {
+  const dir = join(home.dir, ".zclaude", "profiles", name, "home");
+  await writeFile(join(home.dir, ".claude.json"), JSON.stringify({ oauthAccount: identity(name) }));
+  await writeFile(join(dir, ".claude.json"), JSON.stringify({ oauthAccount: identity(name) }));
+  return dir;
+}
+
 describe("the renewal run", () => {
+  // The failure this prevents, seen on a real machine: the profile that also
+  // holds the global login had its token refreshed by Claude Code, the server
+  // rotated the refresh token into the global item, and the profile's own copy
+  // was then rejected — so this job would quarantine an account that was
+  // working perfectly.
+  it("takes back a token Claude Code rotated in the slot before judging the profile", async () => {
+    const { home, env, security, items } = await setup({ work: NOW - 1000 });
+    try {
+      const dir = await shareTheGlobalLogin(home, env, "work");
+      // The slot is a generation ahead: refreshed, and good for hours.
+      const rotated = credential("rotated", NOW + 6 * 3_600_000);
+      items.set(DEFAULT_CREDENTIAL_SERVICE, rotated);
+
+      const { results } = await runRenewal({
+        env,
+        security,
+        now: NOW,
+        fetchImpl: () => {
+          throw new Error("a profile holding a fresh token must not be refreshed");
+        },
+      });
+      assert.equal(results[0].state_, "fresh", "the profile was stale only because the slot had moved on");
+      assert.equal(items.get(claudeCredentialService(dir)), rotated, "the rotation is now in the profile too");
+      assert.equal((await readRenewState(env)).captured, "work");
+    } finally {
+      await home.cleanup();
+    }
+  });
+
   it("leaves a token that is still good alone", async () => {
     const { home, env, security, items } = await setup({ fresh: NOW + 6 * 3_600_000 });
     try {

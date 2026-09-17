@@ -111,10 +111,24 @@ export async function captureBack({ env = process.env, security } = {}) {
   const target = claudeCredentialService(owner.dir);
   const stored = await readCredential({ service: target, env, security }).catch(() => null);
   if (stored === live) return { captured: false, reason: "already in step", profile: owner.name };
+  // Only ever forwards. Both copies are the same account, and whichever was
+  // refreshed last is the one the server still honours; writing an older token
+  // over a newer one would log the profile out, which is the failure this is
+  // here to prevent.
+  if (!isNewer(live, stored)) {
+    return { captured: false, reason: "the profile's own copy is the newer one", profile: owner.name };
+  }
   await writeCredential({ service: target, secret: live, env, security });
   await writeIdentityBlock(configFileIn(owner.dir), identity);
   log.info("swap", "captured the live credential back", { profile: owner.name });
   return { captured: true, profile: owner.name };
+}
+
+/** Whether one stored credential is at least as fresh as another. */
+function isNewer(live, stored) {
+  if (!stored) return true;
+  const at = (blob) => Number(parseCredential(blob)?.claudeAiOauth?.expiresAt) || 0;
+  return at(live) >= at(stored);
 }
 
 /**

@@ -160,6 +160,26 @@ describe("switching the global login", () => {
     }
   });
 
+  // The capture runs unattended from the renewal job now, so it has to be safe
+  // in the other direction too: a profile refreshed more recently than the slot
+  // must not have its working token replaced by the slot's older one.
+  it("refuses to capture a token older than the profile's own", async () => {
+    const { home, env, security, profileDir } = await setup({ globalWho: "bob", profileWho: "bob" });
+    try {
+      const fresher = credential("bob", { refreshToken: "sk-ant-ort-fresher", expiresAt: NOW + 7_200_000 });
+      security.items.set(claudeCredentialService(profileDir), fresher);
+      const result = await captureBack({ env, security });
+      assert.deepEqual(result, {
+        captured: false,
+        reason: "the profile's own copy is the newer one",
+        profile: "work",
+      });
+      assert.equal(security.items.get(claudeCredentialService(profileDir)), fresher, "the newer token survives");
+    } finally {
+      await home.cleanup();
+    }
+  });
+
   it("backs the previous login up, verifiably, and restores it exactly", async () => {
     const { home, env, security, globalConfig } = await setup();
     try {

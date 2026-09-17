@@ -83,6 +83,11 @@ async function cmdStatus({ env, options, platform }) {
   for (const [name, entry] of quarantined) {
     lines.push(`${label(name)}needs signing in again ${grey(`since ${entry.at}`)}`);
   }
+  if (state.captured) {
+    lines.push(
+      `${label("captured")}took the live login back into "${state.captured}", which also holds the global slot`,
+    );
+  }
   if (state.rotates !== null) {
     lines.push(
       `${label("rotation")}${state.rotates ? "your account rotates refresh tokens, so renewing keeps the lineage alive" : "your account keeps the same refresh token across renewals"}`,
