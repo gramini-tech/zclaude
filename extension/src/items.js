@@ -207,7 +207,7 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
-const CELLS = 6;
+const CELLS = 5;
 
 /**
  * A bar, drawn as two coloured spans.
@@ -238,19 +238,27 @@ function bar(pct) {
 const GUTTER = "&nbsp;&nbsp;";
 
 /**
- * One window on one line: the bar, the number, and when it comes back.
+ * Two lines, and exactly two, in every cell of the table.
  *
- * One line, not two. A `<br>` before the reset made the usage cells two lines
- * tall while the name beside them was one, and there is no way to say how a
- * cell should align vertically — no `valign`, and `style` does not reach a
- * `<td>` — so the rows came out ragged. Every cell being one line is the only
- * way to make them sit level.
+ * A hover's cell cannot be told how to align vertically — there is no `valign`,
+ * and `style` reaches a `span` but never a `td`. So cells of different heights
+ * settle at different baselines and the rows look broken. One line each was the
+ * first fix and it made the clock wrap instead, because bar, number and time on
+ * one line is wider than the hover gives a column. Two lines everywhere is the
+ * shape that both fits and lines up.
  */
+function twoLines(first, second) {
+  return `<td>${first}<br><small>${second || "&nbsp;"}</small>${GUTTER}</td>`;
+}
+
+/** One window: the bar and the number, with when it comes back beneath. */
 function windowCell(window, now) {
-  if (!window) return `<td>–${GUTTER}</td>`;
+  if (!window) return twoLines("–", "");
   const pct = Math.round(window.pct);
-  const left = countdown(window.resetsAt, now);
-  return `<td>${bar(pct)}&nbsp;${pct}%${left ? `&nbsp;&nbsp;${escapeHtml(left)}` : ""}${GUTTER}</td>`;
+  // Hard spaces throughout: a break inside "1h 12m" would put the "12m" on a
+  // line of its own, which is the wrap this is here to prevent.
+  const left = countdown(window.resetsAt, now).replaceAll(" ", "&nbsp;");
+  return twoLines(`${bar(pct)}&nbsp;${pct}%`, left);
 }
 
 /** A command link, which a trusted hover renders as a clickable word. */
@@ -321,18 +329,33 @@ function profileRow({ profile, usage, busy, active, names, now }) {
   const own = usage[profile.name];
   const stopped = own && Object.hasOwn(STATES, own.state) ? STATES[own.state] || "no usage" : "";
   const cells = stopped
-    ? `<td colspan="${names.length}">${escapeHtml(stopped)}</td>`
+    ? `<td colspan="${names.length}">${escapeHtml(stopped)}<br><small>&nbsp;</small></td>`
     : names.map((name) => windowCell(windowOf(own, name), now)).join("");
   const counts = busy[profile.name];
   const sessions = counts?.total ? `${counts.total} ${counts.working > 0 ? "active" : "open"}` : "";
+  const tick = profile.name === active ? '<span class="codicon codicon-check"></span>&nbsp;' : "";
   return [
     "<tr>",
-    `<td>${profile.name === active ? '<span class="codicon codicon-check"></span> ' : ""}<b>${escapeHtml(profile.name)}</b>${GUTTER}</td>`,
+    twoLines(`${tick}<b>${escapeHtml(profile.name)}</b>`, escapeHtml(organisationOf(profile))),
     cells,
-    `<td>${sessions}${GUTTER}</td>`,
-    `<td>${actionFor(profile, active)}</td>`,
+    twoLines(sessions, ""),
+    twoLines(actionFor(profile, active), ""),
     "</tr>",
   ].join("");
+}
+
+/**
+ * What tells two profiles on one address apart: the organisation.
+ *
+ * The full "vipinr@hoomanely.com · Hoomanely Inc" under every name would make
+ * the first column wider than the three usage columns put together, and the
+ * address is already named in full above the table. The organisation is the
+ * part that differs.
+ */
+function organisationOf(profile) {
+  const account = accountOf(profile);
+  const parts = account.split(" · ");
+  return parts.length > 1 ? parts.at(-1) : account;
 }
 
 function actionFor(profile, active) {

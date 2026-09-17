@@ -19,11 +19,13 @@ API to open a hover on command.
 - The editor tab is gone. A webview panel could draw the UI but not sit where
   it belonged.
 - Fixed: a window 59 minutes from resetting said "60m".
-- Each cell in the hover's table is one line. The reset used to sit under its
-  percentage, which made the usage cells two lines tall while the name beside
-  them was one; a hover cell cannot be told how to align vertically — there is
-  no `valign`, and `style` only reaches a `span` — so the rows came out ragged.
-  The bars are six cells rather than eight, since the clock now shares the line.
+- Every cell in the hover's table is two lines, and exactly two. A hover cell
+  cannot be told how to align vertically — no `valign`, and `style` reaches a
+  `span` but never a `td` — so cells of different heights settled at different
+  baselines and the rows looked broken. The clock sits on the second line in
+  `<small>`, with hard spaces so it cannot break in the middle, and the
+  organisation fills the second line under each name, which is what tells two
+  profiles on one address apart. Bars are five cells.
 
 Extension 0.6.0.
 

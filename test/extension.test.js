@@ -84,9 +84,9 @@ describe("the bar in the hover", () => {
   // only way to draw one in the one anchored surface an extension has.
   it("fills in proportion to the number", () => {
     const cells = (text, colour) => (text.match(new RegExp(`${colour};">(\\u{2007}+)`, "u"))?.[1] ?? "").length;
-    assert.equal(cells(items.bar(0), "#6e768166"), 6, "nothing spent is an empty track");
+    assert.equal(cells(items.bar(0), "#6e768166"), 5, "nothing spent is an empty track");
     assert.equal(cells(items.bar(50), "#3fb950"), 3);
-    assert.equal(cells(items.bar(100), "#f85149"), 6);
+    assert.equal(cells(items.bar(100), "#f85149"), 5);
   });
 
   it("shows a cell for anything spent at all, so 5% is not an empty bar", () => {
@@ -95,8 +95,8 @@ describe("the bar in the hover", () => {
   });
 
   it("clamps rather than overflowing on a number outside the range", () => {
-    assert.equal([...items.bar(140).matchAll(/\u{2007}/gu)].length, 6);
-    assert.equal([...items.bar(-5).matchAll(/\u{2007}/gu)].length, 6);
+    assert.equal([...items.bar(140).matchAll(/\u{2007}/gu)].length, 5);
+    assert.equal([...items.bar(-5).matchAll(/\u{2007}/gu)].length, 5);
   });
 
   it("colours by how close the window is to stopping you", () => {
@@ -208,7 +208,7 @@ describe("the status bar", () => {
       version: "9.9.9",
     });
     assert.match(text, /Signed in as \*\*a@b\.com\*\* · Acme/u);
-    assert.match(text, /codicon-check"><\/span> <b>work<\/b>/u);
+    assert.match(text, /codicon-check"><\/span>&nbsp;<b>work<\/b>/u);
   });
 
   it("says so plainly when the credential could not be read", () => {
@@ -263,7 +263,7 @@ describe("when a window comes back", () => {
       now: NOW,
     });
     assert.match(text, /background-color:#d29922;/u, "78% is in the warning band");
-    assert.match(text, /&nbsp;78%&nbsp;&nbsp;2h/u);
+    assert.match(text, /&nbsp;78%<br><small>2h<\/small>/u);
   });
 });
 
@@ -307,12 +307,36 @@ describe("the hover panel", () => {
 
   it("gives every window a bar and a reset, and a missing one a dash", () => {
     const text = panel();
-    // One line per cell: a <br> here made the usage cells two lines tall while
-    // the name beside them was one, and a hover cell cannot be told how to
-    // align, so the rows came out ragged.
-    assert.match(text, /&nbsp;66%&nbsp;&nbsp;1h/u, "the bar, the number and the clock, on one line");
-    assert.doesNotMatch(text, /<br>/u);
-    assert.match(text, /<td>–(&nbsp;)*<\/td>/u, "chinese has no Fable window");
+    // Two lines in every cell, and exactly two: cells of different heights
+    // settle at different baselines, and a hover cell cannot be told how to
+    // align. The clock is the second line, in <small>.
+    assert.match(text, /&nbsp;66%<br><small>1h<\/small>/u);
+    const cells = [...text.matchAll(/<td[^>]*>(.*?)<\/td>/gu)].map((match) => match[1]);
+    assert.ok(
+      cells.every((cell) => (cell.match(/<br>/gu) ?? []).length === 1),
+      "every cell is two lines, or the rows do not line up",
+    );
+    assert.match(text, /<td>–<br>/u, "chinese has no Fable window");
+  });
+
+  it("puts the organisation under the name, which is what tells two apart", () => {
+    const text = panel({
+      profiles: [
+        { name: "work", provider: "anthropic", account: "a@b.com · Acme" },
+        { name: "mine", provider: "anthropic", account: "a@b.com · personal" },
+      ],
+      usage: {},
+    });
+    assert.match(text, /<b>work<\/b><br><small>Acme<\/small>/u);
+    assert.match(text, /<b>mine<\/b><br><small>personal<\/small>/u);
+    // The full address is named above the table; repeating it on every row
+    // would make the first column wider than the numbers.
+    assert.doesNotMatch(text, /<small>a@b\.com · Acme<\/small>/u);
+  });
+
+  it("does not let a clock break across lines", () => {
+    const text = panel();
+    assert.doesNotMatch(text, /<small>\d+[a-z] \d+[a-z]<\/small>/u, "a plain space there would wrap");
   });
 
   it("offers switch as a command link, on the accounts that can take one", () => {
@@ -320,15 +344,15 @@ describe("the hover panel", () => {
     assert.match(text, /<a href="command:zclaude\.switchTo\?%5B%22max%22%5D">switch<\/a>/u);
     assert.doesNotMatch(text, /switchTo\?%5B%22gramini%22%5D/u, "gramini is already in use");
     assert.doesNotMatch(text, /switchTo\?%5B%22chinese%22%5D/u, "a Z.ai login cannot be switched to");
-    assert.match(text, /<td>terminal<\/td>/u);
+    assert.match(text, /<td>terminal<br>/u);
   });
 
   it("marks the account in the global slot", () => {
-    assert.match(panel(), /codicon codicon-check"><\/span> <b>gramini<\/b>/u);
+    assert.match(panel(), /codicon codicon-check"><\/span>&nbsp;<b>gramini<\/b>/u);
   });
 
   it("counts sessions in their own column", () => {
-    assert.match(panel({ busy: { max: { total: 2, working: 1 } } }), /<td>2 active(&nbsp;)*<\/td>/u);
+    assert.match(panel({ busy: { max: { total: 2, working: 1 } } }), /<td>2 active<br>/u);
   });
 
   it("says why a row has no numbers instead of drawing an empty bar", () => {
