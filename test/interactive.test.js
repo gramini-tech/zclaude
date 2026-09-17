@@ -86,7 +86,9 @@ describe("interactive (pseudo-terminal)", { skip: !hasScript() && "needs macOS s
     assert.equal(code, 0);
     const out = clean(await readFile(log, "utf8"));
     assert.match(out, /What do you want to launch\?/u);
-    assert.match(out, /Claude Code \+ Z\.ai GLM Coding Plan/u);
+    // The name column is sized for the numbers, so a long built-in label is
+    // cut in the table and spelled out on the detail line under the cursor.
+    assert.match(out, /Claude Code \+ Z\.ai …/u);
     assert.equal((await readFile(capture, "utf8")).trim(), "ran --from-test");
   });
 

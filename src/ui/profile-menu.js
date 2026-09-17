@@ -19,6 +19,7 @@ import {
 
 import { busyMarker } from "../sessions/index.js";
 import { formatCredits, formatUsage, usageRows } from "../usage/index.js";
+import { layout } from "../usage/table.js";
 import { paint } from "./log.js";
 import { guard, withSignal } from "./prompt.js";
 
@@ -50,9 +51,14 @@ export function renderRow({ profile, active, usage, loading, width, frame, colum
   return active ? paint(line, "cyan", process.stderr) : line;
 }
 
-/** What the highlighted row is: the account, and what it borrows. */
-export function renderDetail(profile, columns = 80) {
-  const parts = [profile?.description, profile?.sharing].filter(Boolean);
+/**
+ * What the highlighted row is: the account, and what it borrows.
+ *
+ * The name comes back here when the table had to cut it, which is the only
+ * place it can: the column is sized for the numbers.
+ */
+export function renderDetail(profile, columns = 80, { cut = false } = {}) {
+  const parts = [cut ? profile?.label : null, profile?.description, profile?.sharing].filter(Boolean);
   if (parts.length === 0) return "";
   const line = `  ${parts.join(", ")}`;
   return line.length < columns ? line : `${line.slice(0, columns - 2)}…`;
@@ -132,37 +138,38 @@ const menuPrompt = createPrompt((config, done) => {
 
   const now = Date.now();
   const columns = process.stderr.columns || 80;
-  // Names get whatever the numbers do not need, measured rather than guessed:
-  // a quiet day is "5h 4% · wk 1%" and a busy one adds a reset clock to every
-  // window, which is twice as wide. Reserving for the worst case all the time
-  // would cut names that had room.
-  const longest = Math.max(...profiles.map((profile) => profile.label.length));
-  const numbersWidth = Math.max(12, ...profiles.map((profile) => formatUsage(store?.get(profile.id), now).length));
-  const width = Math.min(longest, Math.max(12, columns - 4 - numbersWidth));
-  const known = profiles.filter((profile) => store?.get(profile.id)).length;
-  const rows = profiles.map((profile, index) =>
-    renderRow({
-      profile,
-      active: index === cursor,
+  // The same table the editor's panel draws. A terminal is monospace, so the
+  // columns are simply columns; `layout` gives up the ones a narrow window has
+  // no room for rather than letting a row wrap, because a wrapped row would put
+  // the cursor on the wrong line.
+  const table = layout(
+    profiles.map((profile) => ({
+      name: profile.label,
       usage: store?.get(profile.id),
-      loading: Boolean(store?.loading),
-      width,
-      frame,
-      columns,
-      now,
       busy: busy?.get(profile.id),
-    }),
+      loading: Boolean(store?.loading),
+    })),
+    { columns, now },
   );
+  const known = profiles.filter((profile) => store?.get(profile.id)).length;
+  const rows = table.rows.map((line, index) => {
+    const marked = `${index === cursor ? "❯" : " "} ${line}`;
+    return index === cursor ? paint(marked, "cyan", process.stderr) : marked;
+  });
   const header = paint("?", "cyan", process.stderr);
   if (done_) return `${header} What do you want to launch? ${paint(profiles[cursor].label, "cyan", process.stderr)}`;
-  const detail = paint(renderDetail(profiles[cursor], columns), "grey", process.stderr);
-  const resets = paint(renderUsageDetail(store?.get(profiles[cursor].id), Date.now(), columns), "grey", process.stderr);
+  const columnNames = paint(`  ${table.header}`, "grey", process.stderr);
+  const detail = paint(
+    renderDetail(profiles[cursor], columns, { cut: profiles[cursor].label.length > table.width }),
+    "grey",
+    process.stderr,
+  );
   const footer = paint(
     renderFooter({ loading: Boolean(store?.loading), count: known, total: profiles.length, usageEnabled }),
     "grey",
     process.stderr,
   );
-  return [`${header} What do you want to launch?`, ...rows, detail, resets, footer].filter(Boolean).join("\n");
+  return [`${header} What do you want to launch?`, columnNames, ...rows, detail, footer].filter(Boolean).join("\n");
 });
 
 /**

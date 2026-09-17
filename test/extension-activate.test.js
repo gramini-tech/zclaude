@@ -19,7 +19,7 @@ const settle = () =>
 
 /** Just enough VS Code, recording what the extension did with it. */
 function stubVscode() {
-  const recorded = { messages: [], terminals: [], commands: new Map(), pickers: [], progress: [] };
+  const recorded = { messages: [], terminals: [], commands: new Map(), panels: [], progress: [] };
   const disposable = () => ({ dispose() {} });
   const statusBar = { text: "", tooltip: null, command: null, shown: false, show() {}, hide() {}, dispose() {} };
   statusBar.show = () => {
@@ -29,41 +29,46 @@ function stubVscode() {
     statusBar.shown = false;
   };
 
-  function createQuickPick() {
-    const picker = {
-      title: "",
-      placeholder: "",
-      busy: false,
-      items: [],
-      selectedItems: [],
-      shown: false,
-      snapshots: [],
-      onDidAccept(handler) {
-        picker.accept = handler;
+  /** Just enough of a webview panel to drive the extension through it. */
+  function createWebviewPanel(viewType, title) {
+    const panel = {
+      viewType,
+      title,
+      visible: true,
+      html: "",
+      renders: [],
+      disposed: false,
+      reveal() {
+        panel.revealed = (panel.revealed ?? 0) + 1;
       },
-      onDidHide(handler) {
-        picker.hide = handler;
+      dispose() {
+        panel.disposed = true;
+        panel.onDispose?.();
       },
-      show() {
-        picker.shown = true;
+      onDidDispose(handler) {
+        panel.onDispose = handler;
       },
-      dispose() {},
+      webview: {
+        cspSource: "vscode-webview://test",
+        onDidReceiveMessage(handler) {
+          panel.post = handler;
+        },
+        set html(value) {
+          panel.html = value;
+          panel.renders.push(value);
+        },
+        get html() {
+          return panel.html;
+        },
+      },
     };
-    // Remember every list the extension set, so the test can assert that the
-    // rows appeared before the usage did.
-    Object.defineProperty(picker, "items", {
-      get: () => picker.current ?? [],
-      set: (value) => {
-        picker.current = value;
-        picker.snapshots.push({ busy: picker.busy, rows: value.length });
-      },
-    });
-    recorded.pickers.push(picker);
-    return picker;
+    recorded.panels.push(panel);
+    return panel;
   }
 
   const vscode = {
     StatusBarAlignment: { Left: 1, Right: 2 },
+    ViewColumn: { Active: -1, Beside: -2 },
     ProgressLocation: { Notification: 15 },
     MarkdownString: class {
       constructor(value) {
@@ -76,7 +81,7 @@ function stubVscode() {
     window: {
       statusBar,
       createStatusBarItem: () => statusBar,
-      createQuickPick,
+      createWebviewPanel,
       createOutputChannel: () => ({ appendLine() {}, show() {}, dispose() {} }),
       createTerminal: (name) => {
         const terminal = {
@@ -177,18 +182,18 @@ const answers = (extra = {}) => ({
   ...extra,
 });
 
-/** Open the picker, pick the row matching `choose`, and wait for the work. */
-async function pickAndChoose(loaded, choose) {
-  const opening = loaded.recorded.commands.get("zclaude.pick")();
-  await settle();
-  await settle();
-  const [picker] = loaded.recorded.pickers;
-  const row = picker.current.find(choose);
-  assert.ok(row, "no such row in the picker");
-  picker.selectedItems = [row];
-  picker.accept();
-  await opening;
-  return picker;
+/** Open the panel and wait for both renders. */
+async function open(loaded, force = false) {
+  await loaded.recorded.commands.get(force ? "zclaude.refresh" : "zclaude.pick")();
+  return loaded.recorded.panels.at(-1);
+}
+
+/** Open the panel, press one of its buttons, and wait for the work. */
+async function press(loaded, message) {
+  const panel = await open(loaded);
+  assert.ok(panel, "no panel was opened");
+  await panel.post(message);
+  return panel;
 }
 
 describe("the extension in a window", () => {
@@ -216,17 +221,16 @@ describe("the extension in a window", () => {
   it("shows the list before the usage arrives, then fills it in", async () => {
     const loaded = loadExtension(answers());
     loaded.extension.activate({ subscriptions: [] });
-    const picker = await pickAndChoose(loaded, (row) => row.profile === "home");
-    assert.ok(picker.shown, "the picker was never shown");
-    assert.ok(picker.snapshots.length >= 2, "the list was set once and never updated");
-    assert.equal(picker.snapshots[0].busy, true, "it should say it is working while usage loads");
-    assert.equal(picker.snapshots.at(-1).busy, false);
+    const panel = await open(loaded);
+    assert.ok(panel.renders.length >= 2, "the table was drawn once and never updated");
+    assert.match(panel.renders[0], /checking usage/u, "the rows are on screen before the numbers");
+    assert.doesNotMatch(panel.renders.at(-1), /checking usage/u);
   });
 
   it("switches to the profile that was picked, without asking again", async () => {
     const loaded = loadExtension(answers());
     loaded.extension.activate({ subscriptions: [] });
-    await pickAndChoose(loaded, (row) => row.profile === "home");
+    await press(loaded, { type: "switch", name: "home" });
     assert.deepEqual(loaded.ran, [["switch", "home", "--yes"]]);
     assert.match(loaded.recorded.messages.at(-1), /signed in as "home"/u);
   });
@@ -246,7 +250,7 @@ describe("the extension in a window", () => {
     loaded.extension.activate({ subscriptions: [] });
     // Bounded, so a regression fails here rather than hanging the run.
     const done = await Promise.race([
-      pickAndChoose(loaded, (row) => row.profile === "home").then(() => "finished"),
+      press(loaded, { type: "switch", name: "home" }).then(() => "finished"),
       new Promise((resolve) => {
         setTimeout(() => resolve("still waiting"), 500).unref?.();
       }),
@@ -261,7 +265,7 @@ describe("the extension in a window", () => {
   it("reports progress where a sub-second job belongs, not in a popup", async () => {
     const loaded = loadExtension(answers());
     loaded.extension.activate({ subscriptions: [] });
-    await pickAndChoose(loaded, (row) => row.profile === "home");
+    await press(loaded, { type: "switch", name: "home" });
     const { options } = loaded.recorded.progress.at(-1);
     assert.equal(options.location, loaded.vscode.ProgressLocation.Window);
     assert.match(options.title, /switching to home/u);
@@ -270,14 +274,14 @@ describe("the extension in a window", () => {
   it("does nothing when the profile picked is the one already signed in", async () => {
     const loaded = loadExtension(answers());
     loaded.extension.activate({ subscriptions: [] });
-    await pickAndChoose(loaded, (row) => row.profile === "work");
+    await press(loaded, { type: "switch", name: "work" });
     assert.deepEqual(loaded.ran, []);
   });
 
   it("refuses to switch a Z.ai profile, and says where to run it instead", async () => {
     const loaded = loadExtension(answers());
     loaded.extension.activate({ subscriptions: [] });
-    await pickAndChoose(loaded, (row) => row.profile === "chinese");
+    await press(loaded, { type: "switch", name: "chinese" });
     assert.deepEqual(loaded.ran, []);
     assert.match(loaded.recorded.messages.at(-1), /run `zclaude chinese` in a terminal/u);
   });
@@ -285,7 +289,7 @@ describe("the extension in a window", () => {
   it("opens a terminal to add a profile, because signing in needs one", async () => {
     const loaded = loadExtension(answers());
     loaded.extension.activate({ subscriptions: [] });
-    await pickAndChoose(loaded, (row) => row.label.includes("Add a profile"));
+    await press(loaded, { type: "add" });
     assert.deepEqual(loaded.recorded.terminals[0].sent, ["/fake/zclaude profile add"]);
     assert.deepEqual(loaded.ran, [], "nothing was run behind the terminal");
   });
@@ -293,7 +297,7 @@ describe("the extension in a window", () => {
   it("restores the previous login on request", async () => {
     const loaded = loadExtension(answers());
     loaded.extension.activate({ subscriptions: [] });
-    await pickAndChoose(loaded, (row) => row.label.includes("Restore"));
+    await press(loaded, { type: "restore" });
     assert.deepEqual(loaded.ran[0], ["switch", "--restore", "--yes"]);
   });
 
@@ -302,7 +306,7 @@ describe("the extension in a window", () => {
     loaded.extension.activate({ subscriptions: [] });
     // showWarningMessage returns undefined in the stub, which is the modal
     // being dismissed.
-    await pickAndChoose(loaded, (row) => row.label.includes("Remove a profile"));
+    await press(loaded, { type: "remove" });
     assert.deepEqual(loaded.ran, [], "a dismissed confirmation must not delete anything");
   });
 
@@ -311,7 +315,7 @@ describe("the extension in a window", () => {
       answers({ run: () => ({ ok: false, code: 1, stdout: "", stderr: "the Keychain is locked" }) }),
     );
     loaded.extension.activate({ subscriptions: [] });
-    await pickAndChoose(loaded, (row) => row.profile === "home");
+    await press(loaded, { type: "switch", name: "home" });
     assert.match(loaded.recorded.messages.at(-1), /Could not switch to "home"/u);
     assert.doesNotMatch(loaded.recorded.messages.join("\n"), /signed in as/u);
   });
@@ -321,7 +325,7 @@ describe("the extension in a window", () => {
     // The modal's own button, which the stub otherwise dismisses.
     loaded.vscode.window.showWarningMessage = async (text, options, action) => action;
     loaded.extension.activate({ subscriptions: [] });
-    await pickAndChoose(loaded, (row) => row.label.includes("Remove a profile"));
+    await press(loaded, { type: "remove" });
     assert.deepEqual(loaded.ran, [["profile", "remove", "work", "--yes"]]);
   });
 
@@ -329,7 +333,7 @@ describe("the extension in a window", () => {
     const loaded = loadExtension({ ...answers(), binary: null });
     loaded.extension.activate({ subscriptions: [] });
     await loaded.recorded.commands.get("zclaude.pick")();
-    assert.equal(loaded.recorded.pickers.length, 0, "an empty picker helps nobody");
+    assert.equal(loaded.recorded.panels.length, 0, "an empty panel helps nobody");
     assert.match(loaded.recorded.messages.at(-1), /zclaude was not found/u);
   });
 
@@ -339,7 +343,7 @@ describe("the extension in a window", () => {
     await settle();
     assert.equal(loaded.vscode.window.statusBar.text, "zc $(warning)");
     await loaded.recorded.commands.get("zclaude.pick")();
-    assert.equal(loaded.recorded.pickers.length, 0, "an old zclaude answers every call with nothing");
+    assert.equal(loaded.recorded.panels.length, 0, "an old zclaude answers every call with nothing");
     assert.match(loaded.recorded.messages.at(-1), /zclaude 0\.2\.14 is older than/u);
   });
 

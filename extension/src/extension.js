@@ -6,12 +6,16 @@
 
 "use strict";
 
+const { randomBytes } = require("node:crypto");
+
 const vscode = require("vscode");
 
 const { findBinary, run, runJson, version } = require("./cli.js");
-const { ACTIONS, hoverPanel, isSupported, outdatedText, quickPickItems, statusBarText } = require("./items.js");
+const { hoverPanel, isSupported, outdatedText, statusBarText } = require("./items.js");
+const { panelHtml } = require("./panel.js");
 
 let item;
+let view = null;
 let binary = null;
 let found = null;
 let output;
@@ -129,6 +133,14 @@ async function refreshStatusBar() {
 }
 
 /** The list. It opens immediately and fills in usage as answers arrive. */
+/**
+ * Open the panel, or bring it forward if it is already open.
+ *
+ * A webview rather than a QuickPick. The QuickPick drops from the top of the
+ * window, renders in the proportional UI font, clips each row to one line and
+ * takes no styling, so the usage it was meant to show could not be drawn. This
+ * is the same information with room for it.
+ */
 async function pick(force = false) {
   if (!locate()) {
     const choice = await vscode.window.showWarningMessage(
@@ -143,38 +155,76 @@ async function pick(force = false) {
     await reportTooOld(installed);
     return;
   }
-  const picker = vscode.window.createQuickPick();
-  picker.title = "Claude Code account";
-  picker.placeholder = "Pick the account every terminal and the extension will use";
-  picker.busy = true;
-  picker.items = quickPickItems({ loading: true });
-  picker.show();
-
-  const [{ status }, profiles, busy] = await Promise.all([readStatus(), readProfiles(), readBusy()]);
-  const active = status?.owner ?? null;
-  picker.items = quickPickItems({ profiles, active, usage: {}, loading: true, busy });
-
-  // Usage is a network call per account, so the list is usable before it lands.
-  const usage = await readUsage(force);
-  picker.busy = false;
-  picker.items = quickPickItems({ profiles, active, usage, loading: false, busy });
-
-  const chosen = await new Promise((resolve) => {
-    picker.onDidAccept(() => resolve(picker.selectedItems[0]));
-    picker.onDidHide(() => resolve(null));
-  });
-  picker.dispose();
-  if (!chosen) return;
-  await act(chosen, { profiles, active });
+  if (view) view.reveal(undefined, true);
+  else {
+    view = vscode.window.createWebviewPanel("zclaude.accounts", "Claude Code account", vscode.ViewColumn.Active, {
+      enableScripts: true,
+      retainContextWhenHidden: true,
+    });
+    view.onDidDispose(() => {
+      view = null;
+    });
+    view.webview.onDidReceiveMessage((message) => handle(message));
+  }
+  await paint({ force });
 }
 
-function act(chosen, { profiles, active }) {
-  if (chosen.action === ACTIONS.refresh) return pick(true);
-  if (chosen.action === ACTIONS.add) return addProfile();
-  if (chosen.action === ACTIONS.remove) return removeProfile(profiles);
-  if (chosen.action === ACTIONS.restore) return restore();
-  if (!chosen.profile || chosen.profile === active) return Promise.resolve();
-  return switchTo(chosen.profile, profiles);
+/** Fill the panel: the rows first, then the usage when it arrives. */
+async function paint({ force = false } = {}) {
+  if (!view) return;
+  const [{ status }, profiles, busy] = await Promise.all([readStatus(), readProfiles(), readBusy()]);
+  render({ status, profiles, busy, usage: {}, loading: true });
+  // Usage is a network call per account, so the table is on screen before it.
+  const usage = await readUsage(force);
+  render({ status, profiles, busy, usage, loading: false });
+}
+
+function render({ status, profiles, busy, usage, loading }) {
+  if (!view) return;
+  view.webview.html = panelHtml({
+    status,
+    profiles,
+    usage,
+    busy,
+    loading,
+    nonce: randomBytes(16).toString("base64"),
+    cspSource: view.webview.cspSource,
+  });
+}
+
+/** What the panel's buttons ask for. */
+async function handle(message) {
+  const profiles = await readProfiles();
+  switch (message?.type) {
+    case "switch": {
+      // The row for the account in use offers no Switch button, so this only
+      // arrives from a stale panel. Doing it anyway would take a backup and
+      // rewrite a credential to arrive where it already is.
+      const { status } = await readStatus();
+      if (message.name !== status?.owner) await switchTo(message.name, profiles);
+      break;
+    }
+    case "refresh": {
+      await paint({ force: true });
+      return;
+    }
+    case "add": {
+      await addProfile();
+      break;
+    }
+    case "remove": {
+      await removeProfile(profiles);
+      break;
+    }
+    case "restore": {
+      await restore();
+      break;
+    }
+    default: {
+      return;
+    }
+  }
+  await paint();
 }
 
 async function switchTo(name, profiles) {
@@ -277,6 +327,7 @@ function activate(context) {
 }
 
 function deactivate() {
+  view?.dispose();
   item?.dispose();
   output?.dispose();
 }

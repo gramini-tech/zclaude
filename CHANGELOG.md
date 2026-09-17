@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.2.35
+
+Clicking the status bar item opens a panel now, and the terminal menu draws the
+same table.
+
+- **A webview panel replaces the QuickPick.** Clicking `zc` used to drop a list
+  from the top of the window that could not show what it was there to show: it
+  renders in the proportional UI font, gives each row one clipped line and takes
+  no styling, so a gauge drawn in it said nothing about its value. The panel has
+  a real bar per window, coloured by how close it is to stopping you, the reset
+  time beside each one, the sessions on each account, and a Switch button per
+  row. Refresh, Add, Remove and Restore are along the bottom.
+- **The terminal menu draws the table too.** A terminal is monospace, so the
+  columns are simply columns. It gives up columns rather than wrapping when the
+  window is narrow — per-model windows first, then sessions, then the reset
+  clock — because a wrapped row would put the cursor on the wrong line. A long
+  name is cut in the table and spelled out on the detail line under the cursor.
+- The hover on the status bar item keeps the same table in a fenced block, for
+  a look without a click.
+
+Extension 0.5.0.
+
 ## 0.2.33
 
 The VS Code list was, as reported, "a bit haphazardly organized" — and the first
