@@ -90,10 +90,10 @@ zclaude self-uninstall --keep-config       # keep ~/.zclaude
 ones, and tells you to `git pull` in a checkout. It reads the version back from what it installed and
 reports that, rather than asking you to go and check.
 
-The check reads `package.json` from the default branch. GitHub serves that file through a cache that
-holds it for a few minutes, so a version pushed moments ago can still read as the previous one; the
-request carries a unique query to get around it. If a check still says you are current when you know
-better, `--force` installs anyway.
+The check reads `package.json` from the default branch through GitHub's contents API, which answers
+with the file as it is now. `raw.githubusercontent.com`, the obvious place to read it from, serves a
+copy that can be several minutes old, so it is only the fallback for when the API's rate limit is
+reached. If a check still says you are current when you know better, `--force` installs anyway.
 
 ## Quick start
 

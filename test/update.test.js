@@ -107,25 +107,37 @@ describe("update check", () => {
 });
 
 describe("looking up the newest version", () => {
-  it("asks for a URL the CDN cannot answer from its cache", async () => {
+  // raw.githubusercontent serves a cached copy for several minutes, so a
+  // version pushed moments ago reads as the previous one. The contents API
+  // answers with the file as it is now, and is asked first.
+  it("asks the API first, and never reads raw when the API answers", async () => {
     const seen = [];
     const fetchImpl = async (url) => {
       seen.push(String(url));
       return Response.json({ version: "9.9.9" });
     };
     assert.equal(await fetchLatestVersion({ fetchImpl, now: 1234 }), "9.9.9");
-    assert.equal(seen.length, 1);
-    assert.match(seen[0], /raw\.githubusercontent\.com\/vipincr\/zclaude\/main\/package\.json\?t=1234$/u);
-    // raw.githubusercontent serves a cached file for minutes and ignores the
-    // no-cache header, which is how a version pushed a moment ago reads old.
-    await fetchLatestVersion({ fetchImpl, now: 5678 });
-    assert.notEqual(seen[0], seen[1], "a later check is a different URL");
+    assert.deepEqual(seen, ["https://api.github.com/repos/vipincr/zclaude/contents/package.json?ref=main"]);
+  });
+
+  it("falls back to raw when the API is rate limited", async () => {
+    const seen = [];
+    const fetchImpl = async (url) => {
+      seen.push(String(url));
+      return String(url).includes("api.github.com")
+        ? Response.json({ message: "API rate limit exceeded" }, { status: 403 })
+        : Response.json({ version: "8.8.8" });
+    };
+    assert.equal(await fetchLatestVersion({ fetchImpl, now: 1234 }), "8.8.8");
+    assert.equal(seen.length, 2);
+    assert.match(seen[1], /raw\.githubusercontent\.com\/vipincr\/zclaude\/main\/package\.json\?t=1234$/u);
   });
 
   it("returns null for anything that is not a version, and for a failure", async () => {
     const reply = (body) => async () => Response.json(body);
     assert.equal(await fetchLatestVersion({ fetchImpl: reply({}) }), null);
     assert.equal(await fetchLatestVersion({ fetchImpl: reply({ version: "main" }) }), null);
+    assert.equal(await fetchLatestVersion({ fetchImpl: async () => Response.json({}, { status: 404 }) }), null);
     assert.equal(
       await fetchLatestVersion({
         fetchImpl: async () => {

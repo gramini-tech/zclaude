@@ -17,11 +17,14 @@ const REPO = "vipincr/zclaude";
 // needs npm to "prepare" the package, and when script running is disabled npm
 // leaves a symlink into its cache instead of a real installation.
 export const GITHUB_SPEC = `https://codeload.github.com/${REPO}/tar.gz/refs/heads/main`;
+// The contents API answers with the file as it is on the branch right now.
+// raw.githubusercontent serves the same file from a cache that holds it for
+// several minutes, ignores a no-cache header and is keyed by path, so a query
+// string does not get around it: measured on 2026-09-17, raw still said 0.2.12
+// while the API already said 0.2.13. Raw stays as a fallback for when the API
+// rate limit (60 an hour per address, against a once-a-day check) is hit.
+const API_PACKAGE_URL = `https://api.github.com/repos/${REPO}/contents/package.json?ref=main`;
 const RAW_PACKAGE_URL = `https://raw.githubusercontent.com/${REPO}/main/package.json`;
-// raw.githubusercontent sits behind a cache that holds a file for minutes and
-// ignores a no-cache request header, so a version pushed a moment ago reads as
-// the old one. A unique query makes it a different cache key.
-const cacheBusted = (url, now) => `${url}?t=${now}`;
 export const INSTALLER_URL = "https://vipincr.github.io/zclaude/install";
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
@@ -44,13 +47,21 @@ export function compareVersions(a, b) {
  * @param {{fetchImpl?: typeof fetch, timeoutMs?: number, now?: number}} [options]
  */
 export async function fetchLatestVersion({ fetchImpl, timeoutMs = 2500, now = Date.now() } = {}) {
+  const sources = [
+    { url: API_PACKAGE_URL, headers: { Accept: "application/vnd.github.raw" } },
+    { url: `${RAW_PACKAGE_URL}?t=${now}`, headers: { "Cache-Control": "no-cache" } },
+  ];
+  for (const source of sources) {
+    const version = await versionFrom({ ...source, timeoutMs, fetchImpl });
+    if (version) return version;
+  }
+  return null;
+}
+
+async function versionFrom({ url, headers, timeoutMs, fetchImpl }) {
   try {
-    const response = await request({
-      url: cacheBusted(RAW_PACKAGE_URL, now),
-      timeoutMs,
-      fetchImpl,
-      headers: { "Cache-Control": "no-cache" },
-    });
+    const response = await request({ url, headers, timeoutMs, fetchImpl });
+    if (!response.ok) return null;
     const version = response.json?.version;
     return typeof version === "string" && /^\d+\.\d+\.\d+/u.test(version) ? version : null;
   } catch {
