@@ -90,6 +90,28 @@ describe("interactive (pseudo-terminal)", { skip: !hasScript() && "needs macOS s
     assert.equal((await readFile(capture, "utf8")).trim(), "ran --from-test");
   });
 
+  it("fills usage in behind a spinner and refreshes on r", async () => {
+    const log = join(home.dir, "usage-menu.log");
+    // No credentials in this scratch home, so every lookup ends in "sign in to
+    // see usage" — which is the point: the list is usable throughout and each
+    // row resolves, rather than the menu blocking on the network.
+    const code = await runInPty({
+      args: ["--", "--usage-menu"],
+      env,
+      keys: [
+        [1200, "r"],
+        [1200, "\r"],
+      ],
+      log,
+    });
+    const out = clean(await readFile(log, "utf8"));
+    assert.equal(code, 0, out.slice(-400));
+    assert.match(out, /usage \d\/2/u, "the footer counts the answers in");
+    assert.match(out, /r refresh/u);
+    assert.match(out, /sign in to see usage/u, "a row says why it has no numbers");
+    assert.equal((await readFile(capture, "utf8")).trim(), "ran --usage-menu");
+  });
+
   it("login --api-key continues into the wizard and launches claude", async () => {
     const key = "0123456789abcdef0123.ABCDEFGHIJKLMNOPQRSTUV";
     const zai = createServer((request, response) => {

@@ -424,6 +424,8 @@ All zclaude options go before any argument meant for `claude`.
 | `--yes`                                 | `profile remove`: do not ask                                             |
 | `--fix`                                 | `profile doctor`: relink what it can                                     |
 | `--force`                               | `self-update`: install even when the check says you are current          |
+| `--usage`                               | `profile list`: fetch how much of each plan is used                      |
+| `--no-usage`                            | menu: skip the usage lookup and its network calls                        |
 | `--reconfigure`, `--customize`          | run the model wizard even when config exists                             |
 | `--login`                               | sign in to Z.ai again before launching                                   |
 | `--model <id>`                          | primary model for a Z.ai profile; forwarded to `claude` otherwise        |
@@ -495,6 +497,7 @@ MY_TEAM_MCP_TOKEN=...
 | `ZCLAUDE_NO_KEYCHAIN=1`                                                                                                                              | use the file store even on macOS                                                                                  |
 | `ZCLAUDE_NO_NATIVE_CALLBACK=1`                                                                                                                       | always paste the redirect URL                                                                                     |
 | `ZCLAUDE_NO_BANNER=1`                                                                                                                                | skip the splash                                                                                                   |
+| `ZCLAUDE_NO_USAGE=1`                                                                                                                                 | never look up plan usage for the menu                                                                             |
 | `ZCLAUDE_ALLOW_SETTINGS_OVERRIDE=1`                                                                                                                  | launch even when a settings `env` block overrides this session                                                    |
 | `ZCLAUDE_NO_UPDATE_CHECK=1`                                                                                                                          | skip the daily check for a newer version                                                                          |
 | `ZCLAUDE_INSTALL_KIND`                                                                                                                               | force how `self-update` and `self-uninstall` work: `installer`, `npm` or `checkout`                               |

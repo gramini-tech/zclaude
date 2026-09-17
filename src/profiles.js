@@ -67,11 +67,14 @@ async function fromRecord(record) {
   const provider = record.provider === "zai" ? "Z.ai GLM Coding Plan" : "Anthropic account";
   const identity = record.provider === "zai" ? null : await readIdentity(record.dir);
   const account = accountLabel(identity);
-  const who = account ? ` · ${account}` : "";
   return {
     id: record.name,
     label: record.label || record.name,
-    description: `${provider}${who}, own login${shared.length > 0 ? `, shares ${shared.join(" and ")}` : ""}`,
+    // Which account it is, and nothing else: the menu row also carries usage,
+    // and what a profile shares is not a launch-time decision. `profile list`
+    // and `profile show` are where the rest lives.
+    description: account ?? provider,
+    sharing: shared.length > 0 ? `shares ${shared.join(" and ")}` : "shares nothing",
     zai: record.provider === "zai",
     env: {},
     builtin: false,

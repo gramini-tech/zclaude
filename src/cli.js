@@ -40,6 +40,8 @@ import { buildAuthorizeUrl, exchangeCode, generateState, parseCallback } from ".
 import { configureLogger, formatEntry, listLogs, log, logFilePath, readLog } from "./logger.js";
 import { cmdProfile, describeShare, forgetAllProfiles, launchContext, profileSummaries } from "./profile-commands.js";
 import { findProfile, listProfiles, takeProfileArgument } from "./profiles.js";
+import { DEFAULT_CREDENTIAL_SERVICE } from "./profiles/keychain-name.js";
+import { defaultConfigDir } from "./profiles/launch.js";
 import { getRegistered } from "./profiles/registry.js";
 import { mintApiKey } from "./provision.js";
 import {
@@ -57,6 +59,8 @@ import { deleteCredential, loadCredential, readState, saveCredential, storePaths
 import { printBanner } from "./ui/banner.js";
 import { debug, error as logError, info, mask, paint, setQuiet, setVerbose, success, warn } from "./ui/log.js";
 import { chooseProfile } from "./ui/menu.js";
+import { chooseProfileWithUsage } from "./ui/profile-menu.js";
+import { createUsageStore } from "./usage/store.js";
 import { chooseSaveLocation, confirmChoice, knownModels, promptApiKey, runModelWizard } from "./ui/wizard.js";
 import {
   checkForUpdate,
@@ -117,6 +121,8 @@ const BOOL_FLAGS = Object.freeze({
   "--yes": "yes",
   "--fix": "fix",
   "--force": "force",
+  "--usage": "usage",
+  "--no-usage": "noUsage",
   "--sso": "sso",
   "--console": "useConsole",
 });
@@ -228,6 +234,8 @@ Options (must come before any claude argument or profile name)
   --yes                        profile remove: do not ask
   --fix                        profile doctor: relink what it can
   --force                      self-update: install even when the check says you are current
+  --usage                      profile list: fetch how much of each plan is used
+  --no-usage                   menu: skip the usage lookup and its network calls
   --no-store                   keep the key in memory for this session only
   --no-banner                  skip the splash
   --verbose                    show what zclaude is doing
@@ -252,6 +260,7 @@ Environment
   ZCLAUDE_HOME                 config dir (default ~/.zclaude)
   ZCLAUDE_CLAUDE_BIN           path to claude
   ZCLAUDE_NO_STORE, ZCLAUDE_NO_KEYCHAIN, ZCLAUDE_NO_NATIVE_CALLBACK, ZCLAUDE_NO_BANNER
+  ZCLAUDE_NO_USAGE             never look up plan usage for the menu
   ZCLAUDE_LOGIN_TIMEOUT        seconds to wait for the browser (default 300)
   ZCLAUDE_LOG_LEVEL            run-log level; ZCLAUDE_LOG_CATEGORIES filters (e.g. "auth,http" or "-console")
   ZCLAUDE_LOG=off|<path>       disable the run log or pick its file; ZCLAUDE_LOG_DIR, ZCLAUDE_LOG_KEEP (default 30)
@@ -586,6 +595,36 @@ function warnUnknownModels(models, availableModels) {
 
 // ------------------------------------------------------------------- launch
 
+/**
+ * What the usage layer needs to look a profile up. The two built-ins are
+ * special: `claude` is whatever is in the global slot, whose Keychain item
+ * carries no directory hash, and `zai` is the Z.ai key kept in the default slot
+ * rather than under a profile name. An env-file profile has no login of its
+ * own, so it has no usage either.
+ */
+export function usageRecords(profiles, env = process.env) {
+  return profiles
+    .map((profile) => {
+      if (profile.id === "claude")
+        return {
+          name: "claude",
+          provider: "anthropic",
+          dir: defaultConfigDir(env),
+          credentialService: DEFAULT_CREDENTIAL_SERVICE,
+        };
+      if (profile.id === "zai") return { name: "zai", provider: "zai", zaiProfile: null };
+      if (profile.configDir)
+        return { name: profile.id, provider: profile.provider ?? "anthropic", dir: profile.configDir };
+      return null;
+    })
+    .filter(Boolean);
+}
+
+/** Usage costs network calls, so it stays out of scripts and out of the way. */
+function usageWanted({ options, env, interactive }) {
+  return interactive && !options.noUsage && !flag(env, "ZCLAUDE_NO_USAGE");
+}
+
 const PROFILE_SOURCES = Object.freeze({
   env: "ZCLAUDE_PROFILE in this shell",
   project: "the project's .zclaude/env",
@@ -616,7 +655,14 @@ async function selectProfile({ options, env, layered, interactive, profiles }) {
         "Pass --profile claude or --profile zai (or set ZCLAUDE_PROFILE).",
       );
     const state = await readState(env);
-    profileId = await chooseProfile(profiles, { defaultId: state.lastProfile });
+    const usageEnabled = usageWanted({ options, env, interactive });
+    // The fetch starts before the prompt and is never awaited: the list has to
+    // be on screen and usable while the numbers are still arriving.
+    const store = usageEnabled ? createUsageStore(usageRecords(profiles, env), { env }) : null;
+    store?.load().catch((error) => debug(`usage not loaded: ${error.message}`));
+    profileId = store
+      ? await chooseProfileWithUsage(profiles, { defaultId: state.lastProfile, store, usageEnabled })
+      : await chooseProfile(profiles, { defaultId: state.lastProfile });
     await writeState({ lastProfile: profileId }, env).catch((error) => debug(`state not saved: ${error.message}`));
   }
   const profile = findProfile(profiles, profileId);

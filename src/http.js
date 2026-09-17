@@ -66,11 +66,11 @@ function classifyNetworkError(error, method, url) {
  */
 
 /**
- * Perform a request and return { status, text, json, ok }. Never throws on a
- * non-2xx status; callers decide what each status means. Throws a network
- * error (exit 6) when the request could not complete at all.
+ * Perform a request and return { status, text, json, ok, headers }. Never
+ * throws on a non-2xx status; callers decide what each status means. Throws a
+ * network error (exit 6) when the request could not complete at all.
  * @param {RequestOptions} options
- * @returns {Promise<{status: number, text: string, json: any, ok: boolean}>}
+ * @returns {Promise<{status: number, text: string, json: any, ok: boolean, headers: Headers}>}
  */
 export async function request({
   method = "GET",
@@ -123,7 +123,7 @@ export async function request({
         json = undefined;
       }
     }
-    return { status: response.status, text, json, ok: response.ok };
+    return { status: response.status, text, json, ok: response.ok, headers: response.headers };
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener("abort", onOuterAbort);
