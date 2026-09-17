@@ -1,27 +1,34 @@
 # Changelog
 
-## 0.2.32
+## 0.2.33
 
-The VS Code list was, as reported, "a bit haphazardly organized".
+The VS Code list was, as reported, "a bit haphazardly organized" — and the first
+attempt at fixing it was worse, so this is the second.
 
-- **A hover panel on the status bar item**, with every account's windows in
-  actual columns: a fenced block, because the rest of a hover is rendered in the
-  UI font and only inside a fence is a space a space. The panel carries Switch
-  and Refresh as links, so it is the place to look rather than a place to squint.
-- **Gauges in the picker.** Each window is a bar and its percentage —
-  `5h ━───────  11%` — so a row can be compared against the one above it.
-  Drawn with heavy and light rules rather than full blocks: the list has no
-  font size to set, and a row of solid blocks reads as a wall.
-- **Fixed-width spacing.** Percentages are padded with a figure space, which is
-  exactly one digit wide, and groups are separated by an em space. Ordinary
-  spaces line nothing up in a proportional font, which is what made the old
-  rows look assembled rather than laid out.
-- The terminal menu, which *is* monospace, now pads its percentages into real
+- **The gauges live in the status bar hover, and they are real gauges.** A
+  fenced block renders monospace, so a run of blocks is a bar, a space is a
+  space and columns are columns: a row per account, a column per window with its
+  percentage, the reset of whichever window is closest to stopping you, and how
+  many sessions are on it. Switch and Refresh are links in the same panel.
+
+  ```
+     profile    5-hour           week             Fable            resets  sessions
+     chinese    ██░░░░░░░░  16%  ███████░░░  71%         –         5d 14h
+   › gramini    █████░░░░░  50%  ███░░░░░░░  31%  █████░░░░░  50%  1h 36m  3 open
+     hoomanely  ░░░░░░░░░░   0%  ██████░░░░  55%  ██████████ 100%  5d 5h
+  ```
+
+- **The list keeps the numbers alone.** It is drawn in the editor's UI font,
+  which is proportional and has no styling hook, so nothing there can be lined
+  up or drawn: an attempt with heavy and light rules rendered as one unbroken
+  line whatever the value, and a reset clock after each window pushed rows off
+  the end where they were clipped.
+- The terminal menu, which *is* monospace, pads its percentages into real
   columns and puts one reset clock at the end of the row rather than one after
   each window, where it shifted every later column on every row.
-- Credit that nobody has stopped being repeated on every row. `credits spent`
-  on four rows of an account that never enabled it says nothing and costs the
-  width the numbers need; `profile list --usage` still spells it out.
+- Credit that nobody has stopped being repeated on every row. `credits spent` on
+  four rows of an account that never enabled it says nothing and costs the width
+  the numbers need; `profile list --usage` still spells it out.
 
 Extension 0.4.0.
 
