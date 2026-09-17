@@ -22,6 +22,7 @@
 // owning it. We wait, then give up and say so.
 
 import { mkdir, rm, stat, utimes } from "node:fs/promises";
+import { dirname } from "node:path";
 
 import { log } from "../logger.js";
 
@@ -45,11 +46,20 @@ const wait = (ms) =>
  */
 export async function acquire(dir, { staleMs = CONFIG_STALE_MS, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   const deadline = Date.now() + timeoutMs;
+  let madeParent = false;
   for (;;) {
     try {
       await mkdir(dir);
       break;
     } catch (error) {
+      // The lock lives beside, or inside, Claude Code's config directory. On a
+      // machine where Claude Code has not run yet there is nothing to lock
+      // against, but the directory still has to exist to hold the lock.
+      if (!madeParent && error?.code === "ENOENT") {
+        madeParent = true;
+        await mkdir(dirname(dir), { recursive: true });
+        continue;
+      }
       if (error?.code !== "EEXIST") throw error;
       const age = await lockAge(dir);
       if (age !== null && age > staleMs) {

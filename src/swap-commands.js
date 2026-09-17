@@ -22,8 +22,8 @@ function describeAccount(account) {
 }
 
 /** `zclaude switch` with no name: who holds the global login. */
-async function cmdStatus({ options, env }) {
-  const status = await swapStatus({ env });
+async function cmdStatus({ options, env, security }) {
+  const status = await swapStatus({ env, security });
   if (options.json) {
     process.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
     return EXIT.OK;
@@ -44,8 +44,8 @@ async function cmdStatus({ options, env }) {
 }
 
 /** Move the global login to a profile. */
-async function cmdSwitchTo(name, { options, env, interactive }) {
-  const plan = await planSwitch(name, { env });
+async function cmdSwitchTo(name, { options, env, interactive, security }) {
+  const plan = await planSwitch(name, { env, security });
   if (plan.refusals.length > 0) {
     throw usageError(plan.refusals[0], plan.refusals.slice(1).join(" ") || undefined);
   }
@@ -71,15 +71,15 @@ async function cmdSwitchTo(name, { options, env, interactive }) {
     );
     if (choice !== "yes") throw new InterruptedError("Nothing was changed.");
   }
-  const result = await switchTo(name, { env });
+  const result = await switchTo(name, { env, security });
   success(`The global login is now ${describeAccount(result.account)} ("${result.profile}").`);
   info("A Claude Code session that is already running keeps its own login for up to about half a minute.");
   if (result.previous) info(`Put ${describeAccount(result.previous)} back with \`zclaude switch --restore\`.`);
   return EXIT.OK;
 }
 
-async function cmdRestore({ options, args, env, interactive }) {
-  const status = await swapStatus({ env });
+async function cmdRestore({ options, args, env, interactive, security }) {
+  const status = await swapStatus({ env, security });
   const [id] = args;
   const target = id ? status.backups.find((entry) => entry.id === id) : status.backups[0];
   if (!target) {
@@ -101,14 +101,14 @@ async function cmdRestore({ options, args, env, interactive }) {
     );
     if (choice !== "yes") throw new InterruptedError("Nothing was changed.");
   }
-  const result = await restore({ env, id: target.id });
+  const result = await restore({ env, id: target.id, security });
   success(`The global login is ${describeAccount(result.account)} again.`);
   return EXIT.OK;
 }
 
 /** Bring a profile's stored copy up to date with the live login. */
-async function cmdCapture({ env }) {
-  const result = await captureBack({ env });
+async function cmdCapture({ env, security }) {
+  const result = await captureBack({ env, security });
   if (result.captured) success(`Stored the live login back into "${result.profile}".`);
   else info(`Nothing to capture: ${result.reason}.`);
   return EXIT.OK;
@@ -121,24 +121,25 @@ export const SWITCH_SUBCOMMANDS = Object.freeze(Object.keys(SUBCOMMANDS));
  * `zclaude switch [name|subcommand]`, and the `--switch <name>` flag, which
  * lands here with the name already in `options.switch`.
  * @param {{options: object, env: NodeJS.ProcessEnv}} context
- * @param {{interactive: boolean}} deps
+ * @param {{interactive: boolean, security?: import("./swap/keychain.js").SecurityRunner}} deps
  */
-export async function cmdSwitchGroup(context, { interactive }) {
+export async function cmdSwitchGroup(context, { interactive, security }) {
   const args = context.options.args ?? [];
   const [first, ...rest] = args;
   const sub = first && Object.hasOwn(SUBCOMMANDS, first) ? SUBCOMMANDS[first] : null;
   const named = context.options.switch ?? (sub ? null : first);
 
-  if (context.options.restore) return cmdRestore({ ...context, args, interactive });
-  if (context.options.status) return cmdStatus(context);
-  if (sub) return sub({ ...context, args: rest, interactive });
-  if (named) return cmdSwitchTo(named, { ...context, interactive });
+  const shared = { ...context, interactive, security };
+  if (context.options.restore) return cmdRestore({ ...shared, args });
+  if (context.options.status) return cmdStatus(shared);
+  if (sub) return sub({ ...shared, args: rest });
+  if (named) return cmdSwitchTo(named, shared);
 
   // No name and no subcommand: say who is in the slot, which is the question
   // someone typing `zclaude switch` on its own is most likely asking.
   const profiles = await listRegistered(context.env);
   log.debug("swap", "switch with no target", { profiles: profiles.map((profile) => profile.name) });
-  await cmdStatus(context);
+  await cmdStatus(shared);
   if (profiles.length > 0) {
     info(`Switch to one of: ${profiles.map((profile) => profile.name).join(", ")}.`);
   } else {

@@ -28,8 +28,8 @@
 #   install.sh --uninstall     removes everything: the app, the private Node, the
 #                              command, ~/.zclaude (settings, logs and profiles),
 #                              the Keychain items (the Z.ai keys and each
-#                              profile's Claude Code login) and the PATH line
-#                              this script added.
+#                              profile's Claude Code login), the token-renewal
+#                              schedule and the PATH line this script added.
 #                              Add --keep-config to keep ~/.zclaude.
 set -euo pipefail
 
@@ -123,6 +123,31 @@ remove_path_lines() {
   done
 }
 
+# The renewal job lives outside ~/.zclaude — a LaunchAgent, a systemd user
+# timer or a crontab line — so removing the directory would leave it waking up
+# for ever to call a binary that is gone.
+remove_schedule() {
+  local agent="$HOME/Library/LaunchAgents/com.zclaude.renew.plist"
+  if [ -f "$agent" ]; then
+    launchctl bootout "gui/$(id -u)/com.zclaude.renew" >/dev/null 2>&1 || true
+    launchctl unload "$agent" >/dev/null 2>&1 || true
+    rm -f "$agent"
+    info "Removed the renewal schedule (launchd)"
+  fi
+  local timer="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/zclaude-renew.timer"
+  if [ -f "$timer" ]; then
+    systemctl --user disable --now zclaude-renew.timer >/dev/null 2>&1 || true
+    rm -f "$timer" "${timer%.timer}.service"
+    systemctl --user daemon-reload >/dev/null 2>&1 || true
+    info "Removed the renewal schedule (systemd)"
+  fi
+  if command -v crontab >/dev/null 2>&1 && crontab -l 2>/dev/null | grep -q "# zclaude renew"; then
+    crontab -l 2>/dev/null | grep -v "# zclaude renew" | crontab - || true
+    info "Removed the renewal schedule (crontab)"
+  fi
+  return 0
+}
+
 remove_keychain() {
   [ "$PLATFORM" = "darwin" ] || return 0
   [ -n "${ZCLAUDE_NO_KEYCHAIN:-}" ] && return 0
@@ -173,6 +198,7 @@ if [ "${1:-}" = "--uninstall" ]; then
     info "Kept $ZCLAUDE_HOME (settings, logs and profiles)."
   else
     remove_profile_credentials
+    remove_schedule
     rm -rf "$ZCLAUDE_HOME"
     info "Removed $ZCLAUDE_HOME (settings, logs, profiles, any credential file)."
   fi

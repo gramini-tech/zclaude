@@ -13,6 +13,8 @@ import { claudeCredentialService } from "./keychain-name.js";
 import { canonicalConfigDir, profileConfigDir, profileRoot, validateProfileName } from "./paths.js";
 import { buildSeed, readDefaultConfig, writeSeed } from "./seed.js";
 import { detachedShares, linkShares, materialiseSharedSettings } from "./share.js";
+import { uninstall as unschedule } from "../renew/schedule.js";
+import { readRenewState, withoutProfile, writeRenewState } from "../renew/state.js";
 import { listRegistered, putRegistered, removeRegistered } from "./registry.js";
 
 /** Claude Code's own configuration directory, which profiles borrow from. */
@@ -57,12 +59,20 @@ export async function createProfile({
  * Delete a profile's directory and registry entry. The shares inside it are
  * symlinks, so removing the directory never reaches what they point at.
  */
-export async function deleteProfile(name, env = process.env) {
+export async function deleteProfile(name, env = process.env, { platform = process.platform } = {}) {
   const root = profileRoot(name, env);
   await rm(root, { recursive: true, force: true });
   const removed = await removeRegistered(name, env);
-  log.info("profile", "profile deleted", { name, root, removed });
-  return { root, removed };
+  await writeRenewState(withoutProfile(await readRenewState(env), name), env).catch(() => {});
+
+  // Nothing left to keep alive means nothing left to schedule. Leaving a timer
+  // behind that wakes up to do nothing is the kind of litter an uninstall is
+  // supposed to prevent.
+  const remaining = (await listRegistered(env)).filter((profile) => profile.provider === "anthropic");
+  const unscheduled =
+    remaining.length === 0 ? await unschedule({ env, platform }).catch(() => ({ removed: [] })) : null;
+  log.info("profile", "profile deleted", { name, root, removed, unscheduled: unscheduled?.removed ?? [] });
+  return { root, removed, unscheduled: unscheduled?.removed ?? [] };
 }
 
 /**

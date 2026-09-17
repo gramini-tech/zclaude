@@ -330,6 +330,38 @@ there stays `zclaude <profile>`.
 A Claude Code session that is already running keeps the credential it read at startup; on macOS that
 cache lasts about half a minute, so a switch reaches a live session shortly rather than instantly.
 
+## Keeping tokens alive
+
+A profile you launch often looks after itself: Claude Code refreshes its token as it works. A profile
+you have not opened for weeks does not. Its access token lapses in hours, and the refresh token
+behind it carries an expiry about a month out, so a personal account you use twice a term can quietly
+go dead between uses.
+
+```sh
+zclaude renew install      # schedule it
+zclaude renew status       # is it scheduled, and what did it do last time
+zclaude renew run          # do it now; this is what the scheduler calls
+zclaude renew uninstall    # remove the schedule
+```
+
+The job runs every six hours and refreshes **only** what is inside two hours of expiring, so a
+profile you use is left alone entirely. Where it lives depends on the system: a LaunchAgent at
+`~/Library/LaunchAgents/com.zclaude.renew.plist` on macOS, a systemd user timer under
+`~/.config/systemd/user/` on Linux, and a marked `crontab` line where systemd is not in charge. On
+Windows it prints the `schtasks` command rather than running it.
+
+Because it runs unattended it is deliberately timid. It works one profile at a time; the first
+refresh token the server rejects ends the run and that profile is quarantined rather than retried on
+a timer, until you sign it in again; it never touches the global login, which belongs to Claude Code
+and to `zclaude switch`; and a Keychain that will not answer stops the run with a message instead of
+being asked again every six hours. `zclaude renew status` shows the last run, anything quarantined,
+and whether your account rotates refresh tokens — which decides whether renewing extends the lineage
+or merely keeps the access token fresh.
+
+Removing the last Anthropic profile removes the schedule with it, and every uninstall path
+(`zclaude self-uninstall`, `install.sh --uninstall`) takes the plist, timer or crontab line away.
+`--keep-config` keeps the profiles, so it keeps the schedule.
+
 ## Z.ai GLM Coding Plan
 
 The `zai` profile signs in through Z.ai's own browser flow, mints a coding-plan key on your account,
@@ -420,7 +452,7 @@ Not isolated, and worth knowing:
   `/etc/claude-code/`) are machine-wide. They apply to every profile, including a personal one, and
   no profile can opt out. `zclaude profile doctor` reports them.
 - **`~/.claude/.device-keys.json`** is written by Claude Code in your home directory whatever the
-  config directory says. zclaude writes nothing under `~/.claude` at all, and a contract test plus an
+  config directory says. zclaude writes no files under `~/.claude`, and a contract test plus an
   end-to-end hash check enforce that, but this one file is Claude Code's own and it will appear.
 - **Your Z.ai API key** is an account-level object. Two profiles pointed at the same Z.ai account
   share that account's quota.
@@ -449,6 +481,10 @@ zclaude switch <profile>                   move the global claude login to that 
 zclaude switch --status [--json]           which account plain claude uses right now
 zclaude switch --restore                   put the previous global login back
 zclaude switch capture                     store the live login back into its profile
+zclaude renew status [--json]              is the renewal job scheduled, and what did it do
+zclaude renew install                      schedule the renewal
+zclaude renew uninstall                    remove the schedule
+zclaude renew run                          renew now; this is what the scheduler calls
 zclaude login                              sign in to Z.ai now, then offer to launch
 zclaude logout                             forget the stored Z.ai key
 zclaude status                             what would happen on the next launch
@@ -639,7 +675,9 @@ stored by an earlier interactive `zclaude login`, and models come from config or
   `~/.claude.json` — those two things and nothing else. Both are backed up and verified first, and
   `zclaude switch --restore` puts them back. A contract test names the single source file allowed to
   write there, and `test/swap.test.js` proves a switch changes no other key of that file and no file
-  under `~/.claude`.
+  under `~/.claude`. While it works it also creates and removes Claude Code's own lock directories
+  (`~/.claude/.oauth_refresh.lock`, `~/.claude.lock`, `~/.claude.json.lock`), because taking those
+  locks is the protocol that stops a swap landing inside a token refresh.
 - Z.ai keys: macOS Keychain, service `zclaude`, one item per profile, written over stdin to the
   `security` tool so the secret never appears in a process listing. Elsewhere a 0600 file under the
   profile's directory.

@@ -39,6 +39,8 @@ import { registerSecret } from "./redact.js";
 import { buildAuthorizeUrl, exchangeCode, generateState, parseCallback } from "./oauth.js";
 import { configureLogger, formatEntry, listLogs, log, logFilePath, readLog } from "./logger.js";
 import { cmdProfile, describeShare, forgetAllProfiles, launchContext, profileSummaries } from "./profile-commands.js";
+import { cmdRenewGroup } from "./renew-commands.js";
+import { uninstall as unschedule } from "./renew/schedule.js";
 import { cmdSwitchGroup } from "./swap-commands.js";
 import { clearBackups } from "./swap/backup.js";
 import { findProfile, listProfiles, takeProfileArgument } from "./profiles.js";
@@ -82,6 +84,7 @@ import { checkKey, fetchQuota, formatQuota, quotaExhausted } from "./zai.js";
 export const COMMAND_NAMES = Object.freeze([
   "profile",
   "switch",
+  "renew",
   "login",
   "logout",
   "status",
@@ -94,7 +97,7 @@ export const COMMAND_NAMES = Object.freeze([
 ]);
 const COMMANDS = new Set(COMMAND_NAMES);
 // Commands that take their own subcommand and names, collected into options.args.
-const COMMAND_GROUPS = new Set(["profile", "switch"]);
+const COMMAND_GROUPS = new Set(["profile", "switch", "renew"]);
 const VALUE_FLAGS = Object.freeze({
   "--profile": "profile",
   "--switch": "switch",
@@ -207,6 +210,10 @@ Usage
   zclaude switch --restore                     put the previous global login back
   zclaude switch capture                       store the live login back into its profile
   zclaude --switch <profile>                   the same as "zclaude switch <profile>"
+  zclaude renew status [--json]                is the token-renewal job scheduled, and what did it do
+  zclaude renew install                        schedule it
+  zclaude renew uninstall                      remove the schedule
+  zclaude renew run                            renew now; this is what the scheduler calls
   zclaude login [--no-browser] [--paste] [--api-key] [--no-store]
   zclaude logout                               forget the stored Z.ai key
   zclaude status [--json]                      show credential, config and model state
@@ -1130,6 +1137,10 @@ async function cmdSelfUninstall({ options, env }) {
     // own Keychain items. Removing the directory would leave those behind.
     const cleared = await clearBackups({ env });
     if (cleared > 0) info(`Removed ${cleared} saved copy of a previous global login.`);
+    // A LaunchAgent or timer lives outside ~/.zclaude and would otherwise wake
+    // up for ever, calling a binary that is no longer there.
+    const unscheduled = await unschedule({ env });
+    if (unscheduled.removed.length > 0) info(`Removed the renewal schedule: ${unscheduled.removed.join(", ")}.`);
   }
 
   if (kind === "checkout") {
@@ -1313,6 +1324,7 @@ const COMMAND_HANDLERS = {
   "self-uninstall": cmdSelfUninstall,
   profile: cmdProfileGroup,
   switch: cmdSwitchGroup_,
+  renew: cmdRenewGroup,
   launch: cmdLaunch,
 };
 

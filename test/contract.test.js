@@ -11,6 +11,7 @@ import { describe, it } from "node:test";
 import { buildPlainEnv, buildProfileEnv, buildZaiEnv } from "../src/claude.js";
 import { COMMAND_NAMES, HELP } from "../src/cli.js";
 import { PROFILE_SUBCOMMANDS } from "../src/profile-commands.js";
+import { RENEW_SUBCOMMANDS, selfBinary } from "../src/renew-commands.js";
 import { SWITCH_SUBCOMMANDS } from "../src/swap-commands.js";
 import { CLAUDE_COMMANDS } from "../src/profiles/paths.js";
 import { CALLBACK_SCHEME, CONSOLE_KEYS_URL, DEFAULT_MODELS, MODEL_CONTEXT_WINDOWS, zaiConfig } from "../src/config.js";
@@ -181,6 +182,26 @@ describe("documentation contract", () => {
       assert.ok(shown(HELP), `switch ${sub} missing from --help`);
       assert.ok(shown(readme), `switch ${sub} missing from README`);
     }
+  });
+
+  it("every renew subcommand is listed in --help and the README", async () => {
+    const readme = await readFile(join(root, "README.md"), "utf8");
+    for (const sub of RENEW_SUBCOMMANDS) {
+      assert.ok(HELP.includes(`renew ${sub}`), `renew ${sub} missing from --help`);
+      assert.ok(readme.includes(`renew ${sub}`), `renew ${sub} missing from README`);
+    }
+  });
+
+  it("schedules this installation rather than whatever is on PATH", () => {
+    // A scheduled job outlives the shell that created it, so "zclaude" alone
+    // would break the moment PATH differs — which is exactly what happens
+    // inside launchd.
+    assert.equal(selfBinary({ ZCLAUDE_BIN: "/opt/zclaude" }, []), "/opt/zclaude");
+    assert.equal(
+      selfBinary({}, ["node", "/home/x/.zclaude/app/bin/zclaude.js"]),
+      "/home/x/.zclaude/app/bin/zclaude.js",
+    );
+    assert.equal(selfBinary({}, []), "zclaude");
   });
 
   it("every profile subcommand is listed in --help and the README", async () => {
