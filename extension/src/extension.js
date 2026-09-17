@@ -86,7 +86,7 @@ async function refreshStatusBar() {
   if (!item) return;
   item.show();
   if (!locate()) {
-    item.text = "$(account) zc $(warning)";
+    item.text = "zc $(warning)";
     item.tooltip = new vscode.MarkdownString(
       ["**zclaude** was not found.", "", "Install it, or set `zclaude.path`.", "", "Click for the settings."].join(
         "\n",
@@ -103,7 +103,7 @@ async function refreshStatusBar() {
   } catch (error) {
     // Whatever went wrong, the item stays, saying so.
     log(`could not read the account: ${error.message}`);
-    item.text = "$(account) zc $(warning)";
+    item.text = "zc $(warning)";
     item.tooltip = new vscode.MarkdownString(
       ["**zclaude** could not be asked which account is signed in.", "", "See the zclaude output channel."].join("\n"),
     );
@@ -229,7 +229,8 @@ function log(text) {
 function activate(context) {
   item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   item.command = "zclaude.pick";
-  item.text = "$(account) zc";
+  item.name = "zclaude account";
+  item.text = "zc";
   item.tooltip = "zclaude — click to switch the Claude Code account";
   // Visible before anything is asked of the disk or of zclaude. Nothing below
   // this line is allowed to decide whether the item exists.

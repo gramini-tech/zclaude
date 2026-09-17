@@ -185,14 +185,23 @@ function quickPickItems({ profiles = [], active = null, usage = {}, loading = fa
   ];
 }
 
-/** The status bar: who is signed in, short enough to sit next to the branch. */
+/**
+ * The status bar: whose account this is, behind the name of the thing showing
+ * it.
+ *
+ * The name comes first because a status bar is a row of other people's icons.
+ * An earlier version led with the generic `$(account)` person glyph and showed
+ * only the address, which read as somebody's username and identified nothing —
+ * reported as "I couldn't tell if it was zclaude". No codicon is worth as much
+ * as two letters that are ours.
+ */
 function statusBarText(status, version) {
-  if (version !== undefined && !isSupported(version)) return "$(account) zc $(warning)";
-  if (!status) return "$(account) zc";
-  if (status.unreadable) return "$(account) zc ?";
+  if (version !== undefined && !isSupported(version)) return "zc $(warning)";
+  if (!status) return "zc";
+  if (status.unreadable) return "zc $(warning)";
   const email = status.account?.email;
-  if (!email) return "$(account) zc";
-  return `$(account) ${email.split("@", 1)[0]}`;
+  if (!email) return "zc $(circle-slash)";
+  return `zc $(account) ${email.split("@", 1)[0]}`;
 }
 
 /** The hover: the full account, what it is, and its usage. */

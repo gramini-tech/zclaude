@@ -189,7 +189,7 @@ describe("the extension in a window", () => {
     const subscriptions = [];
     loaded.extension.activate({ subscriptions });
     await settle();
-    assert.equal(loaded.vscode.window.statusBar.text, "$(account) a");
+    assert.match(loaded.vscode.window.statusBar.text, /^zc /u);
     assert.equal(loaded.vscode.window.statusBar.command, "zclaude.pick");
     assert.ok(loaded.vscode.window.statusBar.shown);
     assert.equal(subscriptions.length, 4, "the item, two commands and the focus listener");
@@ -293,7 +293,7 @@ describe("the extension in a window", () => {
     const loaded = loadExtension({ ...answers(), version: "0.2.14" });
     loaded.extension.activate({ subscriptions: [] });
     await settle();
-    assert.equal(loaded.vscode.window.statusBar.text, "$(account) zc $(warning)");
+    assert.equal(loaded.vscode.window.statusBar.text, "zc $(warning)");
     await loaded.recorded.commands.get("zclaude.pick")();
     assert.equal(loaded.recorded.pickers.length, 0, "an old zclaude answers every call with nothing");
     assert.match(loaded.recorded.messages.at(-1), /zclaude 0\.2\.14 is older than/u);
@@ -315,7 +315,7 @@ describe("the extension in a window", () => {
     const loaded = loadExtension(answers());
     loaded.extension.activate({ subscriptions: [] });
     assert.equal(loaded.vscode.window.statusBar.shown, true, "shown synchronously, not after the first await");
-    assert.equal(loaded.vscode.window.statusBar.text, "$(account) zc");
+    assert.equal(loaded.vscode.window.statusBar.text, "zc");
   });
 
   it("stays on screen, saying so, when zclaude cannot be found", async () => {

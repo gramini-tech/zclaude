@@ -140,26 +140,31 @@ describe("which zclaude it needs", () => {
   });
 
   it("marks the status bar and the hover rather than showing a wrong account", () => {
-    assert.equal(items.statusBarText({ account: { email: "a@b.com" } }, "0.2.14"), "$(account) zc $(warning)");
+    assert.equal(items.statusBarText({ account: { email: "a@b.com" } }, "0.2.14"), "zc $(warning)");
     assert.match(items.tooltip(null, null, "0.2.14"), /older than/u);
     // Without a version the checks stay out of the way, which is what every
     // other caller wants.
-    assert.equal(items.statusBarText({ account: { email: "a@b.com" } }), "$(account) a");
+    assert.equal(items.statusBarText({ account: { email: "a@b.com" } }), "zc $(account) a");
   });
 });
 
 describe("the status bar", () => {
-  it("shows the local part of the signed-in address, which fits", () => {
-    assert.equal(items.statusBarText({ account: { email: "vipinr@gramini.com" } }), "$(account) vipinr");
+  // Reported: the item read "$(account) vipinr", which in a row of other
+  // people's icons looks like somebody's username and says nothing about which
+  // extension put it there.
+  it("says whose extension it is before it says whose account", () => {
+    const text = items.statusBarText({ account: { email: "vipinr@gramini.com" } });
+    assert.ok(text.startsWith("zc "), `"${text}" does not identify itself`);
+    assert.match(text, /vipinr$/u, "the local part of the address still fits");
   });
 
-  it("falls back to the bare badge when nobody is signed in or nothing is known", () => {
-    assert.equal(items.statusBarText(null), "$(account) zc");
-    assert.equal(items.statusBarText({ account: null }), "$(account) zc");
+  it("falls back to the bare name when nobody is signed in or nothing is known", () => {
+    assert.equal(items.statusBarText(null), "zc");
+    assert.match(items.statusBarText({ account: null }), /^zc\b/u);
   });
 
   it("marks a credential it could not read, rather than claiming nobody is signed in", () => {
-    assert.equal(items.statusBarText({ unreadable: "the Keychain is locked" }), "$(account) zc ?");
+    assert.equal(items.statusBarText({ unreadable: "the Keychain is locked" }), "zc $(warning)");
   });
 
   it("puts the account, its organization and the profile in the tooltip", () => {

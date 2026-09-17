@@ -17,7 +17,11 @@ Two fixes for a status bar item that was installed, active, and useless.
   something is wrong rather than vanishing, with the reason in the zclaude
   output channel.
 
-Extension 0.3.1.
+- The status bar item leads with `zc` instead of a generic person icon. It read
+  as `$(account) vipinr`, which in a row of other extensions' icons looks like
+  somebody's username and says nothing about what put it there.
+
+Extension 0.3.2.
 
 - **A profile whose account also holds the global login went stale on its own.**
   Claude Code refreshes the token in the slot as it works and the server rotates
