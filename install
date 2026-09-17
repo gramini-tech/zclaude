@@ -328,13 +328,40 @@ NPM_BIN="$NODE_BIN_DIR/npm"
 [ -x "$NPM_BIN" ] || NPM_BIN="$(command -v npm 2>/dev/null || true)"
 [ -n "$NPM_BIN" ] || die "npm was not found next to $NODE_BIN."
 
+# Copy a checkout into the staging directory.
+#
+# Through an archive file rather than `tar -cf - . | tar -xf -`: with a pipe, a
+# read that stumbles kills the writer with EPIPE and the only message is
+# "tar: Write error", which says nothing about which end failed or why. Writing
+# the archive first keeps the two errors apart. One retry, because the usual
+# cause is a file changing while it is read — a live checkout, a build running
+# beside it — and the second attempt almost always catches a quiet moment.
+copy_source() {
+  local from="$1" to="$2" archive="$WORK/source.tar" attempt=1
+  while [ "$attempt" -le 2 ]; do
+    rm -f "$archive"
+    if tar -C "$from" --exclude=node_modules --exclude=.git --exclude=coverage \
+      --exclude='*.tgz' --exclude=.DS_Store -cf "$archive" . 2>"$WORK/tar.err"; then
+      if tar -C "$to" -xf "$archive" 2>"$WORK/tar.err"; then
+        rm -f "$archive"
+        return 0
+      fi
+    fi
+    [ "$attempt" -eq 2 ] && break
+    warn "Copying $from did not finish ($(tr '\n' ' ' <"$WORK/tar.err" | head -c 120)); trying once more"
+    attempt=$((attempt + 1))
+  done
+  [ -s "$WORK/tar.err" ] && cat "$WORK/tar.err" >&2
+  return 1
+}
+
 # ------------------------------------------------------------------ zclaude
 STAGE="$WORK/app"
 mkdir -p "$STAGE"
 if [ -n "$SOURCE" ]; then
   if [ -d "$SOURCE" ]; then
     info "Installing zclaude from local directory $SOURCE"
-    tar -C "$SOURCE" --exclude=node_modules --exclude=.git -cf - . | tar -C "$STAGE" -xf -
+    copy_source "$SOURCE" "$STAGE" || die "Could not copy $SOURCE. Is anything writing to it?"
   elif [ -f "$SOURCE" ]; then
     info "Installing zclaude from local archive $SOURCE"
     tar -xzf "$SOURCE" -C "$STAGE" --strip-components=1

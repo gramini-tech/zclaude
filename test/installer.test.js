@@ -267,6 +267,42 @@ describe("install.sh", { skip }, () => {
     }
   });
 
+  // The copy is the step most exposed to the world: it reads a directory that
+  // may be a live checkout. A tar that stumbles once must not fail the install.
+  it("retries a copy that stumbles, and says so rather than dying with 'Write error'", async () => {
+    const bin = join(home.dir, "flaky-bin");
+    const marker = join(home.dir, "tar-attempts.txt");
+    await mkdir(bin, { recursive: true });
+    // A tar that fails its first create and then behaves.
+    await writeFile(
+      join(bin, "tar"),
+      `#!/bin/sh
+echo x >> "${marker}"
+if [ "$(wc -l < "${marker}" | tr -d ' ')" = "1" ]; then
+  echo "tar: could not read file" >&2
+  exit 1
+fi
+exec /usr/bin/tar "$@"
+`,
+    );
+    await chmod(join(bin, "tar"), 0o755);
+    const result = await sh([join(root, "install.sh")], { ...env, PATH: `${bin}:${process.env.PATH}` });
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(result.stderr, /did not finish .*trying once more/u);
+    assert.match(result.stderr, /installed in/u, "the retry carried the install through");
+  });
+
+  it("gives up with a useful message when the copy keeps failing", async () => {
+    const bin = join(home.dir, "broken-bin");
+    await mkdir(bin, { recursive: true });
+    await writeFile(join(bin, "tar"), '#!/bin/sh\necho "tar: it is always like this" >&2\nexit 1\n');
+    await chmod(join(bin, "tar"), 0o755);
+    const result = await sh([join(root, "install.sh")], { ...env, PATH: `${bin}:${process.env.PATH}` });
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /Could not copy .*Is anything writing to it\?/u);
+    assert.match(result.stderr, /it is always like this/u, "the reason tar gave is shown, not swallowed");
+  });
+
   it("warns instead of editing rc files when told to, and appends once otherwise", async () => {
     const rc = join(home.dir, ".zshrc");
     await sh([join(root, "install.sh")], {

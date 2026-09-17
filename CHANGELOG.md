@@ -25,6 +25,10 @@ Knowing which accounts are already in use.
 - Limits, stated rather than discovered: this is one machine, and tracking never
   gates a launch — a session that cannot be recorded still runs. Turn the whole
   thing off with `ZCLAUDE_NO_SESSIONS=1`.
+- The installer copies a local checkout through an archive file instead of
+  `tar | tar`. A read that stumbled killed the writer with EPIPE and reported
+  only "tar: Write error", which named neither end; it now retries once and, if
+  it still fails, says what tar actually said. Twice on CI runners was enough.
 
 ## 0.2.25
 
