@@ -12,10 +12,16 @@ same table.
   a real bar per window, coloured by how close it is to stopping you, the reset
   time beside each one, the sessions on each account, and a Switch button per
   row. Refresh, Add, Remove and Restore are along the bottom.
+- **The 5-hour and the week each carry their own reset.** They run out on
+  different clocks, so one shared "resets" column could only ever answer half
+  the question. A per-model window resets with the week it belongs to, so it
+  does not repeat that time.
 - **The terminal menu draws the table too.** A terminal is monospace, so the
   columns are simply columns. It gives up columns rather than wrapping when the
-  window is narrow — per-model windows first, then sessions, then the reset
-  clock — because a wrapped row would put the cursor on the wrong line. A long
+  window is narrow, because a wrapped row would put the cursor on the wrong
+  line: the session count first, then the per-model windows, then the clocks,
+  then the gauges themselves. Below about 45 columns there is no room to draw,
+  and the numbers alone are still the answer. A long
   name is cut in the table and spelled out on the detail line under the cursor.
 - The hover on the status bar item keeps the same table in a fenced block, for
   a look without a click.

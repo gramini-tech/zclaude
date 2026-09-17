@@ -47,19 +47,31 @@ describe("the usage table", () => {
     assert.equal(new Set(table.rows.map((row) => row.indexOf("%"))).size, 1);
   });
 
-  it("gives up columns rather than wrapping, widest first", () => {
+  it("gives up columns rather than wrapping, in order", () => {
     // A wrapped row would put the cursor on the wrong line in a live menu.
-    const wide = at(100);
-    assert.match(wide.header, /sessions/u);
-    assert.match(at(80).header, /Fable/u);
-    assert.doesNotMatch(at(80).header, /sessions/u);
-    assert.doesNotMatch(at(64).header, /Fable/u);
-    assert.match(at(64).header, /resets/u);
-    for (const columns of [64, 80, 100]) {
+    assert.match(at(120).header, /sessions/u);
+    assert.doesNotMatch(at(90).header, /sessions/u, "the session count goes first");
+    assert.doesNotMatch(at(80).header, /Fable/u, "then the per-model windows");
+    assert.doesNotMatch(at(60).rows[0], /3h\b/u, "then the clocks");
+    for (const columns of [40, 55, 64, 70, 80, 90, 100, 120]) {
       const table = at(columns);
       for (const row of [table.header, ...table.rows]) {
         assert.ok(row.length + 2 <= columns, `a row ran past ${columns} columns: ${row.length + 2}`);
       }
+    }
+  });
+
+  it("drops the drawing before the answer, on a terminal too narrow for both", () => {
+    const narrow = at(40);
+    assert.doesNotMatch(narrow.rows[0], /[█░]/u, "no room for a gauge");
+    assert.match(narrow.rows[0], /50%/u, "the number is still the answer to the question");
+    assert.match(narrow.header, /5 hours\s+week/u, "and it still says which is which");
+  });
+
+  it("never gives up the two windows every plan has", () => {
+    for (const columns of [40, 55, 80]) {
+      assert.match(at(columns).header, /5 hours/u);
+      assert.match(at(columns).header, /week/u);
     }
   });
 
@@ -69,13 +81,14 @@ describe("the usage table", () => {
     assert.match(table.header, /week/u);
   });
 
-  it("shows the reset of whichever window is closest to stopping you", () => {
-    const table = at(100);
-    // Fable at 92% is the one to watch, and its window is three hours out.
-    assert.match(table.rows[0], /92%\s+3h\b/u);
-    // chinese has no Fable window, so a dash sits between its numbers and its
-    // clock; the clock is still the week's, which is its fullest.
-    assert.match(table.rows[2], /5d$/u);
+  // The 5-hour and the week run out on different clocks, which is the whole
+  // reason for two columns rather than one shared "resets".
+  it("gives the 5-hour and the week each their own reset", () => {
+    const table = at(120);
+    assert.match(table.rows[0], /50% {2}3h\s+███░░░░░░░\s+31% {2}5d/u);
+    // A per-model window resets with the week it belongs to, so it does not
+    // repeat that time.
+    assert.match(table.rows[0].replace(/ {2}3 open$/u, ""), /92%$/u);
   });
 
   it("cuts a long name rather than letting it push the numbers off", () => {
