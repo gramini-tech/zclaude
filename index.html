@@ -234,6 +234,10 @@
                 <td>Put the <code>zc</code> item in the status bar of every editor found here.</td>
               </tr>
               <tr>
+                <td><code>zclaude sessions</code></td>
+                <td>What is running, on which account, and whether it is busy or idle.</td>
+              </tr>
+              <tr>
                 <td><code>zclaude renew status</code></td>
                 <td>Is the background token renewal scheduled, and what did it do.</td>
               </tr>
@@ -256,6 +260,17 @@
           The same list adds a profile, removes one, restores the previous login and re-fetches usage. It works in VS
           Code, Insiders, Cursor, Windsurf and VSCodium, and it holds no credential logic of its own: it asks
           <code>zclaude</code> for JSON and renders the answer.
+        </p>
+
+        <h3>Who is already using that account</h3>
+        <p>
+          Two terminals on one account share its five-hour window, so the menu marks a profile that is already busy
+          before you pick it, and <code>zclaude sessions</code> lists what is running and where. A session counts as
+          live only when its process id exists <em>and</em> that process still started when the record says it did
+          &mdash; without the second check a recycled id would leave an account looking busy for ever. Busy and merely
+          open are different questions: Claude Code appends to its transcript as a conversation goes, so a session quiet
+          for five minutes is reported as idle rather than active. It never blocks a launch; it is there so the decision
+          is yours.
         </p>
 
         <h3>Logins that do not go stale</h3>
@@ -507,6 +522,18 @@ ZCLAUDE_PROFILE=work       # optional: pick a profile for this project</code></p
             through the environment rather than through its credential store, so the only way to make it global would be
             to write your <code>settings.json</code>. zclaude will not do that. Run
             <code>zclaude &lt;profile&gt;</code> in a terminal instead.
+          </p>
+        </details>
+
+        <details>
+          <summary>Can it tell me an account is already in use?</summary>
+          <p>
+            On this machine, yes. Every session zclaude starts is recorded and verified against the process that claims
+            to be it, so the menu can mark a busy profile and <code>zclaude sessions</code> can list them with how long
+            each has been quiet. Sessions started outside zclaude are counted too: they cannot have a config directory
+            of their own, so they are all on the global login and are attributed to whichever profile holds it. What it
+            cannot see is another machine &mdash; your laptop and your desktop spend the same account and neither knows
+            about the other.
           </p>
         </details>
 

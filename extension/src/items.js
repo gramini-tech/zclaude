@@ -93,6 +93,18 @@ function localTime(at, now = Date.now()) {
   return `${date}, ${time}`;
 }
 
+/**
+ * Whether this account already has something running. Mirrors busyMarker in
+ * src/sessions/index.js, using the counts zclaude sends in its JSON.
+ */
+function busyText(counts) {
+  if (!counts || !counts.total) return "";
+  if (counts.working > 0)
+    return counts.total > 1 ? `$(circle-filled) ${counts.total} running` : "$(circle-filled) running";
+  if (counts.unknown > 0) return counts.total > 1 ? `$(circle-outline) ${counts.total} open` : "$(circle-outline) open";
+  return counts.total > 1 ? `$(circle-outline) ${counts.total} idle` : "$(circle-outline) idle";
+}
+
 /** A window a reset time is worth showing for; at 4% nobody is watching it. */
 const PRESSED = 50;
 
@@ -147,15 +159,16 @@ function usageLines(usage, now = Date.now()) {
 
 /**
  * The picker's contents: every profile, then the things you can do.
- * @param {{profiles?: Array<object>, active?: string | null, usage?: Record<string, object>, loading?: boolean}} args
+ * @param {{profiles?: Array<object>, active?: string | null, usage?: Record<string, object>, loading?: boolean, busy?: Record<string, object>}} args
  */
-function quickPickItems({ profiles = [], active = null, usage = {}, loading = false }) {
+function quickPickItems({ profiles = [], active = null, usage = {}, loading = false, busy = {} }) {
   const rows = profiles.map((profile) => {
     const current = profile.name === active;
     const numbers = usageText(usage[profile.name]);
+    const running = busyText(busy[profile.name]);
     return {
       label: `${current ? "$(check) " : "$(blank) "}${profile.name}`,
-      description: accountOf(profile),
+      description: [accountOf(profile), running].filter(Boolean).join("  ·  "),
       detail: numbers || (loading ? "$(sync~spin) checking usage…" : ""),
       profile: profile.name,
       picked: current,
@@ -220,6 +233,7 @@ function outdatedText(version) {
 module.exports = {
   ACTIONS,
   accountOf,
+  busyText,
   countdown,
   creditsText,
   localTime,

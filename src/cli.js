@@ -53,6 +53,8 @@ import { clearBackups } from "./swap/backup.js";
 import { findProfile, listProfiles, takeProfileArgument } from "./profiles.js";
 import { DEFAULT_CREDENTIAL_SERVICE } from "./profiles/keychain-name.js";
 import { defaultConfigDir } from "./profiles/launch.js";
+import { byProfile, liveSessions } from "./sessions/index.js";
+import { cmdSessions, collectSessions } from "./session-commands.js";
 import { getRegistered } from "./profiles/registry.js";
 import { mintApiKey } from "./provision.js";
 import {
@@ -93,6 +95,7 @@ export const COMMAND_NAMES = Object.freeze([
   "switch",
   "renew",
   "vscode",
+  "sessions",
   "login",
   "logout",
   "status",
@@ -225,6 +228,7 @@ Usage
   zclaude vscode install                       put the status bar item into the editors found here
   zclaude vscode uninstall                     take it out again
   zclaude vscode status [--json]               which editors have it, and at which version
+  zclaude sessions [--json]                    what is running now, and on which account
   zclaude login [--no-browser] [--paste] [--api-key] [--no-store]
   zclaude logout                               forget the stored Z.ai key
   zclaude status [--json]                      show credential, config and model state
@@ -693,8 +697,18 @@ async function selectProfile({ options, env, layered, interactive, profiles }) {
     // be on screen and usable while the numbers are still arriving.
     const store = usageEnabled ? createUsageStore(usageRecords(profiles, env), { env }) : null;
     store?.load().catch((error) => debug(`usage not loaded: ${error.message}`));
+    // Which accounts are already busy. Local, quick, and worth having before
+    // the list is on screen rather than after the choice is made.
+    const busy = flag(env, "ZCLAUDE_NO_SESSIONS")
+      ? new Map()
+      : await collectSessions({ env })
+          .then(byProfile)
+          .catch((error) => {
+            debug(`sessions not read: ${error.message}`);
+            return new Map();
+          });
     profileId = store
-      ? await chooseProfileWithUsage(profiles, { defaultId: state.lastProfile, store, usageEnabled })
+      ? await chooseProfileWithUsage(profiles, { defaultId: state.lastProfile, store, usageEnabled, busy })
       : await chooseProfile(profiles, { defaultId: state.lastProfile });
     await writeState({ lastProfile: profileId }, env).catch((error) => debug(`state not saved: ${error.message}`));
   }
@@ -742,6 +756,7 @@ async function cmdLaunch({ options, passthrough, env, cwd }) {
   const record = profile.configDir ? await getRegistered(profile.id, env) : null;
   const prepared = record ? await launchContext(record, env) : null;
   const claudeArgs = prepared?.claudeArgs ?? [];
+  const session = describeSession({ profile, prepared, env, cwd });
 
   if (!profile.zai) {
     const args = [...claudeArgs, ...(options.model ? ["--model", options.model] : []), ...claudeInput];
@@ -750,13 +765,15 @@ async function cmdLaunch({ options, passthrough, env, cwd }) {
       : buildPlainEnv({ baseEnv: env, extra });
     if (prepared) await resolveSettingsConflict({ env, childEnv, cwd, interactive });
     reportInheritedAuth(childEnv, profile);
-    return runClaude(bin, args, childEnv);
+    await warnIfBusy(session, env, interactive);
+    return runClaude(bin, args, childEnv, { session, trackerEnv: env });
   }
 
   const config = zaiConfig(env);
   const credential = await resolveCredential({ options, env, config, interactive, profile: record?.name ?? null });
   return launchZai({
     bin,
+    session,
     options,
     passthrough: claudeInput,
     env,
@@ -786,6 +803,7 @@ function reportInheritedAuth(childEnv, profile) {
 /** Pick models (wizard when needed), report quota, and hand off to claude. */
 async function launchZai({
   bin,
+  session,
   options,
   passthrough,
   env,
@@ -829,7 +847,43 @@ async function launchZai({
   });
   await resolveSettingsConflict({ env, childEnv, cwd, interactive });
   info(`Launching claude on ${models.primary} (subagents: ${models.subagent}, fast: ${models.fast})`);
-  return runClaude(bin, [...(prepared?.claudeArgs ?? []), ...passthrough], childEnv);
+  await warnIfBusy(session, env, interactive);
+  return runClaude(bin, [...(prepared?.claudeArgs ?? []), ...passthrough], childEnv, { session, trackerEnv: env });
+}
+
+/**
+ * What the session list will show for this run. The built-in profile has no
+ * directory of its own, so it is recorded against the default one — which is
+ * exactly the account it spends.
+ */
+function describeSession({ profile, prepared, env, cwd }) {
+  return {
+    profile: profile.id,
+    account: profile.description ?? null,
+    configDir: prepared?.configDir ?? defaultConfigDir(env),
+    cwd,
+  };
+}
+
+/**
+ * Say so when this account is already busy. Informative, never a gate: two
+ * sessions on one account is a legitimate thing to do, and the reason to
+ * mention it is that the second one shares the first one's five-hour window.
+ */
+async function warnIfBusy(session, env, interactive) {
+  if (!interactive || flag(env, "ZCLAUDE_NO_SESSIONS")) return;
+  try {
+    const sessions = await liveSessions({ env });
+    const mine = sessions.filter((entry) => entry.profile === session.profile);
+    if (mine.length === 0) return;
+    const working = mine.filter((entry) => entry.state === "working").length;
+    const count = `${mine.length} session${mine.length === 1 ? "" : "s"}`;
+    const detail = working > 0 ? `${working} of them active` : "all idle";
+    (working > 0 ? warn : info)(`"${session.profile}" already has ${count} running (${detail}).`);
+    info("  They share one account's limits. `zclaude sessions` shows what is where.");
+  } catch (error) {
+    debug(`sessions not checked: ${error.message}`);
+  }
 }
 
 // ----------------------------------------------------------------- commands
@@ -868,6 +922,8 @@ async function cmdLogin({ options, passthrough, env, cwd }) {
   }
   return launchZai({
     bin,
+    // The built-in Z.ai profile, since that is what `zclaude login` signs in to.
+    session: describeSession({ profile: { id: "zai" }, prepared: null, env, cwd }),
     options,
     passthrough,
     env,
@@ -1363,6 +1419,7 @@ const COMMAND_HANDLERS = {
   switch: cmdSwitchGroup_,
   renew: cmdRenewGroup,
   vscode: cmdVscodeGroup,
+  sessions: cmdSessions,
   launch: cmdLaunch,
 };
 

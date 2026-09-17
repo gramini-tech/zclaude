@@ -66,6 +66,14 @@ describe("a row in the picker", () => {
     assert.equal(renderUsageDetail({ state: "unauthorized" }), "");
   });
 
+  it("marks a busy account before the numbers, because it changes the choice more", () => {
+    const busy = { working: 2, idle: 0, unknown: 0, total: 2, newest: 0 };
+    const line = row({ usage: { state: "ok", fiveHour: { pct: 12 }, weekly: null, scoped: [] }, busy });
+    assert.equal(line, "  work       ● 2 running  5h 12%");
+    assert.equal(row({ busy: { working: 0, idle: 1, unknown: 0, total: 1 } }), "  work       ○ idle");
+    assert.equal(row({ busy: undefined }), "  work", "an account nobody is using gets no marker");
+  });
+
   it("puts the account and the sharing under the highlighted row", () => {
     assert.equal(renderDetail(profile), "  me@x.y · Acme, shares config and history");
     assert.ok(renderDetail(profile, 24).length < 24, "a narrow terminal trims the detail line too");

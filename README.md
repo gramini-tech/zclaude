@@ -230,6 +230,49 @@ terminal, and is off entirely with `--no-usage` or `ZCLAUDE_NO_USAGE=1`. Answers
 minute and a `Retry-After` is obeyed across every surface, so the CLI and the extension cannot
 saturate the endpoint between them. Numbers served from that cache are marked `(cached)`.
 
+### What is already running
+
+Two terminals on one account share its five-hour window. zclaude tracks what it
+starts so you can see that before adding a third, rather than after the limit arrives.
+
+```sh
+zclaude sessions          # what is running, on which account, and whether it is busy
+zclaude sessions --json   # the same, for scripts
+```
+
+```
+work     active                  pid 41233  just now  /Users/you/work/api
+work     idle                    pid 39980  42m ago   /Users/you/work/docs
+gramini  not tracked (outside zclaude)  pid 65767
+
+"work" is running 2 sessions, which share one account's limits.
+```
+
+The menu marks a busy profile before you pick it (`● 2 running`, `○ idle`), and launching one that is
+already in use says so and carries on. It is information, never a gate: two sessions on one account
+is a reasonable thing to do, as long as it is a decision.
+
+**How it decides.** Each launch writes a small file under `~/.zclaude/sessions/` — one file per
+session, so two terminals starting at once cannot race for a shared list, and a crash leaves one
+orphan rather than a corrupt file. A session counts as running only when its process id still exists
+_and_ that process still started when the record says it did; without that second check a recycled
+pid would have an account looking busy for ever. Records whose process is gone are cleared away by
+whatever reads the list next.
+
+Busy and merely open are different questions. Claude Code appends to its transcript as a conversation
+goes, so the newest transcript under that session's own project directory is when the account last
+did any work; quiet for five minutes reads as `idle`. A terminal you left open at lunch is not
+spending anything, and the list says so.
+
+Sessions zclaude did not start — a plain `claude`, or the editor's extension — are counted too. They
+cannot have a config directory of their own, so they are all on the global login, and they are
+attributed to whichever profile `zclaude switch --status` says holds it. Nothing outside those
+processes says when they last did anything, so they are listed as open rather than active.
+
+Two limits worth stating. This is one machine: a session on your laptop is invisible to your desktop
+and both spend the same account. And tracking is an aid rather than a gate, so a session that cannot
+be recorded still runs, it just does not appear. `ZCLAUDE_NO_SESSIONS=1` turns the whole thing off.
+
 ## Passing arguments to Claude Code
 
 zclaude is a launcher, so most of what you type is not for it. The rule is positional:
@@ -561,6 +604,7 @@ zclaude renew run                          renew now; this is what the scheduler
 zclaude vscode install                     put the status bar item into the editors found here
 zclaude vscode uninstall                   take it out again
 zclaude vscode status [--json]             which editors have it, and at which version
+zclaude sessions [--json]                  what is running now, and on which account
 zclaude login                              sign in to Z.ai now, then offer to launch
 zclaude logout                             forget the stored Z.ai key
 zclaude status                             what would happen on the next launch
@@ -658,6 +702,7 @@ MY_TEAM_MCP_TOKEN=...
 | `ZCLAUDE_NO_NATIVE_CALLBACK=1`                                                                                                                       | always paste the redirect URL                                                                                     |
 | `ZCLAUDE_NO_BANNER=1`                                                                                                                                | skip the splash                                                                                                   |
 | `ZCLAUDE_NO_USAGE=1`                                                                                                                                 | never look up plan usage for the menu                                                                             |
+| `ZCLAUDE_NO_SESSIONS=1`                                                                                                                              | do not track running sessions, and do not report them                                                             |
 | `ZCLAUDE_ALLOW_SETTINGS_OVERRIDE=1`                                                                                                                  | launch even when a settings `env` block overrides this session                                                    |
 | `ZCLAUDE_NO_UPDATE_CHECK=1`                                                                                                                          | skip the daily check for a newer version                                                                          |
 | `ZCLAUDE_INSTALL_NO_VSIX=1`                                                                                                                          | installer: do not offer or install the VS Code status bar item                                                    |

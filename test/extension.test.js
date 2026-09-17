@@ -75,6 +75,28 @@ describe("the picker's contents", () => {
   });
 });
 
+describe("an account that is already busy", () => {
+  it("says how many and whether they are doing anything", () => {
+    assert.match(items.busyText({ working: 2, idle: 0, unknown: 0, total: 2 }), /2 running/u);
+    assert.match(items.busyText({ working: 1, idle: 0, unknown: 0, total: 1 }), /\brunning\b/u);
+    assert.match(items.busyText({ working: 0, idle: 1, unknown: 0, total: 1 }), /\bidle\b/u);
+    assert.match(items.busyText({ working: 0, idle: 0, unknown: 3, total: 3 }), /3 open/u);
+  });
+
+  it("says nothing about an account nobody is using", () => {
+    assert.equal(items.busyText(undefined), "");
+    assert.equal(items.busyText({ working: 0, idle: 0, unknown: 0, total: 0 }), "");
+  });
+
+  it("puts it beside the account, where the choice is made", () => {
+    const [row] = items.quickPickItems({
+      profiles: [profile("work")],
+      busy: { work: { working: 1, idle: 0, unknown: 0, total: 1 } },
+    });
+    assert.match(row.description, /work@example\.com {2}· {2}\$\(circle-filled\) running/u);
+  });
+});
+
 describe("usage as a line", () => {
   it("says why there are no numbers rather than leaving a blank", () => {
     assert.equal(items.usageText({ state: "unauthorized" }), "sign in to see usage");

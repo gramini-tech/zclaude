@@ -59,6 +59,13 @@ async function readProfiles() {
   return Array.isArray(data) ? data : [];
 }
 
+/** Which accounts already have something running, counted by profile. */
+async function readBusy() {
+  if (!binary) return {};
+  const { data } = await runJson(binary, ["sessions"]);
+  return Array.isArray(data?.byProfile) ? Object.fromEntries(data.byProfile) : {};
+}
+
 async function readUsage(force) {
   if (!binary || !settings().get("showUsage", true)) return {};
   const { data } = await runJson(binary, ["profile", "list", "--usage", ...(force ? ["--force"] : [])]);
@@ -101,14 +108,14 @@ async function pick(force = false) {
   picker.items = quickPickItems({ loading: true });
   picker.show();
 
-  const [{ status }, profiles] = await Promise.all([readStatus(), readProfiles()]);
+  const [{ status }, profiles, busy] = await Promise.all([readStatus(), readProfiles(), readBusy()]);
   const active = status?.owner ?? null;
-  picker.items = quickPickItems({ profiles, active, usage: {}, loading: true });
+  picker.items = quickPickItems({ profiles, active, usage: {}, loading: true, busy });
 
   // Usage is a network call per account, so the list is usable before it lands.
   const usage = await readUsage(force);
   picker.busy = false;
-  picker.items = quickPickItems({ profiles, active, usage, loading: false });
+  picker.items = quickPickItems({ profiles, active, usage, loading: false, busy });
 
   const chosen = await new Promise((resolve) => {
     picker.onDidAccept(() => resolve(picker.selectedItems[0]));

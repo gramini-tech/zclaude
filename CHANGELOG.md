@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.2.26
+
+Knowing which accounts are already in use.
+
+- `zclaude sessions` lists what is running, on which account, and whether it is
+  working or idle. The menu marks a busy profile before you pick it, and
+  launching one that is already in use says so and carries on — information
+  rather than a gate, since two sessions on one account is a reasonable thing to
+  do as long as it is a decision.
+- Each launch writes one file under `~/.zclaude/sessions/`, not a shared list:
+  two terminals starting at once cannot race for it, and a crash leaves one
+  orphan rather than a corrupt file. A session counts as live only when its
+  process id exists *and* that process still started when the record says it
+  did, because a recycled id would otherwise leave an account looking busy for
+  ever. Dead records are cleared away by whatever reads the list next.
+- Busy and merely open are different questions. Claude Code appends to its
+  transcript as a conversation goes, so the newest transcript under that
+  session's own project directory is when the account last did work; five
+  minutes of quiet reads as idle.
+- Sessions zclaude did not start are counted too. They cannot have a config
+  directory of their own, so they are all on the global login and are attributed
+  to whichever profile holds it.
+- Limits, stated rather than discovered: this is one machine, and tracking never
+  gates a launch — a session that cannot be recorded still runs. Turn the whole
+  thing off with `ZCLAUDE_NO_SESSIONS=1`.
+
 ## 0.2.25
 
 Usage now says when, not just how much.

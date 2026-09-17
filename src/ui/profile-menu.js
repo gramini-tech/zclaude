@@ -17,6 +17,7 @@ import {
   useState,
 } from "@inquirer/core";
 
+import { busyMarker } from "../sessions/index.js";
 import { formatCredits, formatUsage, usageRows } from "../usage/index.js";
 import { paint } from "./log.js";
 import { guard, withSignal } from "./prompt.js";
@@ -31,15 +32,20 @@ const noop = () => {};
  * account and what it shares belong to the highlighted row only, on the detail
  * line below the list — the same shape `select` uses, and the only way an email
  * plus three percentages fit an 80-column terminal without wrapping.
- * @param {{profile: object, active: boolean, usage: object | undefined, loading: boolean, width: number, frame: number, columns?: number, now?: number}} args
+ * @param {{profile: object, active: boolean, usage: object | undefined, loading: boolean, width: number, frame: number, columns?: number, now?: number, busy?: object}} args
  */
-export function renderRow({ profile, active, usage, loading, width, frame, columns = 80, now = Date.now() }) {
+export function renderRow({ profile, active, usage, loading, width, frame, columns = 80, now = Date.now(), busy }) {
   const marker = active ? "❯" : " ";
   // The names form a column, so a long one is cut rather than allowed to shove
   // every other row's numbers out of line.
   const name = (profile.label.length > width ? `${profile.label.slice(0, width - 1)}…` : profile.label).padEnd(width);
   const numbers = formatUsage(usage, now);
-  const trailing = numbers || (loading ? `${SPINNER[frame % SPINNER.length]} usage` : "");
+  // The marker goes first: "this account is already busy" changes the choice
+  // more than any percentage does.
+  const busyText = busyMarker(busy);
+  const trailing = [busyText, numbers || (loading ? `${SPINNER[frame % SPINNER.length]} usage` : "")]
+    .filter(Boolean)
+    .join("  ");
   const line = `${marker} ${name}  ${trailing}`.trimEnd().slice(0, columns - 1);
   return active ? paint(line, "cyan", process.stderr) : line;
 }
@@ -85,7 +91,7 @@ export function renderFooter({ loading, count, total, usageEnabled }) {
  */
 
 const menuPrompt = createPrompt((config, done) => {
-  const { profiles, store, usageEnabled } = config;
+  const { profiles, store, usageEnabled, busy } = config;
   const [cursor, setCursor] = useState(
     Math.max(
       0,
@@ -144,6 +150,7 @@ const menuPrompt = createPrompt((config, done) => {
       frame,
       columns,
       now,
+      busy: busy?.get(profile.id),
     }),
   );
   const header = paint("?", "cyan", process.stderr);
@@ -160,9 +167,9 @@ const menuPrompt = createPrompt((config, done) => {
 
 /**
  * @param {MenuProfile[]} profiles
- * @param {{defaultId?: string, store?: object, usageEnabled?: boolean}} [options]
+ * @param {{defaultId?: string, store?: object, usageEnabled?: boolean, busy?: Map<string, object>}} [options]
  * @returns {Promise<string>} the chosen profile id
  */
-export function chooseProfileWithUsage(profiles, { defaultId, store, usageEnabled = true } = {}) {
-  return guard(menuPrompt({ profiles, defaultId, store, usageEnabled }, { signal: withSignal() }));
+export function chooseProfileWithUsage(profiles, { defaultId, store, usageEnabled = true, busy } = {}) {
+  return guard(menuPrompt({ profiles, defaultId, store, usageEnabled, busy }, { signal: withSignal() }));
 }

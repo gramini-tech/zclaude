@@ -27,30 +27,49 @@ export function resetTime(value) {
 }
 
 /**
- * How long until then, short enough to sit at the end of a row: "2h 8m",
- * "45m", "6d 4h". Past, or under a minute, reads as "now" — a window that has
- * just reset is at zero anyway.
+ * A span of time, short enough to sit at the end of a row: "2h 8m", "45m",
+ * "6d 4h". Under a minute reads as "now".
+ * @param {number} ms
+ */
+function duration(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return "";
+  if (ms < MINUTE) return "now";
+  if (ms < HOUR) return `${Math.round(ms / MINUTE)}m`;
+  if (ms < DAY) {
+    const hours = Math.floor(ms / HOUR);
+    const minutes = Math.round((ms % HOUR) / MINUTE);
+    // 2h 60m is nobody's idea of two hours.
+    return minutes === 0 || minutes === 60 ? `${hours + (minutes === 60 ? 1 : 0)}h` : `${hours}h ${minutes}m`;
+  }
+  const days = Math.floor(ms / DAY);
+  const hours = Math.round((ms % DAY) / HOUR);
+  return hours === 0 || hours === 24 ? `${days + (hours === 24 ? 1 : 0)}d` : `${days}d ${hours}h`;
+}
+
+/**
+ * How long until then. A time already past has nothing useful to say.
  * @param {number | null} at epoch ms
  * @param {number} [now]
  */
 export function countdown(at, now = Date.now()) {
   if (at === null || !Number.isFinite(at)) return "";
-  const left = at - now;
   // A reset time already past means the endpoint is describing the window that
   // has just turned over. Counting down to it would read as a countdown to
   // yesterday, so there is nothing useful to say.
-  if (left < 0) return "";
-  if (left < MINUTE) return "now";
-  if (left < HOUR) return `${Math.round(left / MINUTE)}m`;
-  if (left < DAY) {
-    const hours = Math.floor(left / HOUR);
-    const minutes = Math.round((left % HOUR) / MINUTE);
-    // 2h 60m is nobody's idea of two hours.
-    return minutes === 0 || minutes === 60 ? `${hours + (minutes === 60 ? 1 : 0)}h` : `${hours}h ${minutes}m`;
-  }
-  const days = Math.floor(left / DAY);
-  const hours = Math.round((left % DAY) / HOUR);
-  return hours === 0 || hours === 24 ? `${days + (hours === 24 ? 1 : 0)}d` : `${days}d ${hours}h`;
+  return duration(at - now);
+}
+
+/**
+ * How long ago something happened: "3m ago", "just now". The mirror of the
+ * countdown, sharing its units so the two never disagree on screen.
+ * @param {number | null} at epoch ms
+ * @param {number} [now]
+ */
+export function elapsed(at, now = Date.now()) {
+  if (!at || !Number.isFinite(at)) return "";
+  const since = duration(now - at);
+  if (!since) return "";
+  return since === "now" ? "just now" : `${since} ago`;
 }
 
 /**

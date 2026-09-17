@@ -9,6 +9,8 @@ import { contextWindowFor, formatModelForClaude } from "./config.js";
 import { canonicalConfigDir } from "./profiles/paths.js";
 import { EXIT, noClaudeError, ZclaudeError } from "./errors.js";
 import { log } from "./logger.js";
+import { startToken } from "./sessions/liveness.js";
+import { forgetSession, recordSession } from "./sessions/store.js";
 
 const INSTALL_HINT = [
   "Install Claude Code first:",
@@ -155,7 +157,32 @@ export function exitCodeForSignal(signal) {
  * ignores SIGINT/SIGTERM while the child runs: the terminal delivers those to
  * the whole foreground process group, so claude handles them itself.
  */
-export function runClaude(bin, args, env, { platform = process.platform } = {}) {
+/**
+ * Record this child as a running session, and forget it when it ends.
+ *
+ * Everything here is best-effort and nothing is awaited before the child runs:
+ * the terminal belongs to claude from the moment it starts, and a tracker that
+ * delayed or broke a launch would be a bad trade for a list.
+ */
+function trackSession(child, session, env) {
+  if (!session) return () => {};
+  let recorded = null;
+  const started = (async () => {
+    const token = await startToken(child.pid).catch(() => null);
+    recorded = await recordSession({ ...session, pid: child.pid, startToken: token }, { env });
+  })().catch((error) => log.debug("claude", "session not tracked", { error }));
+  return () => {
+    started.then(() => (recorded ? forgetSession(recorded.id, { env }) : undefined)).catch(() => {});
+  };
+}
+
+/**
+ * @param {string} bin
+ * @param {string[]} args
+ * @param {NodeJS.ProcessEnv} env
+ * @param {{platform?: string, session?: object, trackerEnv?: NodeJS.ProcessEnv}} [options]
+ */
+export function runClaude(bin, args, env, { platform = process.platform, session, trackerEnv } = {}) {
   return new Promise((resolve, reject) => {
     const useShell = platform === "win32" && /\.(cmd|bat)$/iu.test(bin);
     const startedAt = Date.now();
@@ -175,12 +202,14 @@ export function runClaude(bin, args, env, { platform = process.platform } = {}) 
       reject(new ZclaudeError(`Could not start claude: ${error.message}`, { exitCode: EXIT.NO_CLAUDE, cause: error }));
       return;
     }
+    const untrack = trackSession(child, session, trackerEnv ?? env);
     const ignore = () => {};
     process.on("SIGINT", ignore);
     process.on("SIGTERM", ignore);
     const restore = () => {
       process.off("SIGINT", ignore);
       process.off("SIGTERM", ignore);
+      untrack();
     };
     child.on("error", (/** @type {NodeJS.ErrnoException} */ error) => {
       restore();
