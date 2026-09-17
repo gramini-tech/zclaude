@@ -35,6 +35,11 @@ describe("install.sh", { skip }, () => {
       ZCLAUDE_INSTALL_NO_CLAUDE: "1",
       ZCLAUDE_INSTALL_NO_RC: "1",
       ZCLAUDE_NO_KEYCHAIN: "1",
+      // PATH here is the real one, which on a developer's machine has a real
+      // `code` and a real editor to install into. Off by default; the tests
+      // that care turn it on against a fake.
+      ZCLAUDE_INSTALL_NO_VSIX: "1",
+      ZCLAUDE_INSTALL_NO_RENEW: "1",
       NO_COLOR: "1",
     };
   });
@@ -177,6 +182,87 @@ describe("install.sh", { skip }, () => {
     assert.equal(kept.code, 0, kept.stderr);
     assert.equal(await readFile(settings, "utf8"), "ZCLAUDE_MODEL=glm-5.3\n");
     await assert.rejects(stat(join(home.dir, ".zclaude", "app")), /ENOENT/u);
+  });
+
+  // The installer offers the VS Code item and the renewal job. Both are run
+  // against fakes: a real `code` would install into the developer's editor.
+  let editorCall = 0;
+  async function fakeEditor(name = "code") {
+    // A fresh calls file each time: these tests share one HOME, and an old
+    // recording would answer for the run under test.
+    editorCall += 1;
+    const bin = join(home.dir, `fake-editor-${editorCall}`);
+    const calls = join(home.dir, `editor-calls-${editorCall}.txt`);
+    await mkdir(bin, { recursive: true });
+    await writeFile(join(bin, name), `#!/bin/sh\necho "${name} $*" >> "${calls}"\nexit 0\n`);
+    await chmod(join(bin, name), 0o755);
+    return { bin, calls, read: () => readFile(calls, "utf8").catch(() => "") };
+  }
+
+  it("installs the VS Code item unattended when an editor is there", async () => {
+    const editor = await fakeEditor();
+    const installed = await sh([join(root, "install.sh")], {
+      ...env,
+      ZCLAUDE_INSTALL_NO_VSIX: "",
+      PATH: `${editor.bin}:${process.env.PATH}`,
+    });
+    assert.equal(installed.code, 0, installed.stderr);
+    assert.match(installed.stderr, /Installed zclaude .* into VS Code/u);
+    assert.match(await editor.read(), /code --install-extension .*zclaude\.vsix --force/u);
+    await sh([join(root, "install.sh"), "--uninstall"], env);
+  });
+
+  it("skips it when ZCLAUDE_INSTALL_NO_VSIX is set, and says so", async () => {
+    const editor = await fakeEditor();
+    const installed = await sh([join(root, "install.sh")], { ...env, PATH: `${editor.bin}:${process.env.PATH}` });
+    assert.equal(installed.code, 0, installed.stderr);
+    assert.match(installed.stderr, /Skipping the VS Code status bar item/u);
+    assert.doesNotMatch(await editor.read(), /--install-extension/u);
+    await sh([join(root, "install.sh"), "--uninstall"], env);
+  });
+
+  it("takes the VS Code item out again on uninstall", async () => {
+    const editor = await fakeEditor();
+    const withEditor = { ...env, PATH: `${editor.bin}:${process.env.PATH}` };
+    await sh([join(root, "install.sh")], withEditor);
+    const gone = await sh([join(root, "install.sh"), "--uninstall"], withEditor);
+    assert.equal(gone.code, 0, gone.stderr);
+    assert.match(await editor.read(), /code --uninstall-extension vipincr\.zclaude/u);
+    assert.match(gone.stderr, /Removed the status bar item from 1 editor/u);
+  });
+
+  it("offers the renewal job only when there is an Anthropic profile to keep alive", async () => {
+    const fresh = await sh([join(root, "install.sh")], { ...env, ZCLAUDE_INSTALL_NO_RENEW: "" });
+    assert.equal(fresh.code, 0, fresh.stderr);
+    assert.doesNotMatch(fresh.stderr, /renewal/u, "a fresh machine has nothing to renew yet");
+    await mkdir(join(home.dir, ".zclaude"), { recursive: true });
+    await writeFile(
+      join(home.dir, ".zclaude", "profiles.json"),
+      JSON.stringify({
+        version: 1,
+        profiles: { work: { name: "work", provider: "anthropic", dir: join(home.dir, "w"), share: {} } },
+      }),
+    );
+    const scheduler = join(home.dir, "fake-sched");
+    await mkdir(scheduler, { recursive: true });
+    for (const tool of ["launchctl", "systemctl", "crontab"]) {
+      await writeFile(join(scheduler, tool), "#!/bin/sh\nexit 0\n");
+      await chmod(join(scheduler, tool), 0o755);
+    }
+    const withProfile = await sh([join(root, "install.sh")], {
+      ...env,
+      ZCLAUDE_INSTALL_NO_RENEW: "",
+      PATH: `${scheduler}:${process.env.PATH}`,
+    });
+    assert.equal(withProfile.code, 0, withProfile.stderr);
+    assert.match(withProfile.stderr, /Scheduled with (launchd|a systemd user timer|cron)/u);
+    const gone = await sh([join(root, "install.sh"), "--uninstall"], env);
+    assert.equal(gone.code, 0, gone.stderr);
+    await assert.rejects(
+      stat(join(home.dir, "Library", "LaunchAgents", "com.zclaude.renew.plist")),
+      /ENOENT/u,
+      "the uninstall left a LaunchAgent behind",
+    );
   });
 
   it("warns instead of editing rc files when told to, and appends once otherwise", async () => {

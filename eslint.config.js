@@ -190,7 +190,42 @@ export default [
       "unicorn/no-unused-properties": "off",
       "unicorn/consistent-destructuring": "off",
       "n/no-unpublished-import": "off",
+      // Same as the core rule plus crc32, which the vsix contract test uses to
+      // compare archive entries without inflating them.
+      "n/no-unsupported-features/node-builtins": [
+        "error",
+        {
+          version: ">=20.17.0",
+          ignores: [
+            "fetch",
+            "Response",
+            "Headers",
+            "test",
+            "test.describe",
+            "test.it",
+            "test.before",
+            "test.after",
+            "zlib.crc32",
+          ],
+        },
+      ],
       "sonarjs/no-empty-test-file": "off",
+    },
+  },
+  {
+    // The VS Code extension is CommonJS, runs in Electron's Node, and imports
+    // `vscode`, which only exists at runtime inside the editor.
+    files: ["extension/**/*.js"],
+    languageOptions: { sourceType: "commonjs" },
+    rules: {
+      "strict": ["error", "safe"],
+      "n/no-missing-require": ["error", { allowModules: ["vscode"] }],
+      "n/no-unsupported-features/es-builtins": ["error", { version: ">=18.0.0" }],
+      "n/no-unsupported-features/es-syntax": ["error", { version: ">=18.0.0" }],
+      "n/no-unsupported-features/node-builtins": ["error", { version: ">=18.0.0" }],
+      // A status bar item and an output channel are per-window singletons, so
+      // module state is the shape VS Code expects.
+      "unicorn/no-top-level-assignment-in-function": "off",
     },
   },
   {

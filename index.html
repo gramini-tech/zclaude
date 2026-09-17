@@ -36,6 +36,7 @@
         <nav aria-label="Sections">
           <a href="#install">Install</a>
           <a href="#profiles">Profiles</a>
+          <a href="#switch">Switch</a>
           <a href="#zai">Z.ai</a>
           <a href="#usage">Usage</a>
           <a href="#faq">FAQ</a>
@@ -201,6 +202,71 @@
         </p>
       </section>
 
+      <section class="wrap usage" id="switch" aria-labelledby="switch-title">
+        <h2 id="switch-title">Switching the login everything else uses</h2>
+        <p>
+          Profiles cover the terminals you start with zclaude. Plain <code>claude</code>, the Claude Code extension in
+          your editor, and anything else that shells out to Claude Code all use the machine&rsquo;s one global login.
+          <code>zclaude switch</code> moves that login to a profile&rsquo;s account, in place, and leaves your projects,
+          history, sessions and MCP logins exactly where they are.
+        </p>
+        <div class="table-scroll">
+          <table>
+            <tbody>
+              <tr>
+                <td><code>zclaude switch work</code></td>
+                <td>The global login is now that profile&rsquo;s account.</td>
+              </tr>
+              <tr>
+                <td><code>zclaude switch --status</code></td>
+                <td>Who holds it, since when, and what can be restored.</td>
+              </tr>
+              <tr>
+                <td><code>zclaude switch --restore</code></td>
+                <td>Put the previous one back.</td>
+              </tr>
+              <tr>
+                <td><code>zclaude switch work --dry-run</code></td>
+                <td>Say what would change, change nothing.</td>
+              </tr>
+              <tr>
+                <td><code>zclaude vscode install</code></td>
+                <td>Put the <code>zc</code> item in the status bar of every editor found here.</td>
+              </tr>
+              <tr>
+                <td><code>zclaude renew status</code></td>
+                <td>Is the background token renewal scheduled, and what did it do.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Two things move and nothing else: the credential in the Keychain item Claude Code reads, and the
+          <code>oauthAccount</code> block of <code>~/.claude.json</code>. Both are backed up and read back before
+          anything is overwritten, the login being replaced is captured back into the profile it belongs to so a token
+          Claude Code rotated is not stranded, and Claude Code&rsquo;s own refresh locks are held throughout so a switch
+          cannot land in the middle of one.
+        </p>
+
+        <h3>The status bar item</h3>
+        <p>
+          A small extension puts <code>zc</code> in the VS Code status bar with the signed-in account beside it. One
+          click lists every profile with its 5-hour, weekly and per-model usage, so you can pick the account that has
+          quota left for the job; the same list adds a profile, removes one, restores the previous login and re-fetches
+          usage. It works in VS Code, Insiders, Cursor, Windsurf and VSCodium, and it holds no credential logic of its
+          own: it asks <code>zclaude</code> for JSON and renders the answer.
+        </p>
+
+        <h3>Logins that do not go stale</h3>
+        <p>
+          An account you open twice a term expires quietly between uses. <code>zclaude renew install</code> schedules a
+          job &mdash; a LaunchAgent on macOS, a systemd user timer or a crontab line on Linux &mdash; that refreshes
+          only what is within two hours of lapsing, one profile at a time, and stops at the first token the server
+          rejects rather than hammering it on a timer. Removing the last Anthropic profile removes the schedule, and so
+          does any uninstall.
+        </p>
+      </section>
+
       <section class="wrap features" aria-labelledby="features-title">
         <h2 id="features-title">What it does for you</h2>
         <ul class="grid">
@@ -222,7 +288,7 @@
             <h3>Scoped to the terminal</h3>
             <p>
               A profile lives in the environment of the one <code>claude</code> process it starts. Your default login
-              and the VS Code extension carry on unchanged.
+              and the VS Code extension carry on unchanged, until you ask for a switch.
             </p>
           </li>
           <li>
@@ -240,10 +306,24 @@
             </p>
           </li>
           <li>
-            <h3>Nothing written to ~/.claude</h3>
+            <h3>Nothing written to ~/.claude, unless you ask</h3>
             <p>
-              zclaude reads your Claude Code files and never writes them. A contract test and a hash check enforce it on
-              every change.
+              zclaude reads your Claude Code files. The one exception is the switch you name: it moves the credential
+              and one key of <code>~/.claude.json</code>, backs both up, and can put them back.
+            </p>
+          </li>
+          <li>
+            <h3>A switch, and a button for it</h3>
+            <p>
+              <code>zclaude switch work</code> moves the global login that plain <code>claude</code> uses. The VS Code
+              status bar item does the same thing in one click, with each plan's usage on the list.
+            </p>
+          </li>
+          <li>
+            <h3>Logins kept alive</h3>
+            <p>
+              A scheduled job refreshes a profile's token before it lapses, so an account you open twice a term is still
+              signed in when you come back to it.
             </p>
           </li>
           <li>
@@ -403,9 +483,38 @@ ZCLAUDE_PROFILE=work       # optional: pick a profile for this project</code></p
         <details>
           <summary>Does signing in to a profile sign me out of VS Code?</summary>
           <p>
-            No. The extension uses the default login, which zclaude never touches. That is the whole point of the
-            design, and it is checked end to end: create a profile, sign in, and plain <code>claude</code> in a fresh
-            terminal still reports the original account.
+            No. The extension uses the default login, which adding or signing in to a profile never touches. That is
+            checked end to end: create a profile, sign in, and plain <code>claude</code> in a fresh terminal still
+            reports the original account. The one thing that does move it is <code>zclaude switch</code>, which you ask
+            for by name and can undo with <code>zclaude switch --restore</code>.
+          </p>
+        </details>
+
+        <details>
+          <summary>What does a switch do to a session that is already running?</summary>
+          <p>
+            Nothing immediately. Claude Code keeps the credential it read at startup, and on macOS that cache lasts
+            about half a minute, so a running session moves to the new account shortly rather than mid-answer. A switch
+            also takes Claude Code&rsquo;s own refresh locks first, so it cannot land inside a token refresh.
+          </p>
+        </details>
+
+        <details>
+          <summary>Can I switch a Z.ai profile globally?</summary>
+          <p>
+            No, and it is not a gap in the implementation. A GLM plan is an endpoint and a key, which reach Claude Code
+            through the environment rather than through its credential store, so the only way to make it global would be
+            to write your <code>settings.json</code>. zclaude will not do that. Run
+            <code>zclaude &lt;profile&gt;</code> in a terminal instead.
+          </p>
+        </details>
+
+        <details>
+          <summary>How do I get the status bar item?</summary>
+          <p>
+            The installer offers it when it finds an editor, or run <code>zclaude vscode install</code> yourself; it
+            goes into VS Code, Insiders, Cursor, Windsurf and VSCodium. Reload the window afterwards. It is not on the
+            Marketplace: the packaged <code>.vsix</code> ships with zclaude and is installed from disk.
           </p>
         </details>
 
@@ -470,11 +579,14 @@ ZCLAUDE_PROFILE=work       # optional: pick a profile for this project</code></p
         <details>
           <summary>Does it change my Claude Code settings?</summary>
           <p>
-            zclaude never writes to <code>~/.claude/settings.json</code>, <code>~/.claude.json</code> or your project's
+            zclaude never writes to <code>~/.claude/settings.json</code> or your project&rsquo;s
             <code>.claude</code> folder. It reads them, to seed a profile you asked for and to spot an
-            <code>env</code> block that would override your session. Claude Code itself writes
-            <code>~/.claude/.device-keys.json</code> whatever config directory it is given, so that one file appears
-            even for a profile. The test suite hashes the directory before and after a run.
+            <code>env</code> block that would override your session. The single exception is the switch you ask for by
+            name, which replaces the stored credential and the <code>oauthAccount</code> block of
+            <code>~/.claude.json</code> &mdash; both backed up first, both restorable, and the only key of that file
+            that moves. Claude Code itself writes <code>~/.claude/.device-keys.json</code> whatever config directory it
+            is given, so that one file appears even for a profile. The test suite hashes the directory before and after
+            a run.
           </p>
         </details>
 

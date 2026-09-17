@@ -23,13 +23,16 @@
 #   ZCLAUDE_INSTALL_FORCE_NODE set to 1 to download a private Node even if one is installed
 #   ZCLAUDE_INSTALL_NO_CLAUDE  set to 1 to skip installing Claude Code
 #   ZCLAUDE_INSTALL_NO_RC      set to 1 to leave shell rc files alone
+#   ZCLAUDE_INSTALL_NO_VSIX    set to 1 to skip the VS Code status bar item
+#   ZCLAUDE_INSTALL_NO_RENEW   set to 1 to skip the background token renewal
 #   ZCLAUDE_NO_KEYCHAIN        set to 1 to leave the macOS Keychain items alone
 #
 #   install.sh --uninstall     removes everything: the app, the private Node, the
 #                              command, ~/.zclaude (settings, logs and profiles),
 #                              the Keychain items (the Z.ai keys and each
 #                              profile's Claude Code login), the token-renewal
-#                              schedule and the PATH line this script added.
+#                              schedule, the VS Code status bar item and the
+#                              PATH line this script added.
 #                              Add --keep-config to keep ~/.zclaude.
 set -euo pipefail
 
@@ -148,6 +151,53 @@ remove_schedule() {
   return 0
 }
 
+# Every VS Code-shaped editor's CLI on this machine. PATH first, then the
+# standard install locations, because a GUI install does not put `code` on PATH
+# until you ask it to.
+find_editors() {
+  local id candidate app
+  for id in code code-insiders cursor windsurf codium; do
+    case "$id" in
+      code) app="Visual Studio Code" ;;
+      code-insiders) app="Visual Studio Code - Insiders" ;;
+      cursor) app="Cursor" ;;
+      windsurf) app="Windsurf" ;;
+      *) app="VSCodium" ;;
+    esac
+    if command -v "$id" >/dev/null 2>&1; then
+      command -v "$id"
+      continue
+    fi
+    for candidate in \
+      "/Applications/$app.app/Contents/Resources/app/bin/$id" \
+      "$HOME/Applications/$app.app/Contents/Resources/app/bin/$id" \
+      "/usr/share/$id/bin/$id" \
+      "/usr/bin/$id" \
+      "/snap/bin/$id" \
+      "$HOME/.local/bin/$id"; do
+      if [ -x "$candidate" ]; then
+        printf '%s\n' "$candidate"
+        break
+      fi
+    done
+  done
+}
+
+# The extension lives in the editor's own extension directory, which removing
+# ~/.zclaude does not touch. This runs before the app directory goes, and does
+# not depend on it, so it works even from a half-removed install.
+remove_vscode_extension() {
+  local editor removed=0
+  while IFS= read -r editor; do
+    [ -n "$editor" ] || continue
+    if "$editor" --uninstall-extension vipincr.zclaude >/dev/null 2>&1; then
+      removed=$((removed + 1))
+    fi
+  done <<<"$(find_editors)"
+  [ "$removed" -gt 0 ] && info "Removed the status bar item from $removed editor(s)"
+  return 0
+}
+
 remove_keychain() {
   [ "$PLATFORM" = "darwin" ] || return 0
   [ -n "${ZCLAUDE_NO_KEYCHAIN:-}" ] && return 0
@@ -190,6 +240,7 @@ if [ "${1:-}" = "--uninstall" ]; then
   KEEP_CONFIG=""
   [ "${2:-}" = "--keep-config" ] && KEEP_CONFIG=1
   info "Removing zclaude from this machine"
+  remove_vscode_extension
   rm -rf "$APP_DIR" "$NODE_DIR"
   remove_links
   remove_path_lines
@@ -349,6 +400,43 @@ else
   need curl
   info "Claude Code not found; running Anthropic's installer (https://claude.ai/install.sh)"
   curl -fsSL https://claude.ai/install.sh | bash || warn "Claude Code's installer did not finish. Install it later with: curl -fsSL https://claude.ai/install.sh | bash"
+fi
+
+# --------------------------------------------------------------- extras
+# Ask when there is a terminal to ask on; install silently when there is not.
+# `curl | bash` puts the script itself on stdin, so reading there would eat the
+# rest of it — which is exactly the case where no answer is possible anyway.
+ask_yes() {
+  local answer
+  [ -t 0 ] || return 0
+  printf '%s·%s %s [Y/n] ' "$C_INFO" "$C_RESET" "$1" >&2
+  read -r answer || return 0
+  case "$answer" in
+    [nN]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+if [ -n "${ZCLAUDE_INSTALL_NO_VSIX:-}" ]; then
+  info "Skipping the VS Code status bar item (ZCLAUDE_INSTALL_NO_VSIX is set)."
+elif [ -n "$(find_editors)" ]; then
+  if ask_yes "Install the zclaude status bar item into VS Code?"; then
+    "$BIN_DIR/zclaude" vscode install || warn "The VS Code item did not install. Try: zclaude vscode install"
+  else
+    info "Skipped it. Add it later with: zclaude vscode install"
+  fi
+fi
+
+# Only worth offering when there is an Anthropic profile to keep alive, which a
+# fresh machine does not have yet.
+if [ -n "${ZCLAUDE_INSTALL_NO_RENEW:-}" ]; then
+  info "Skipping the background token renewal (ZCLAUDE_INSTALL_NO_RENEW is set)."
+elif "$BIN_DIR/zclaude" profile list --json 2>/dev/null | grep -q '"provider": *"anthropic"'; then
+  if ask_yes "Keep each profile's Claude Code login refreshed in the background?"; then
+    "$BIN_DIR/zclaude" renew install || warn "The renewal job did not install. Try: zclaude renew install"
+  else
+    info "Skipped it. Set it up later with: zclaude renew install"
+  fi
 fi
 
 # ------------------------------------------------------------------- verify

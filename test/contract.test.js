@@ -4,7 +4,8 @@
 
 import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { crc32 } from "node:zlib";
+import { join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 
@@ -13,6 +14,9 @@ import { COMMAND_NAMES, HELP } from "../src/cli.js";
 import { PROFILE_SUBCOMMANDS } from "../src/profile-commands.js";
 import { RENEW_SUBCOMMANDS, selfBinary } from "../src/renew-commands.js";
 import { SWITCH_SUBCOMMANDS } from "../src/swap-commands.js";
+import { VSCODE_SUBCOMMANDS } from "../src/vscode-commands.js";
+import { EDITORS, EXTENSION_ID, packagedVersion, vsixPath } from "../src/vscode/index.js";
+import { vsixContents } from "../scripts/build-extension.js";
 import { CLAUDE_COMMANDS } from "../src/profiles/paths.js";
 import { CALLBACK_SCHEME, CONSOLE_KEYS_URL, DEFAULT_MODELS, MODEL_CONTEXT_WINDOWS, zaiConfig } from "../src/config.js";
 import { EXIT } from "../src/errors.js";
@@ -202,6 +206,59 @@ describe("documentation contract", () => {
       "/home/x/.zclaude/app/bin/zclaude.js",
     );
     assert.equal(selfBinary({}, []), "zclaude");
+  });
+
+  // The vsix is a build artefact that is committed, so it can silently fall
+  // behind its sources. These two tests are what notices.
+  it("the committed vsix carries the manifest's version and identifier", async () => {
+    const manifest = JSON.parse(await readFile(join(root, "extension", "package.json"), "utf8"));
+    assert.equal(`${manifest.publisher}.${manifest.name}`, EXTENSION_ID);
+    assert.equal(await packagedVersion(), manifest.version);
+    const files = await vsixContents(vsixPath());
+    assert.ok(files["extension/package.json"], "the vsix has no manifest");
+  });
+
+  it("the committed vsix holds exactly the extension's sources, byte for byte", async () => {
+    const files = await vsixContents(vsixPath());
+    // vsce renames these two; everything else keeps its path.
+    const packagedAs = { "README.md": "extension/readme.md", "LICENSE": "extension/LICENSE.txt" };
+    const sources = [
+      "package.json",
+      "README.md",
+      "LICENSE",
+      ...(await readdir(join(root, "extension", "src"))).map((name) => join("src", name)),
+    ];
+    for (const source of sources) {
+      const path = packagedAs[source] ?? `extension/${source.split(sep).join("/")}`;
+      assert.ok(files[path], `${source} is not in the vsix — run \`npm run build:extension\``);
+      const bytes = await readFile(join(root, "extension", source));
+      assert.equal(
+        files[path],
+        `${crc32(bytes).toString(16).padStart(8, "0")}:${bytes.length}`,
+        `${source} changed since the vsix was built — run \`npm run build:extension\``,
+      );
+    }
+  });
+
+  // The installer removes the extension without running zclaude, because the
+  // app directory may already be gone, so it carries its own copy of the list.
+  it("the installer looks for the same editors the CLI does", async () => {
+    const installer = await readFile(join(root, "install.sh"), "utf8");
+    const listed = installer.match(/for id in ([a-z -]+); do/u)?.[1]?.split(" ");
+    assert.deepEqual(
+      listed,
+      EDITORS.map((editor) => editor.id),
+    );
+    for (const editor of EDITORS) assert.ok(installer.includes(editor.app), `${editor.app} missing from install.sh`);
+    assert.ok(installer.includes(`--uninstall-extension ${EXTENSION_ID}`));
+  });
+
+  it("every vscode subcommand is listed in --help and the README", async () => {
+    const readme = await readFile(join(root, "README.md"), "utf8");
+    for (const sub of VSCODE_SUBCOMMANDS) {
+      assert.ok(HELP.includes(`vscode ${sub}`), `vscode ${sub} missing from --help`);
+      assert.ok(readme.includes(`vscode ${sub}`), `vscode ${sub} missing from README`);
+    }
   });
 
   it("every profile subcommand is listed in --help and the README", async () => {

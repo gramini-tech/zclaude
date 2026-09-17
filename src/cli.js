@@ -41,7 +41,9 @@ import { configureLogger, formatEntry, listLogs, log, logFilePath, readLog } fro
 import { cmdProfile, describeShare, forgetAllProfiles, launchContext, profileSummaries } from "./profile-commands.js";
 import { cmdRenewGroup } from "./renew-commands.js";
 import { uninstall as unschedule } from "./renew/schedule.js";
+import { uninstallEverywhere as uninstallExtension } from "./vscode/index.js";
 import { cmdSwitchGroup } from "./swap-commands.js";
+import { cmdVscodeGroup } from "./vscode-commands.js";
 import { clearBackups } from "./swap/backup.js";
 import { findProfile, listProfiles, takeProfileArgument } from "./profiles.js";
 import { DEFAULT_CREDENTIAL_SERVICE } from "./profiles/keychain-name.js";
@@ -85,6 +87,7 @@ export const COMMAND_NAMES = Object.freeze([
   "profile",
   "switch",
   "renew",
+  "vscode",
   "login",
   "logout",
   "status",
@@ -97,7 +100,7 @@ export const COMMAND_NAMES = Object.freeze([
 ]);
 const COMMANDS = new Set(COMMAND_NAMES);
 // Commands that take their own subcommand and names, collected into options.args.
-const COMMAND_GROUPS = new Set(["profile", "switch", "renew"]);
+const COMMAND_GROUPS = new Set(["profile", "switch", "renew", "vscode"]);
 const VALUE_FLAGS = Object.freeze({
   "--profile": "profile",
   "--switch": "switch",
@@ -214,6 +217,9 @@ Usage
   zclaude renew install                        schedule it
   zclaude renew uninstall                      remove the schedule
   zclaude renew run                            renew now; this is what the scheduler calls
+  zclaude vscode install                       put the status bar item into the editors found here
+  zclaude vscode uninstall                     take it out again
+  zclaude vscode status [--json]               which editors have it, and at which version
   zclaude login [--no-browser] [--paste] [--api-key] [--no-store]
   zclaude logout                               forget the stored Z.ai key
   zclaude status [--json]                      show credential, config and model state
@@ -225,7 +231,7 @@ Usage
 
 Profiles (one Claude or Z.ai account each, scoped to the terminal that started it)
   zclaude profile add [name] [--provider anthropic|zai] [--share all|config|history|none]
-  zclaude profile list [--json]                names, accounts and what each one shares
+  zclaude profile list [--json] [--usage]      names, accounts, sharing, and how much quota is left
   zclaude profile show <name> [--json]         everything about one profile
   zclaude profile login <name>                 sign in to that profile only
   zclaude profile logout <name>                sign out of that profile only
@@ -252,7 +258,7 @@ Options (must come before any claude argument or profile name)
   --sso, --console, --email    passed to \`claude auth login\` for an Anthropic profile
   --yes                        profile remove: do not ask
   --fix                        profile doctor: relink what it can
-  --force                      self-update: install even when the check says you are current
+  --force                      self-update: install anyway; profile list --usage: skip the cache
   --usage                      profile list: fetch how much of each plan is used
   --no-usage                   menu: skip the usage lookup and its network calls
   --dry-run                    switch: say what would change, change nothing
@@ -1122,6 +1128,22 @@ async function cmdSelfInstall({ env }) {
  * Remove this installation, whichever way it was installed, along with the
  * stored key and (unless --keep-config) everything under ~/.zclaude.
  */
+/**
+ * The parts of an installation that do not live under ~/.zclaude: Keychain
+ * items, a scheduled job, and the editor extension. Removing the directory
+ * would leave every one of them behind.
+ */
+async function removeEverythingOutsideTheHome(env) {
+  const cleared = await clearBackups({ env });
+  if (cleared > 0) info(`Removed ${cleared} saved copy of a previous global login.`);
+  const unscheduled = await unschedule({ env });
+  if (unscheduled.removed.length > 0) info(`Removed the renewal schedule: ${unscheduled.removed.join(", ")}.`);
+  const editors = await uninstallExtension({ env }).catch(() => []);
+  for (const result of editors) {
+    if (result.removed) info(`Removed the status bar item from ${result.editor.label}.`);
+  }
+}
+
 async function cmdSelfUninstall({ options, env }) {
   const kind = detectInstallKind({ env });
   const keepConfig = Boolean(options.keepConfig);
@@ -1132,16 +1154,7 @@ async function cmdSelfUninstall({ options, env }) {
   if (profiles.forgotten.length > 0) info(`Signed out of: ${profiles.forgotten.join(", ")}.`);
   if (!keepConfig && profiles.profiles.length > 0)
     info(`Removing ${profiles.profiles.length} profile director${profiles.profiles.length === 1 ? "y" : "ies"}.`);
-  if (!keepConfig) {
-    // Swap backups hold the credential that was in the global slot, in zclaude's
-    // own Keychain items. Removing the directory would leave those behind.
-    const cleared = await clearBackups({ env });
-    if (cleared > 0) info(`Removed ${cleared} saved copy of a previous global login.`);
-    // A LaunchAgent or timer lives outside ~/.zclaude and would otherwise wake
-    // up for ever, calling a binary that is no longer there.
-    const unscheduled = await unschedule({ env });
-    if (unscheduled.removed.length > 0) info(`Removed the renewal schedule: ${unscheduled.removed.join(", ")}.`);
-  }
+  if (!keepConfig) await removeEverythingOutsideTheHome(env);
 
   if (kind === "checkout") {
     info("This is a git checkout: delete the clone and any symlink you made to it.");
@@ -1325,6 +1338,7 @@ const COMMAND_HANDLERS = {
   profile: cmdProfileGroup,
   switch: cmdSwitchGroup_,
   renew: cmdRenewGroup,
+  vscode: cmdVscodeGroup,
   launch: cmdLaunch,
 };
 

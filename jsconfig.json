@@ -20,6 +20,6 @@
     "lib": ["es2023"],
     "maxNodeModuleJsDepth": 0
   },
-  "include": ["bin/**/*.js", "src/**/*.js", "scripts/**/*.js"],
+  "include": ["bin/**/*.js", "src/**/*.js", "scripts/**/*.js", "extension/src/**/*.js"],
   "exclude": ["node_modules"]
 }

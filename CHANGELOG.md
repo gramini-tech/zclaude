@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.2.18
+
+Switching the global login, and three things that make that useful.
+
+- `zclaude switch <profile>` moves the login that plain `claude`, your editor's Claude Code
+  extension and every other tool that shells out to Claude Code uses. Two things move and nothing
+  else: the credential in Claude Code's Keychain item and the `oauthAccount` block of
+  `~/.claude.json`. Both are backed up and read back before anything is overwritten, the login being
+  replaced is captured back into the profile that owns it so a token Claude Code rotated is not
+  stranded, and Claude Code's own refresh locks are held throughout. `switch --status`,
+  `switch --restore`, `switch capture` and `switch <name> --dry-run` round it out; `--switch <name>`
+  is the flag spelling.
+- Plan usage where the decision is made. The menu you get from bare `zclaude` now shows each
+  account's 5-hour, weekly and per-model percentages, fetched in the background behind a spinner and
+  filled in per row as they land, with `r` to re-fetch. `zclaude profile list --usage` prints the
+  same numbers, and `--force` skips the cache. One cache and one `Retry-After` backoff are shared
+  across every surface, so the CLI and the extension cannot saturate the endpoint between them.
+- `zclaude renew install` schedules a job — a LaunchAgent, a systemd user timer or a crontab line —
+  that refreshes only the profiles within two hours of expiring. It works one at a time, never
+  touches the global login, and quarantines a profile at the first refresh token the server rejects
+  rather than retrying it every six hours. Deleting the last Anthropic profile removes the schedule,
+  and so does every uninstall path.
+- A VS Code extension: `zc` in the status bar with the signed-in account, and one click for the list
+  of profiles with their usage, plus add, remove, restore and refresh. It works in VS Code,
+  Insiders, Cursor, Windsurf and VSCodium, and holds no credential logic — it asks `zclaude` for
+  `--json` and renders the answer. `zclaude vscode install|uninstall|status` manages it, the
+  installer offers it when it finds an editor (`ZCLAUDE_INSTALL_NO_VSIX=1` to skip), and the
+  packaged vsix is committed and ships in the npm package rather than coming from the Marketplace.
+- The "zclaude never writes under `~/.claude`" claim is now the precise one everywhere it appeared:
+  never, except the switch you ask for by name. The contract test that enforced it names the single
+  file allowed to write there instead, and `test/swap.test.js` proves a switch changes no other key
+  of `~/.claude.json` and no file under `~/.claude`.
+
 ## 0.2.10
 
 - `zclaude <profile>` starts a profile: `zclaude work -p "..."` is `zclaude --profile work -p "..."`.

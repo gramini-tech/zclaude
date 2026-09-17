@@ -20,6 +20,7 @@ import { getRegistered, listRegistered, PROVIDERS } from "./profiles/registry.js
 import { mcpServersWithSecrets, readDefaultConfig, trustedProjects } from "./profiles/seed.js";
 import { detachedShares } from "./profiles/share.js";
 import { deleteCredential, loadCredential } from "./store.js";
+import { formatUsage, usageForAll } from "./usage/index.js";
 import { info, mask, paint, success, warn } from "./ui/log.js";
 import { askCopyMcp, askCopyTrust, askProfileName, askProvider, askSharing, askSignIn } from "./ui/profile-wizard.js";
 import { confirmChoice } from "./ui/wizard.js";
@@ -182,10 +183,19 @@ export async function profileSummaries(env) {
   }));
 }
 
+/** What the usage layer needs to look each of these profiles up. */
+function usageRecordsFor(rows) {
+  return rows.map(({ record }) => ({ name: record.name, provider: record.provider, dir: record.dir }));
+}
+
 async function cmdList({ env, options }) {
   const rows = await profileRows(env);
+  // Usage costs a network call per profile, so it happens only when asked for.
+  const usage = options.usage ? await usageForAll(usageRecordsFor(rows), { env, force: Boolean(options.force) }) : null;
   if (options.json) {
-    process.stdout.write(`${JSON.stringify(await profileSummaries(env), null, 2)}\n`);
+    const summaries = await profileSummaries(env);
+    const payload = usage ? summaries.map((row) => ({ ...row, usage: usage[row.name] ?? null })) : summaries;
+    process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     return EXIT.OK;
   }
   if (rows.length === 0) {
@@ -204,6 +214,10 @@ async function cmdList({ env, options }) {
     process.stdout.write(
       `${record.name.padEnd(width)}  ${record.provider.padEnd(9)} ${account.padEnd(accountWidth)}  ${grey(`shares ${describeShare(record.share)}`)}\n`,
     );
+    // A second line rather than a wider one: an account plus an organization
+    // plus three percentages does not fit in 80 columns.
+    const numbers = usage ? formatUsage(usage[record.name]) : "";
+    if (numbers) process.stdout.write(`${" ".repeat(width + 2)}${grey(numbers)}\n`);
   }
   return EXIT.OK;
 }

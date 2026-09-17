@@ -22,6 +22,9 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y shellcheck
       - run: npm ci
       - run: npm run lint
+      # The vsix is a committed build artefact; this is what notices when it
+      # falls behind its sources.
+      - run: npm run check:extension
       - run: npm audit --omit=dev --audit-level=high
 
   test:

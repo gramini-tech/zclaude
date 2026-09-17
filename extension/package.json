@@ -1,0 +1,55 @@
+{
+  "name": "zclaude",
+  "displayName": "zclaude",
+  "description": "Switch the Claude Code account from the status bar, with each plan's remaining usage.",
+  "version": "0.1.0",
+  "publisher": "vipincr",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vipincr/zclaude.git"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "claude",
+    "claude code",
+    "accounts",
+    "profiles"
+  ],
+  "main": "./src/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "zclaude.pick",
+        "title": "zclaude: Switch the Claude Code account"
+      },
+      {
+        "command": "zclaude.refresh",
+        "title": "zclaude: Refresh usage"
+      }
+    ],
+    "configuration": {
+      "title": "zclaude",
+      "properties": {
+        "zclaude.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the zclaude command. Leave empty to find it on PATH and in the usual install locations."
+        },
+        "zclaude.showUsage": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show each account's remaining 5-hour, weekly and per-model usage in the list."
+        }
+      }
+    }
+  }
+}

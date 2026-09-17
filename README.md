@@ -44,14 +44,17 @@ The installer uses the Node.js already on your machine when it is 20.17 or newer
 missing or older does it download an official build into `~/.zclaude/node` for zclaude alone
 (checksum-verified against nodejs.org); a system Node is never replaced or upgraded. It then puts
 zclaude in `~/.zclaude/app`, links `~/.local/bin/zclaude`, adds `~/.local/bin` to your shell PATH,
-and runs Anthropic's Claude Code installer if `claude` is missing. Re-running it updates zclaude in
+and runs Anthropic's Claude Code installer if `claude` is missing. When it finds VS Code it offers
+the status bar item, and when there is an Anthropic profile already it offers the token renewal;
+both install silently when there is no terminal to ask on. Re-running it updates zclaude in
 place; `curl -fsSL https://vipincr.github.io/zclaude/install | bash -s -- --uninstall` removes
 everything: the app, the private Node, the command, the PATH line it added, `~/.zclaude`, the
 stored Z.ai keys and the Claude Code login of each profile. Add `--keep-config` to keep `~/.zclaude`. Knobs: `ZCLAUDE_INSTALL_REF` (git ref,
 default `main`), `ZCLAUDE_INSTALL_DIR`, `ZCLAUDE_BIN_DIR`, `ZCLAUDE_NODE_VERSION` (default 22),
 `ZCLAUDE_INSTALL_FORCE_NODE=1` (private Node even if one exists), `ZCLAUDE_INSTALL_NO_CLAUDE=1`,
-`ZCLAUDE_INSTALL_NO_RC=1` (do not touch rc files), `ZCLAUDE_INSTALL_SOURCE` (a local checkout or
-`.tgz` for offline installs).
+`ZCLAUDE_INSTALL_NO_RC=1` (do not touch rc files), `ZCLAUDE_INSTALL_NO_VSIX=1` (skip the VS Code
+item), `ZCLAUDE_INSTALL_NO_RENEW=1` (skip the token renewal), `ZCLAUDE_INSTALL_SOURCE` (a local
+checkout or `.tgz` for offline installs).
 
 **Node.js already installed:**
 
@@ -330,6 +333,37 @@ there stays `zclaude <profile>`.
 A Claude Code session that is already running keeps the credential it read at startup; on macOS that
 cache lasts about half a minute, so a switch reaches a live session shortly rather than instantly.
 
+## The VS Code status bar item
+
+`zc` in the status bar, with the account that is signed in beside it. Clicking it opens the same list
+of profiles the terminal shows, with each account's usage, and picking one runs the switch above.
+
+```sh
+zclaude vscode install      # into every editor found on this machine
+zclaude vscode status       # which have it, at which version
+zclaude vscode uninstall    # take it out again
+```
+
+The installer offers this when it finds an editor, and installs it without asking when there is no
+terminal to ask on (a `curl | bash`). Set `ZCLAUDE_INSTALL_NO_VSIX=1` to skip it. "VS Code" means
+anything that speaks the `code` CLI: VS Code, Insiders, Cursor, Windsurf and VSCodium are each
+found and installed separately, on PATH and in the usual application directories. A new window, or
+Developer: Reload Window, picks it up.
+
+The list also adds a profile (in a terminal, since signing in needs a browser), removes one behind a
+confirmation, restores the previous global login, and re-fetches usage. That last one matters more
+than it sounds: percentages go stale while a list sits open, and it is the retry when the usage API
+was rate limited or unreachable.
+
+The extension holds no credential logic. It finds `zclaude`, shells out to it asking for `--json`,
+and renders the answer, so every Keychain read, every backup and every write to `~/.claude.json`
+happens in one place with one set of tests. If VS Code was started from the dock on macOS its PATH is
+not your shell's, so the extension also looks in `~/.local/bin`, `~/bin`, `~/.zclaude/app`, the npm
+global bin and Homebrew; the `zclaude.path` setting covers anywhere else.
+
+The packaged `extension/zclaude.vsix` is committed to this repository and ships inside the npm
+package, which is the whole distribution story for now. It is not on the Marketplace yet.
+
 ## Keeping tokens alive
 
 A profile you launch often looks after itself: Claude Code refreshes its token as it works. A profile
@@ -485,6 +519,9 @@ zclaude renew status [--json]              is the renewal job scheduled, and wha
 zclaude renew install                      schedule the renewal
 zclaude renew uninstall                    remove the schedule
 zclaude renew run                          renew now; this is what the scheduler calls
+zclaude vscode install                     put the status bar item into the editors found here
+zclaude vscode uninstall                   take it out again
+zclaude vscode status [--json]             which editors have it, and at which version
 zclaude login                              sign in to Z.ai now, then offer to launch
 zclaude logout                             forget the stored Z.ai key
 zclaude status                             what would happen on the next launch
@@ -495,37 +532,37 @@ zclaude self-install | self-update | self-uninstall
 
 All zclaude options go before any argument meant for `claude`.
 
-| Option                                  | Effect                                                                   |
-| --------------------------------------- | ------------------------------------------------------------------------ |
-| `--profile <name>`                      | the same as naming the profile first; useful in scripts and aliases      |
-| `--provider <anthropic\|zai>`           | `profile add`: what the profile signs in to                              |
-| `--share <all\|config\|history\|none>`  | `profile add`: what it borrows from your main setup                      |
-| `--sso`, `--console`, `--email <addr>`  | passed to `claude auth login` for an Anthropic profile                   |
-| `--yes`                                 | `profile remove`: do not ask                                             |
-| `--fix`                                 | `profile doctor`: relink what it can                                     |
-| `--force`                               | `self-update`: install even when the check says you are current          |
-| `--switch <name>`                       | the same as `zclaude switch <name>`                                      |
-| `--dry-run`                             | `switch`: say what would change, change nothing                          |
-| `--status`                              | `switch`: report the account in the global slot                          |
-| `--restore`                             | `switch`: put the previous global login back                             |
-| `--usage`                               | `profile list`: fetch how much of each plan is used                      |
-| `--no-usage`                            | menu: skip the usage lookup and its network calls                        |
-| `--reconfigure`, `--customize`          | run the model wizard even when config exists                             |
-| `--login`                               | sign in to Z.ai again before launching                                   |
-| `--model <id>`                          | primary model for a Z.ai profile; forwarded to `claude` otherwise        |
-| `--subagent-model <id>`                 | subagent model (`CLAUDE_CODE_SUBAGENT_MODEL`)                            |
-| `--fast-model <id>`                     | haiku-class helper model                                                 |
-| `--no-store`                            | keep the key in memory for this session only                             |
-| `--no-browser`, `--paste`               | login: print the URL instead of opening a browser; always paste the code |
-| `--api-key`                             | login: paste a key from the Z.ai console instead of the browser flow     |
-| `--json`                                | `status`, `profile list`, `profile show`, `log`: machine-readable output |
-| `--no-banner`                           | skip the splash                                                          |
-| `--verbose`                             | show each step (use `zclaude -- --verbose` to pass it to `claude`)       |
-| `--quiet`                               | terminal shows only warnings and errors                                  |
-| `--log-level`, `--log-file`, `--no-log` | run-log controls, see "Run logs" below                                   |
-| `--keep-config`                         | `self-uninstall`: keep `~/.zclaude`                                      |
-| `--path`                                | `zclaude log`: print only the log file path                              |
-| `--help`, `--version`                   | zclaude help and versions (`zclaude -- --help` for claude's own)         |
+| Option                                  | Effect                                                                                       |
+| --------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `--profile <name>`                      | the same as naming the profile first; useful in scripts and aliases                          |
+| `--provider <anthropic\|zai>`           | `profile add`: what the profile signs in to                                                  |
+| `--share <all\|config\|history\|none>`  | `profile add`: what it borrows from your main setup                                          |
+| `--sso`, `--console`, `--email <addr>`  | passed to `claude auth login` for an Anthropic profile                                       |
+| `--yes`                                 | `profile remove`: do not ask                                                                 |
+| `--fix`                                 | `profile doctor`: relink what it can                                                         |
+| `--force`                               | `self-update`: install anyway; `profile list --usage`: skip the cache                        |
+| `--switch <name>`                       | the same as `zclaude switch <name>`                                                          |
+| `--dry-run`                             | `switch`: say what would change, change nothing                                              |
+| `--status`                              | `switch`: report the account in the global slot                                              |
+| `--restore`                             | `switch`: put the previous global login back                                                 |
+| `--usage`                               | `profile list`: fetch how much of each plan is used                                          |
+| `--no-usage`                            | menu: skip the usage lookup and its network calls                                            |
+| `--reconfigure`, `--customize`          | run the model wizard even when config exists                                                 |
+| `--login`                               | sign in to Z.ai again before launching                                                       |
+| `--model <id>`                          | primary model for a Z.ai profile; forwarded to `claude` otherwise                            |
+| `--subagent-model <id>`                 | subagent model (`CLAUDE_CODE_SUBAGENT_MODEL`)                                                |
+| `--fast-model <id>`                     | haiku-class helper model                                                                     |
+| `--no-store`                            | keep the key in memory for this session only                                                 |
+| `--no-browser`, `--paste`               | login: print the URL instead of opening a browser; always paste the code                     |
+| `--api-key`                             | login: paste a key from the Z.ai console instead of the browser flow                         |
+| `--json`                                | `status`, `profile list`, `profile show`, `switch`, `vscode`, `log`: machine-readable output |
+| `--no-banner`                           | skip the splash                                                                              |
+| `--verbose`                             | show each step (use `zclaude -- --verbose` to pass it to `claude`)                           |
+| `--quiet`                               | terminal shows only warnings and errors                                                      |
+| `--log-level`, `--log-file`, `--no-log` | run-log controls, see "Run logs" below                                                       |
+| `--keep-config`                         | `self-uninstall`: keep `~/.zclaude`                                                          |
+| `--path`                                | `zclaude log`: print only the log file path                                                  |
+| `--help`, `--version`                   | zclaude help and versions (`zclaude -- --help` for claude's own)                             |
 
 ## Configuration
 
@@ -584,6 +621,8 @@ MY_TEAM_MCP_TOKEN=...
 | `ZCLAUDE_NO_USAGE=1`                                                                                                                                 | never look up plan usage for the menu                                                                             |
 | `ZCLAUDE_ALLOW_SETTINGS_OVERRIDE=1`                                                                                                                  | launch even when a settings `env` block overrides this session                                                    |
 | `ZCLAUDE_NO_UPDATE_CHECK=1`                                                                                                                          | skip the daily check for a newer version                                                                          |
+| `ZCLAUDE_INSTALL_NO_VSIX=1`                                                                                                                          | installer: do not offer or install the VS Code status bar item                                                    |
+| `ZCLAUDE_INSTALL_NO_RENEW=1`                                                                                                                         | installer: do not offer or install the background token renewal                                                   |
 | `ZCLAUDE_INSTALL_KIND`                                                                                                                               | force how `self-update` and `self-uninstall` work: `installer`, `npm` or `checkout`                               |
 | `ZCLAUDE_LOGIN_TIMEOUT`                                                                                                                              | seconds to wait for the browser (default 300)                                                                     |
 | `ZCLAUDE_KEY_NAME`                                                                                                                                   | name of the key minted on your Z.ai account (default `zclaude`)                                                   |
