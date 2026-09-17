@@ -10,7 +10,7 @@
 const { execFile } = require("node:child_process");
 const { accessSync, constants } = require("node:fs");
 const { homedir } = require("node:os");
-const { join } = require("node:path");
+const { dirname, join } = require("node:path");
 
 const TIMEOUT_MS = 20_000;
 
@@ -56,10 +56,44 @@ function findBinary(options = {}) {
   return null;
 }
 
+/**
+ * The PATH to run zclaude with.
+ *
+ * zclaude is a Node script starting `#!/usr/bin/env node`, so running it needs
+ * node on PATH — and an editor launched from the dock on macOS has
+ * `/usr/bin:/bin:/usr/sbin:/sbin`, which has no node on any machine using
+ * Homebrew, nvm, volta or fnm. Every call then fails with
+ * "env: node: No such file or directory" and the item can say nothing useful.
+ *
+ * The binary's own directory goes first: a tool installed by npm sits beside
+ * the node that installed it. Then the usual places a node ends up.
+ */
+function pathFor(binary, env, platform) {
+  if (platform === "win32") return env.PATH;
+  const home = env.HOME || homedir();
+  const extra = [
+    binary ? dirname(binary) : null,
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    join(home, ".local", "bin"),
+    join(home, ".volta", "bin"),
+    join(home, ".zclaude", "node", "bin"),
+  ].filter(Boolean);
+  const current = String(env.PATH || "")
+    .split(":")
+    .filter(Boolean);
+  return [...new Set([...current, ...extra])].join(":");
+}
+
 /** Run zclaude and return its output; never throws for a non-zero exit. */
-function run(binary, args, { env = process.env, timeoutMs = TIMEOUT_MS, execFileImpl = execFile } = {}) {
+function run(
+  binary,
+  args,
+  { env = process.env, timeoutMs = TIMEOUT_MS, execFileImpl = execFile, platform = process.platform } = {},
+) {
+  const childEnv = { ...env, PATH: pathFor(binary, env, platform) };
   return new Promise((resolve) => {
-    execFileImpl(binary, args, { env, timeout: timeoutMs, windowsHide: true }, (error, stdout, stderr) => {
+    execFileImpl(binary, args, { env: childEnv, timeout: timeoutMs, windowsHide: true }, (error, stdout, stderr) => {
       resolve({ ok: !error, code: error?.code ?? 0, stdout: String(stdout ?? ""), stderr: String(stderr ?? "") });
     });
   });
@@ -82,4 +116,4 @@ async function version(binary, options = {}) {
   return result.stdout.match(/zclaude (\d+\.\d+\.\d+)/u)?.[1] ?? null;
 }
 
-module.exports = { candidatePaths, findBinary, run, runJson, version };
+module.exports = { candidatePaths, findBinary, pathFor, run, runJson, version };

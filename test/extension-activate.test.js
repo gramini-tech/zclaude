@@ -308,11 +308,36 @@ describe("the extension in a window", () => {
     assert.deepEqual(loaded.recorded.terminals[0].sent, ["/fake/zclaude self-update"]);
   });
 
-  it("hides the status bar item when zclaude is not installed", async () => {
+  // The bug this replaces: the item was shown only after two subprocess calls
+  // and never on an error path, so a machine where either failed got no status
+  // bar item at all and nothing to click to find out why.
+  it("is on screen before it has asked zclaude anything", () => {
+    const loaded = loadExtension(answers());
+    loaded.extension.activate({ subscriptions: [] });
+    assert.equal(loaded.vscode.window.statusBar.shown, true, "shown synchronously, not after the first await");
+    assert.equal(loaded.vscode.window.statusBar.text, "$(account) zc");
+  });
+
+  it("stays on screen, saying so, when zclaude cannot be found", async () => {
     const loaded = loadExtension({ ...answers(), binary: null });
-    loaded.vscode.window.statusBar.shown = true; // so hiding it is a real change
     loaded.extension.activate({ subscriptions: [] });
     await settle();
-    assert.equal(loaded.vscode.window.statusBar.shown, false);
+    assert.equal(loaded.vscode.window.statusBar.shown, true, "a missing item leaves nothing to diagnose");
+    assert.match(loaded.vscode.window.statusBar.text, /warning/u);
+    assert.match(loaded.vscode.window.statusBar.tooltip.value, /was not found/u);
+  });
+
+  it("stays on screen when asking zclaude fails outright", async () => {
+    const loaded = loadExtension({
+      ...answers(),
+      json: () => {
+        throw new Error("the Keychain said no");
+      },
+    });
+    loaded.extension.activate({ subscriptions: [] });
+    await settle();
+    await settle();
+    assert.equal(loaded.vscode.window.statusBar.shown, true);
+    assert.match(loaded.vscode.window.statusBar.text, /warning/u);
   });
 });

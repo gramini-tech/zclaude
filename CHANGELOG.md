@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.2.28
+
+Two fixes for a status bar item that was installed, active, and useless.
+
+- **The extension could not run zclaude at all when VS Code was started from
+  the dock.** zclaude is a Node script beginning `#!/usr/bin/env node`, and a
+  GUI-launched editor on macOS has `PATH=/usr/bin:/bin:/usr/sbin:/sbin`, which
+  has no node on any machine using Homebrew, nvm, volta or fnm. Every call came
+  back "env: node: No such file or directory". The extension now runs zclaude
+  with the binary's own directory on PATH — npm installs a tool beside the node
+  that installed it — plus the usual places a node ends up.
+- **The item appeared only after two subprocess calls had succeeded**, and was
+  never shown at all if either failed, with the error swallowed. It is now on
+  screen synchronously when the extension activates, and stays there saying
+  something is wrong rather than vanishing, with the reason in the zclaude
+  output channel.
+
+Extension 0.3.1.
+
 ## 0.2.26
 
 Knowing which accounts are already in use.

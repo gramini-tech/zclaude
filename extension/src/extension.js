@@ -73,17 +73,41 @@ async function readUsage(force) {
   return Object.fromEntries(data.filter((entry) => entry.usage).map((entry) => [entry.name, entry.usage]));
 }
 
+/**
+ * Update the item's text. It is already on screen by the time this runs, and it
+ * stays there whatever happens here.
+ *
+ * An earlier version called show() only after asking zclaude for its version
+ * and its status, and swallowed any error on the way — so a machine where
+ * either call failed got no status bar item at all and no way to find out why.
+ * A badge that says something is wrong beats one that is not there.
+ */
 async function refreshStatusBar() {
   if (!item) return;
+  item.show();
   if (!locate()) {
-    item.hide();
+    item.text = "$(account) zc $(warning)";
+    item.tooltip = new vscode.MarkdownString(
+      ["**zclaude** was not found.", "", "Install it, or set `zclaude.path`.", "", "Click for the settings."].join(
+        "\n",
+      ),
+    );
     return;
   }
-  const installed = await zclaudeVersion();
-  const { status } = isSupported(installed) ? await readStatus() : { status: null };
-  item.text = statusBarText(status, installed);
-  item.tooltip = new vscode.MarkdownString(tooltip(status, null, installed));
-  item.show();
+  try {
+    const installed = await zclaudeVersion();
+    const { status, error } = isSupported(installed) ? await readStatus() : { status: null, error: null };
+    if (error) log(`zclaude switch --status: ${error}`);
+    item.text = statusBarText(status, installed);
+    item.tooltip = new vscode.MarkdownString(tooltip(status, null, installed));
+  } catch (error) {
+    // Whatever went wrong, the item stays, saying so.
+    log(`could not read the account: ${error.message}`);
+    item.text = "$(account) zc $(warning)";
+    item.tooltip = new vscode.MarkdownString(
+      ["**zclaude** could not be asked which account is signed in.", "", "See the zclaude output channel."].join("\n"),
+    );
+  }
 }
 
 /** The list. It opens immediately and fills in usage as answers arrive. */
@@ -206,6 +230,10 @@ function activate(context) {
   item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   item.command = "zclaude.pick";
   item.text = "$(account) zc";
+  item.tooltip = "zclaude — click to switch the Claude Code account";
+  // Visible before anything is asked of the disk or of zclaude. Nothing below
+  // this line is allowed to decide whether the item exists.
+  item.show();
   context.subscriptions.push(
     item,
     vscode.commands.registerCommand("zclaude.pick", () => pick(false)),

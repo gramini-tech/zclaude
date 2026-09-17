@@ -2,7 +2,7 @@
   "name": "zclaude",
   "displayName": "zclaude",
   "description": "Switch the Claude Code account from the status bar, with each plan's remaining usage.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "vipincr",
   "license": "MIT",
   "repository": {

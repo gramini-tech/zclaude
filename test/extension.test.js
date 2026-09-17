@@ -293,6 +293,49 @@ describe("finding zclaude", () => {
   });
 });
 
+// The bug this guards: an editor launched from the dock on macOS has
+// PATH=/usr/bin:/bin:/usr/sbin:/sbin, which has no node on any machine using
+// Homebrew, nvm, volta or fnm. zclaude starts `#!/usr/bin/env node`, so every
+// call failed with "env: node: No such file or directory" and the status bar
+// had nothing to report.
+describe("running it where node can be found", () => {
+  const dock = { PATH: "/usr/bin:/bin:/usr/sbin:/sbin", HOME: "/Users/x" };
+
+  it("puts the binary's own directory first, since npm installs node beside it", () => {
+    const path = new Set(cli.pathFor("/opt/homebrew/bin/zclaude", dock, "darwin").split(":"));
+    assert.ok(path.has("/opt/homebrew/bin"));
+    assert.ok(path.has("/usr/bin"), "the editor's own PATH is kept, not replaced");
+  });
+
+  it("adds the places a node ends up on a Mac", () => {
+    const path = new Set(cli.pathFor("/somewhere/zclaude", dock, "darwin").split(":"));
+    for (const dir of ["/opt/homebrew/bin", "/usr/local/bin", "/Users/x/.local/bin", "/Users/x/.volta/bin"]) {
+      assert.ok(path.has(dir), `${dir} is missing`);
+    }
+    assert.ok(path.has("/Users/x/.zclaude/node/bin"), "the private node the installer can download");
+  });
+
+  it("never repeats a directory already on PATH", () => {
+    const path = cli.pathFor("/usr/local/bin/zclaude", { PATH: "/usr/local/bin:/usr/bin", HOME: "/Users/x" }, "darwin");
+    const entries = path.split(":");
+    assert.equal(new Set(entries).size, entries.length);
+  });
+
+  it("leaves Windows alone, where the shebang is not how anything starts", () => {
+    assert.equal(cli.pathFor("C:\\bin\\zclaude.cmd", { PATH: "C:\\windows" }, "win32"), "C:\\windows");
+  });
+
+  it("hands that PATH to the child", async () => {
+    let handed = null;
+    const execFileImpl = (bin, args, options, callback) => {
+      handed = options.env.PATH;
+      callback(null, "", "");
+    };
+    await cli.run("/opt/homebrew/bin/zclaude", ["--version"], { env: dock, execFileImpl, platform: "darwin" });
+    assert.ok(handed.includes("/opt/homebrew/bin"));
+  });
+});
+
 describe("talking to zclaude", () => {
   const fake = (result) => (bin, args, options, callback) =>
     callback(result.error ?? null, result.stdout ?? "", result.stderr ?? "");
