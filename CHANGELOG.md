@@ -21,7 +21,15 @@ Two fixes for a status bar item that was installed, active, and useless.
   as `$(account) vipinr`, which in a row of other extensions' icons looks like
   somebody's username and says nothing about what put it there.
 
-Extension 0.3.2.
+- **"Switching Claude Code to …" stayed on screen after the switch had
+  finished.** The success notification was awaited inside the progress scope,
+  and `showInformationMessage` resolves when the notification is *dismissed*,
+  not when it appears — so the progress sat there until you clicked the message
+  away. Messages now come after the progress closes, and nothing that waits on a
+  person happens inside it. The switch itself takes about a fifth of a second,
+  so it reports progress in the status bar rather than in a popup.
+
+Extension 0.3.3.
 
 - **A profile whose account also holds the global login went stale on its own.**
   Claude Code refreshes the token in the slot as it works and the server rotates

@@ -162,39 +162,40 @@ function act(chosen, { profiles, active }) {
 async function switchTo(name, profiles) {
   const profile = profiles.find((entry) => entry.name === name);
   if (profile?.provider === "zai") {
-    await vscode.window.showInformationMessage(
+    tell(
       `"${name}" is a Z.ai plan. Its login only reaches Claude Code through the environment, so run \`zclaude ${name}\` in a terminal.`,
     );
     return;
   }
-  await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: `Switching Claude Code to "${name}"` },
-    async () => {
-      const result = await run(binary, ["switch", name, "--yes"]);
-      if (!result.ok) {
-        log(result.stderr || result.stdout);
-        await vscode.window
-          .showErrorMessage(`Could not switch to "${name}". See the zclaude output for why.`, "Show")
-          .then((choice) => (choice === "Show" ? output?.show() : undefined));
-        return;
-      }
-      await refreshStatusBar();
-      await vscode.window.showInformationMessage(
-        `Claude Code is now signed in as "${name}". A session already running keeps its own login briefly.`,
-      );
-    },
+  // Window rather than Notification: the switch takes well under a second, and
+  // a notification that pops up and vanishes for that is noise. Nothing that
+  // waits on a person goes inside — see tell().
+  const result = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Window, title: `zclaude: switching to ${name}` },
+    () => run(binary, ["switch", name, "--yes"]),
   );
+  if (!result.ok) {
+    log(result.stderr || result.stdout);
+    const choice = await vscode.window.showErrorMessage(`Could not switch to "${name}".`, "Show why");
+    if (choice === "Show why") output?.show();
+    return;
+  }
+  await refreshStatusBar();
+  tell(`Claude Code is now signed in as "${name}". A session already running keeps its own login briefly.`);
 }
 
 async function restore() {
-  const result = await run(binary, ["switch", "--restore", "--yes"]);
+  const result = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Window, title: "zclaude: restoring the previous login" },
+    () => run(binary, ["switch", "--restore", "--yes"]),
+  );
   if (result.ok) {
     await refreshStatusBar();
-    await vscode.window.showInformationMessage("The previous Claude Code login is back.");
+    tell("The previous Claude Code login is back.");
     return;
   }
   log(result.stderr || result.stdout);
-  await vscode.window.showErrorMessage("Nothing to restore, or the restore failed. See the zclaude output.");
+  tell("Nothing to restore, or the restore failed. See the zclaude output.", "error");
 }
 
 /** Signing in needs a browser and a terminal, so this opens one. */
@@ -219,6 +220,19 @@ async function removeProfile(profiles) {
   const result = await run(binary, ["profile", "remove", name, "--yes"]);
   if (!result.ok) log(result.stderr || result.stdout);
   await refreshStatusBar();
+}
+
+/**
+ * Say something, without waiting to be acknowledged.
+ *
+ * showInformationMessage resolves when the notification is dismissed, not when
+ * it appears. Awaiting one inside withProgress held the progress notification
+ * open until the person clicked the message away — reported as a stuck
+ * "Switching Claude Code to max" long after the switch had finished.
+ */
+function tell(message, kind = "info") {
+  const show = kind === "error" ? vscode.window.showErrorMessage : vscode.window.showInformationMessage;
+  Promise.resolve(show(message)).catch(() => {});
 }
 
 function log(text) {

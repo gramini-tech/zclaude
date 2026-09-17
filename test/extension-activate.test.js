@@ -19,7 +19,7 @@ const settle = () =>
 
 /** Just enough VS Code, recording what the extension did with it. */
 function stubVscode() {
-  const recorded = { messages: [], terminals: [], commands: new Map(), pickers: [] };
+  const recorded = { messages: [], terminals: [], commands: new Map(), pickers: [], progress: [] };
   const disposable = () => ({ dispose() {} });
   const statusBar = { text: "", tooltip: null, command: null, shown: false, show() {}, hide() {}, dispose() {} };
   statusBar.show = () => {
@@ -100,7 +100,15 @@ function stubVscode() {
         recorded.messages.push(text);
       },
       showQuickPick: async (choices) => choices[0],
-      withProgress: async (options, task) => task(),
+      withProgress: async (options, task) => {
+        recorded.progress.push({ options, open: true });
+        const entry = recorded.progress.at(-1);
+        try {
+          return await task();
+        } finally {
+          entry.open = false;
+        }
+      },
       onDidChangeWindowState: () => disposable(),
     },
     commands: {
@@ -221,6 +229,42 @@ describe("the extension in a window", () => {
     await pickAndChoose(loaded, (row) => row.profile === "home");
     assert.deepEqual(loaded.ran, [["switch", "home", "--yes"]]);
     assert.match(loaded.recorded.messages.at(-1), /signed in as "home"/u);
+  });
+
+  // The bug this replaces: the success notification was awaited inside
+  // withProgress, and showInformationMessage resolves when the notification is
+  // dismissed — so "Switching Claude Code to max" stayed on screen until the
+  // person clicked the message away, long after the switch had finished.
+  it("closes the progress before it says anything, not after", async () => {
+    const loaded = loadExtension(answers());
+    // A notification nobody ever dismisses, which is the pathological case: the
+    // old code awaited this inside withProgress and never came back.
+    loaded.vscode.window.showInformationMessage = (text) => {
+      loaded.recorded.messages.push(text);
+      return new Promise(() => {});
+    };
+    loaded.extension.activate({ subscriptions: [] });
+    // Bounded, so a regression fails here rather than hanging the run.
+    const done = await Promise.race([
+      pickAndChoose(loaded, (row) => row.profile === "home").then(() => "finished"),
+      new Promise((resolve) => {
+        setTimeout(() => resolve("still waiting"), 500).unref?.();
+      }),
+    ]);
+    assert.equal(done, "finished", "the switch is still waiting for somebody to dismiss a notification");
+    const progress = loaded.recorded.progress.at(-1);
+    assert.ok(progress, "the switch reported no progress at all");
+    assert.equal(progress.open, false, "the progress is still up while a message waits to be dismissed");
+    assert.match(loaded.recorded.messages.at(-1), /signed in as "home"/u);
+  });
+
+  it("reports progress where a sub-second job belongs, not in a popup", async () => {
+    const loaded = loadExtension(answers());
+    loaded.extension.activate({ subscriptions: [] });
+    await pickAndChoose(loaded, (row) => row.profile === "home");
+    const { options } = loaded.recorded.progress.at(-1);
+    assert.equal(options.location, loaded.vscode.ProgressLocation.Window);
+    assert.match(options.title, /switching to home/u);
   });
 
   it("does nothing when the profile picked is the one already signed in", async () => {
