@@ -84,9 +84,9 @@ describe("the bar in the hover", () => {
   // only way to draw one in the one anchored surface an extension has.
   it("fills in proportion to the number", () => {
     const cells = (text, colour) => (text.match(new RegExp(`${colour};">(\\u{2007}+)`, "u"))?.[1] ?? "").length;
-    assert.equal(cells(items.bar(0), "#6e768166"), 8, "nothing spent is an empty track");
-    assert.equal(cells(items.bar(50), "#3fb950"), 4);
-    assert.equal(cells(items.bar(100), "#f85149"), 8);
+    assert.equal(cells(items.bar(0), "#6e768166"), 6, "nothing spent is an empty track");
+    assert.equal(cells(items.bar(50), "#3fb950"), 3);
+    assert.equal(cells(items.bar(100), "#f85149"), 6);
   });
 
   it("shows a cell for anything spent at all, so 5% is not an empty bar", () => {
@@ -95,8 +95,8 @@ describe("the bar in the hover", () => {
   });
 
   it("clamps rather than overflowing on a number outside the range", () => {
-    assert.equal([...items.bar(140).matchAll(/\u{2007}/gu)].length, 8);
-    assert.equal([...items.bar(-5).matchAll(/\u{2007}/gu)].length, 8);
+    assert.equal([...items.bar(140).matchAll(/\u{2007}/gu)].length, 6);
+    assert.equal([...items.bar(-5).matchAll(/\u{2007}/gu)].length, 6);
   });
 
   it("colours by how close the window is to stopping you", () => {
@@ -263,7 +263,7 @@ describe("when a window comes back", () => {
       now: NOW,
     });
     assert.match(text, /background-color:#d29922;/u, "78% is in the warning band");
-    assert.match(text, /&nbsp;78%<br>2h/u);
+    assert.match(text, /&nbsp;78%&nbsp;&nbsp;2h/u);
   });
 });
 
@@ -302,13 +302,17 @@ describe("the hover panel", () => {
   it("lays the accounts out as a table, which is what a hover can render", () => {
     const text = panel();
     assert.match(text, /<table>/u);
-    for (const label of ["5 hours", "week", "Fable"]) assert.match(text, new RegExp(`<th>${label}</th>`, "u"));
+    for (const label of ["5 hours", "week", "Fable"]) assert.match(text, new RegExp(`<th>${label}`, "u"));
   });
 
   it("gives every window a bar and a reset, and a missing one a dash", () => {
     const text = panel();
-    assert.match(text, /&nbsp;66%<br>1h/u, "the bar, the number and when it comes back");
-    assert.match(text, /<td>–<\/td>/u, "chinese has no Fable window");
+    // One line per cell: a <br> here made the usage cells two lines tall while
+    // the name beside them was one, and a hover cell cannot be told how to
+    // align, so the rows came out ragged.
+    assert.match(text, /&nbsp;66%&nbsp;&nbsp;1h/u, "the bar, the number and the clock, on one line");
+    assert.doesNotMatch(text, /<br>/u);
+    assert.match(text, /<td>–(&nbsp;)*<\/td>/u, "chinese has no Fable window");
   });
 
   it("offers switch as a command link, on the accounts that can take one", () => {
@@ -324,7 +328,7 @@ describe("the hover panel", () => {
   });
 
   it("counts sessions in their own column", () => {
-    assert.match(panel({ busy: { max: { total: 2, working: 1 } } }), /<td>2 active<\/td>/u);
+    assert.match(panel({ busy: { max: { total: 2, working: 1 } } }), /<td>2 active(&nbsp;)*<\/td>/u);
   });
 
   it("says why a row has no numbers instead of drawing an empty bar", () => {

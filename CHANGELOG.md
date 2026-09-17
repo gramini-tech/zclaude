@@ -19,6 +19,11 @@ API to open a hover on command.
 - The editor tab is gone. A webview panel could draw the UI but not sit where
   it belonged.
 - Fixed: a window 59 minutes from resetting said "60m".
+- Each cell in the hover's table is one line. The reset used to sit under its
+  percentage, which made the usage cells two lines tall while the name beside
+  them was one; a hover cell cannot be told how to align vertically — there is
+  no `valign`, and `style` only reaches a `span` — so the rows came out ragged.
+  The bars are six cells rather than eight, since the clock now shares the line.
 
 Extension 0.6.0.
 

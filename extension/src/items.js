@@ -207,7 +207,7 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
-const CELLS = 8;
+const CELLS = 6;
 
 /**
  * A bar, drawn as two coloured spans.
@@ -230,12 +230,27 @@ function bar(pct) {
   return `${block(filled, COLOURS[severity(pct)])}${block(CELLS - filled, COLOURS.track)}`;
 }
 
-/** One window: the bar, the number, and when it comes back. */
+/**
+ * A gutter, since a hover's table cells sit flush against each other and the
+ * sanitiser allows no padding: `style` is only honoured on a span, and only for
+ * colour, display and border-radius.
+ */
+const GUTTER = "&nbsp;&nbsp;";
+
+/**
+ * One window on one line: the bar, the number, and when it comes back.
+ *
+ * One line, not two. A `<br>` before the reset made the usage cells two lines
+ * tall while the name beside them was one, and there is no way to say how a
+ * cell should align vertically — no `valign`, and `style` does not reach a
+ * `<td>` — so the rows came out ragged. Every cell being one line is the only
+ * way to make them sit level.
+ */
 function windowCell(window, now) {
-  if (!window) return "<td>–</td>";
+  if (!window) return `<td>–${GUTTER}</td>`;
   const pct = Math.round(window.pct);
   const left = countdown(window.resetsAt, now);
-  return `<td>${bar(pct)}&nbsp;${pct}%${left ? `<br>${escapeHtml(left)}` : ""}</td>`;
+  return `<td>${bar(pct)}&nbsp;${pct}%${left ? `&nbsp;&nbsp;${escapeHtml(left)}` : ""}${GUTTER}</td>`;
 }
 
 /** A command link, which a trusted hover renders as a clickable word. */
@@ -297,7 +312,7 @@ function hoverPanel({ status, profiles = [], usage = {}, busy = {}, version, now
 /** The table itself, as HTML, because a hover renders one and nothing else does. */
 function accountTable({ profiles, usage, busy, active, now }) {
   const names = windowNames(profiles, usage);
-  const head = ["", ...names, "", ""].map((name) => `<th>${escapeHtml(name)}</th>`).join("");
+  const head = ["", ...names, "", ""].map((name) => `<th>${escapeHtml(name)}${GUTTER}</th>`).join("");
   const rows = profiles.map((profile) => profileRow({ profile, usage, busy, active, names, now }));
   return `<table><tr>${head}</tr>${rows.join("")}</table>`;
 }
@@ -312,9 +327,9 @@ function profileRow({ profile, usage, busy, active, names, now }) {
   const sessions = counts?.total ? `${counts.total} ${counts.working > 0 ? "active" : "open"}` : "";
   return [
     "<tr>",
-    `<td>${profile.name === active ? '<span class="codicon codicon-check"></span> ' : ""}<b>${escapeHtml(profile.name)}</b></td>`,
+    `<td>${profile.name === active ? '<span class="codicon codicon-check"></span> ' : ""}<b>${escapeHtml(profile.name)}</b>${GUTTER}</td>`,
     cells,
-    `<td>${sessions}</td>`,
+    `<td>${sessions}${GUTTER}</td>`,
     `<td>${actionFor(profile, active)}</td>`,
     "</tr>",
   ].join("");
