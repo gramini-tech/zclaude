@@ -202,36 +202,48 @@ export async function usageFor(record, options = {}) {
   return recordResult(record.name, fetched, { env, now, previous: cache.profiles[record.name] });
 }
 
+/** Numbers worth keeping when the next lookup fails. */
+function hasNumbers(usage) {
+  return Boolean(usage && (usage.fiveHour || usage.weekly || usage.scoped?.length));
+}
+
 /** The cache's answer, when it has one worth giving. */
 function servedFromCache(cache, name, { now, ttlMs, force }) {
   const cached = cache.profiles[name];
   if (!force && cached && now - (cached.fetchedAt ?? 0) < ttlMs) return { ...cached, state: cached.state ?? "ok" };
   if (cache.backoffUntil > now) {
     log.debug("usage", "in backoff, serving cache", { profile: name, until: cache.backoffUntil });
-    return cached ? { ...cached, state: "stale" } : empty("throttled");
+    if (!cached) return empty("throttled");
+    // "stale" means "these numbers are old". An entry with no numbers has a
+    // reason instead, and relabelling it would render as an empty row.
+    return hasNumbers(cached) ? { ...cached, state: "stale" } : cached;
   }
   return null;
 }
 
-/** Numbers worth keeping when the next lookup fails. */
-function hasNumbers(usage) {
-  return Boolean(usage && (usage.fiveHour || usage.weekly || usage.scoped?.length));
-}
+/**
+ * States that settle the question rather than failing to answer it. A profile
+ * that is signed out has no usage, and last week's numbers are not a better
+ * answer than saying so — they are a wrong one that never expires, because the
+ * cache would keep serving them past every later lookup.
+ */
+const DEFINITE = new Set(["unauthorized", "dead"]);
 
 /**
- * Store what came back. Old numbers beat no numbers, so a failed lookup keeps
- * the last good ones and says they are stale. A previous entry that had no
- * numbers either is not worth keeping: marking *that* stale would replace a row
- * that said "sign in to see usage" with a blank one.
+ * Store what came back. Old numbers beat no numbers when the lookup merely
+ * failed, so a timeout or a 429 keeps the last good ones and says they are
+ * stale. A previous entry that had no numbers either is not worth keeping:
+ * marking *that* stale would replace a row that said "sign in to see usage"
+ * with a blank one.
  */
 async function recordResult(name, fetched, { env, now, previous }) {
   const next = await readCache(env);
-  if (fetched.state === "ok") next.profiles[name] = fetched;
+  if (fetched.state === "ok" || DEFINITE.has(fetched.state)) next.profiles[name] = fetched;
   else if (hasNumbers(previous)) next.profiles[name] = { ...previous, state: "stale", detail: fetched.detail ?? null };
   else next.profiles[name] = fetched;
   if (fetched.state === "throttled") next.backoffUntil = now + (fetched.retryAfterMs ?? 60_000);
   await writeCache(next, env);
-  return fetched.state === "ok" ? fetched : (next.profiles[name] ?? fetched);
+  return fetched.state === "ok" || DEFINITE.has(fetched.state) ? fetched : (next.profiles[name] ?? fetched);
 }
 
 /**

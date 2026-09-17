@@ -13,6 +13,12 @@
 - The menu's built-in `Claude Code` row names the account the global login
   currently holds, so a profile for that same account no longer reads as a
   duplicate of it.
+- The usage cache no longer outlives the login it belongs to. Old numbers are
+  worth keeping when a lookup merely fails, and not when it comes back with a
+  definite "signed out" or "login expired" — a cache that kept them would have
+  gone on reporting the borrowed plan above long after its key was removed.
+  Backoff also stops relabelling a row that has a reason rather than numbers,
+  which used to render as a blank line.
 
 ## 0.2.18
 

@@ -17,6 +17,7 @@ import {
   USAGE_URL,
 } from "../src/usage/anthropic.js";
 import { credentialHealth, formatUsage, readCache, usageFor, usageForAll, usagePath } from "../src/usage/index.js";
+import { claudeCredentialService } from "../src/profiles/keychain-name.js";
 import { tempHome } from "./helpers.js";
 
 const NOW = 1_800_000_000_000;
@@ -176,7 +177,6 @@ describe("usage for a profile", () => {
     try {
       const env = { HOME: home.dir, ZCLAUDE_HOME: join(home.dir, ".zclaude"), USER: "tester" };
       const dir = join(home.dir, "profile");
-      const { claudeCredentialService } = await import("../src/profiles/keychain-name.js");
       const blobs = new Map([[claudeCredentialService(dir), JSON.stringify(credential())]]);
       const fetchImpl = fakeFetch(() => Response.json(USAGE_BODY));
 
@@ -217,7 +217,6 @@ describe("usage for a profile", () => {
     try {
       const env = { HOME: home.dir, ZCLAUDE_HOME: join(home.dir, ".zclaude"), USER: "tester" };
       const dir = join(home.dir, "profile");
-      const { claudeCredentialService } = await import("../src/profiles/keychain-name.js");
       const blobs = new Map([[claudeCredentialService(dir), JSON.stringify(credential())]]);
 
       await usageFor(record(dir), {
@@ -248,6 +247,82 @@ describe("usage for a profile", () => {
         force: true,
       });
       assert.equal(duringBackoff.state, "stale");
+    } finally {
+      await home.cleanup();
+    }
+  });
+
+  // What the built-in Z.ai entry did after its borrowed key was removed: the
+  // fetch correctly said "signed out", and the cache went on serving the
+  // numbers from the key it should never have had.
+  it("drops cached numbers once a profile is definitely signed out", async () => {
+    const home = await tempHome();
+    try {
+      const env = { HOME: home.dir, ZCLAUDE_HOME: join(home.dir, ".zclaude"), USER: "tester" };
+      const dir = join(home.dir, "profile");
+      const blobs = new Map([[claudeCredentialService(dir), JSON.stringify(credential())]]);
+      await usageFor(record(dir), {
+        env,
+        fetchImpl: fakeFetch(() => Response.json(USAGE_BODY)),
+        security: keychain(blobs),
+        now: NOW,
+      });
+      // The login goes away, as `zclaude logout` makes it.
+      blobs.clear();
+      const after = await usageFor(record(dir), {
+        env,
+        fetchImpl: fakeFetch(() => Response.json(USAGE_BODY)),
+        security: keychain(blobs),
+        now: NOW + 120_000,
+        force: true,
+      });
+      assert.equal(after.state, "unauthorized");
+      assert.equal(formatUsage(after), "sign in to see usage");
+      const cached = (await readCache(env)).profiles.work;
+      assert.equal(cached.state, "unauthorized");
+      assert.equal(cached.weekly, null, "the old plan's numbers outlived its key");
+    } finally {
+      await home.cleanup();
+    }
+  });
+
+  it("shows why a row has no numbers even while the endpoint is backed off", async () => {
+    const home = await tempHome();
+    try {
+      const env = { HOME: home.dir, ZCLAUDE_HOME: join(home.dir, ".zclaude"), USER: "tester" };
+      const signedOut = record(join(home.dir, "none"));
+      const first = await usageFor(signedOut, {
+        env,
+        security: keychain(new Map()),
+        fetchImpl: fakeFetch(() => Response.json(USAGE_BODY)),
+        now: NOW,
+      });
+      assert.equal(first.state, "unauthorized");
+
+      // Another profile's 429 is what backs the endpoint off for everyone.
+      const busy = join(home.dir, "busy");
+      const busyBlobs = new Map([[claudeCredentialService(busy), JSON.stringify(credential())]]);
+      await usageFor(
+        { name: "busy", provider: "anthropic", dir: busy },
+        {
+          env,
+          security: keychain(busyBlobs),
+          fetchImpl: fakeFetch(() => new Response("{}", { status: 429, headers: { "retry-after": "300" } })),
+          now: NOW + 1000,
+          force: true,
+        },
+      );
+      const served = await usageFor(signedOut, {
+        env,
+        security: keychain(new Map()),
+        fetchImpl: fakeFetch(() => {
+          throw new Error("must not be called during backoff");
+        }),
+        now: NOW + 2000,
+        force: true,
+      });
+      assert.equal(served.state, "unauthorized", "backoff must not relabel a reason as stale numbers");
+      assert.equal(formatUsage(served), "sign in to see usage");
     } finally {
       await home.cleanup();
     }
