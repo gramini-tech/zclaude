@@ -252,9 +252,10 @@
         <p>
           A small extension puts <code>zc</code> in the VS Code status bar with the signed-in account beside it. One
           click lists every profile with its 5-hour, weekly and per-model usage, so you can pick the account that has
-          quota left for the job; the same list adds a profile, removes one, restores the previous login and re-fetches
-          usage. It works in VS Code, Insiders, Cursor, Windsurf and VSCodium, and it holds no credential logic of its
-          own: it asks <code>zclaude</code> for JSON and renders the answer.
+          quota left for the job; a window near its ceiling also carries the time it comes back, in your own time zone.
+          The same list adds a profile, removes one, restores the previous login and re-fetches usage. It works in VS
+          Code, Insiders, Cursor, Windsurf and VSCodium, and it holds no credential logic of its own: it asks
+          <code>zclaude</code> for JSON and renders the answer.
         </p>
 
         <h3>Logins that do not go stale</h3>
@@ -506,6 +507,16 @@ ZCLAUDE_PROFILE=work       # optional: pick a profile for this project</code></p
             through the environment rather than through its credential store, so the only way to make it global would be
             to write your <code>settings.json</code>. zclaude will not do that. Run
             <code>zclaude &lt;profile&gt;</code> in a terminal instead.
+          </p>
+        </details>
+
+        <details>
+          <summary>Can I see when my limit resets?</summary>
+          <p>
+            Yes. The menu, <code>zclaude profile list --usage</code> and the status bar item all show the reset time for
+            any window at half its limit or more &mdash; both as a countdown and as a wall-clock time in your own zone,
+            converted from the UTC the API answers in. A window at 4% is left bare, because a clock on every row buries
+            the numbers. Pay-as-you-go credit shows up on the same line when the account has it switched on.
           </p>
         </details>
 

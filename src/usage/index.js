@@ -16,6 +16,7 @@ import { describeCredential, parseCredential, readCredential, writeCredential } 
 import { loadCredential } from "../store.js";
 import { fetchQuota } from "../zai.js";
 import { fetchUsage, needsRefresh, normaliseUsage, refreshCredential } from "./anthropic.js";
+import { countdown, resetPhrase, resetTime } from "./when.js";
 
 const CACHE_VERSION = 1;
 const DEFAULT_TTL_MS = 60_000;
@@ -63,22 +64,77 @@ const STATE_TEXT = Object.freeze({
   unknown: "",
 });
 
-/** Percentages, as a line a list can show. */
-export function formatUsage(usage) {
+/**
+ * A window a reset time is worth showing for. At 4% nobody is waiting for the
+ * clock, and a row that repeats "resets in 6d" three times buries the numbers
+ * that were the point of it.
+ */
+const PRESSED = 50;
+
+function windowText(label, window, now) {
+  if (!window) return null;
+  const pct = Math.round(window.pct);
+  const left = pct >= PRESSED ? countdown(window.resetsAt, now) : "";
+  return left ? `${label} ${pct}% ⟳${left}` : `${label} ${pct}%`;
+}
+
+/** What is left to spend beyond the plan, when that is switched on. */
+export function formatCredits(credits) {
+  if (!credits) return "";
+  if (credits.enabled) {
+    if (credits.remaining === null) return "credits on";
+    const amount = credits.remaining.toFixed(2);
+    return `credits ${credits.currency === "USD" ? `$${amount}` : `${amount} ${credits.currency ?? ""}`.trim()} left`;
+  }
+  if (credits.spendLimitReached) return "credit limit reached";
+  // A deliberate "off" is not news; running out is.
+  return credits.reason === "out_of_credits" ? "credits spent" : "";
+}
+
+/**
+ * Percentages, as a line a list can show, with the reset clock on whichever
+ * window is close enough to matter.
+ * @param {object | null} usage
+ * @param {number} [now]
+ */
+export function formatUsage(usage, now = Date.now()) {
   if (!usage) return "";
   if (Object.hasOwn(STATE_TEXT, usage.state)) return STATE_TEXT[usage.state];
   const scoped = usage.scoped ?? [];
   const parts = [
-    usage.fiveHour ? `5h ${Math.round(usage.fiveHour.pct)}%` : null,
-    usage.weekly ? `wk ${Math.round(usage.weekly.pct)}%` : null,
-    ...scoped.map((scope) => `${scope.name} ${Math.round(scope.pct)}%`),
+    windowText("5h", usage.fiveHour, now),
+    windowText("wk", usage.weekly, now),
+    ...scoped.map((scope) => windowText(scope.name, scope, now)),
+    formatCredits(usage.credits) || null,
   ].filter(Boolean);
   if (parts.length === 0) return "";
   return usage.state === "stale" ? `${parts.join(" · ")} (cached)` : parts.join(" · ");
 }
 
+/**
+ * Every window with its own reset, for a line with room: `profile show`, the
+ * highlighted row's detail, the extension's hover.
+ * @param {object | null} usage
+ * @param {number} [now]
+ * @param {{locale?: string, timeZone?: string}} [options]
+ * @returns {Array<{label: string, pct: number, resets: string}>}
+ */
+export function usageRows(usage, now = Date.now(), options = {}) {
+  if (!usage || Object.hasOwn(STATE_TEXT, usage.state)) return [];
+  const windows = [
+    usage.fiveHour ? { label: "5 hours", window: usage.fiveHour } : null,
+    usage.weekly ? { label: "week", window: usage.weekly } : null,
+    ...(usage.scoped ?? []).map((scope) => ({ label: `${scope.name} week`, window: scope })),
+  ].filter(Boolean);
+  return windows.map(({ label, window }) => ({
+    label,
+    pct: Math.round(window.pct),
+    resets: resetPhrase(window.resetsAt, now, options),
+  }));
+}
+
 function empty(state, detail = null) {
-  return { state, fiveHour: null, weekly: null, scoped: [], fetchedAt: 0, detail };
+  return { state, fiveHour: null, weekly: null, scoped: [], credits: null, fetchedAt: 0, detail };
 }
 
 // ------------------------------------------------------------------- Z.ai
@@ -98,13 +154,15 @@ async function zaiUsage(record, { env, fetchImpl, signal, now }) {
   const worst = (slot) =>
     quota.limits
       .filter((limit) => QUOTA_WINDOWS[limit.unit] === slot && limit.percentage !== null)
-      .map((limit) => ({ pct: limit.percentage, resetsAt: limit.nextResetTime ?? null }))
+      .map((limit) => ({ pct: limit.percentage, resetsAt: resetTime(limit.nextResetTime) }))
       .toSorted((a, b) => b.pct - a.pct)[0] ?? null;
   const usage = {
     state: "ok",
     fiveHour: worst("fiveHour"),
     weekly: worst("weekly"),
     scoped: [],
+    // A GLM coding plan has no pay-as-you-go tier to report.
+    credits: null,
     fetchedAt: now,
     detail: null,
   };

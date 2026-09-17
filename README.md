@@ -195,6 +195,41 @@ personal subscription billed to the individual. They have separate usage, so the
 profiles, and the organization is what tells them apart at a glance. A personal organization, which
 Claude names after the account that owns it, is shown as `personal`.
 
+### How much of each plan is left
+
+Picking a profile is usually a question about quota, so the menu and `profile list --usage` answer
+it. A row carries the rolling 5-hour window, the week, and each model window metered separately
+(Fable has its own), and the reset clock appears on any window at 50% or more — below that nobody is
+waiting for it, and a clock on every window buries the numbers that were the point.
+
+```sh
+zclaude profile list --usage           # the numbers, spelled out
+zclaude profile list --usage --force   # skip the cache
+```
+
+```
+gramini    anthropic vipinr@gramini.com · Hoomanely Inc    shares config + history
+           5 hours       80%  resets in 2h 30m (07:50 pm)
+           week          21%  resets in 6d 7h (Thu, 24 Sept, 12:30 am)
+           Fable week    33%  resets in 6d 7h (Thu, 24 Sept, 12:30 am)
+           credits spent
+```
+
+Reset times arrive in UTC and are shown in your own time zone and clock format, because nobody plans
+their afternoon in UTC. Both forms are there on purpose: "in 2h 30m" answers how long, "07:50 pm"
+answers when. There is no timeago dependency — `Intl.DateTimeFormat` and the countdown do it, and
+they work identically in the VS Code extension, which ships no dependencies at all.
+
+The last line is pay-as-you-go credit, which Anthropic calls extra usage. When it is switched on the
+row shows what is left (`credits $37.66 left`); when the account has spent it, `credits spent`; when
+a spend limit stopped it, `credit limit reached`. An account that simply never turned it on says
+nothing, since that is a choice rather than news. A Z.ai coding plan has no equivalent tier.
+
+Usage costs a network call per profile, so it never happens on the launch path, never without a
+terminal, and is off entirely with `--no-usage` or `ZCLAUDE_NO_USAGE=1`. Answers are cached for a
+minute and a `Retry-After` is obeyed across every surface, so the CLI and the extension cannot
+saturate the endpoint between them. Numbers served from that cache are marked `(cached)`.
+
 ## Passing arguments to Claude Code
 
 zclaude is a launcher, so most of what you type is not for it. The rule is positional:
@@ -549,7 +584,7 @@ All zclaude options go before any argument meant for `claude`.
 | `--dry-run`                             | `switch`: say what would change, change nothing                                              |
 | `--status`                              | `switch`: report the account in the global slot                                              |
 | `--restore`                             | `switch`: put the previous global login back                                                 |
-| `--usage`                               | `profile list`: fetch how much of each plan is used                                          |
+| `--usage`                               | `profile list`: fetch each plan's usage, reset times and credit                              |
 | `--no-usage`                            | menu: skip the usage lookup and its network calls                                            |
 | `--reconfigure`, `--customize`          | run the model wizard even when config exists                                                 |
 | `--login`                               | sign in to Z.ai again before launching                                                       |

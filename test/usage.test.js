@@ -16,7 +16,16 @@ import {
   TOKEN_URL,
   USAGE_URL,
 } from "../src/usage/anthropic.js";
-import { credentialHealth, formatUsage, readCache, usageFor, usageForAll, usagePath } from "../src/usage/index.js";
+import {
+  credentialHealth,
+  formatCredits,
+  formatUsage,
+  readCache,
+  usageFor,
+  usageForAll,
+  usagePath,
+  usageRows,
+} from "../src/usage/index.js";
 import { claudeCredentialService } from "../src/profiles/keychain-name.js";
 import { tempHome } from "./helpers.js";
 
@@ -86,7 +95,9 @@ describe("reading the usage endpoint", () => {
   it("reads the per-model weekly windows out of the limits array", () => {
     const usage = normaliseUsage(USAGE_BODY);
     assert.equal(usage.fiveHour.pct, 12.4);
-    assert.equal(usage.fiveHour.resetsAt, "2026-09-17T18:00:00Z");
+    // Epoch milliseconds whichever provider sent it, so no caller has to know
+    // that one speaks ISO and the other speaks numbers.
+    assert.equal(usage.fiveHour.resetsAt, Date.parse("2026-09-17T18:00:00Z"));
     assert.equal(usage.weekly.pct, 61);
     assert.deepEqual(
       usage.scoped.map((scope) => [scope.name, scope.pct]),
@@ -95,6 +106,86 @@ describe("reading the usage endpoint", () => {
     );
     assert.equal(normaliseUsage({}), null);
     assert.equal(normaliseUsage({ limits: [] }), null);
+  });
+});
+
+describe("pay-as-you-go credit", () => {
+  const body = (extra) => ({ five_hour: { utilization: 1 }, extra_usage: extra });
+
+  it("reads the amounts in the currency's minor units, as decimal_places says", () => {
+    const usage = normaliseUsage(
+      body({ is_enabled: true, monthly_limit: 5000, used_credits: 1234, currency: "USD", decimal_places: 2 }),
+    );
+    assert.deepEqual(
+      { limit: usage.credits.limit, used: usage.credits.used, remaining: usage.credits.remaining },
+      { limit: 50, used: 12.34, remaining: 37.66 },
+    );
+    assert.equal(formatCredits(usage.credits), "credits $37.66 left");
+  });
+
+  it("reports running out, and keeps quiet about an account that turned it off", () => {
+    const spent = normaliseUsage(
+      body({ is_enabled: false, disabled_reason: "out_of_credits", user_disabled: false, currency: "USD" }),
+    );
+    assert.equal(formatCredits(spent.credits), "credits spent");
+
+    const off = normaliseUsage(body({ is_enabled: false, user_disabled: true, disabled_reason: null }));
+    assert.equal(formatCredits(off.credits), "", "switching it off yourself is not a warning");
+
+    const capped = normaliseUsage(body({ is_enabled: false, spend_limit_reached: true }));
+    assert.equal(formatCredits(capped.credits), "credit limit reached");
+  });
+
+  it("never invents a number the endpoint did not send", () => {
+    const usage = normaliseUsage(body({ is_enabled: true, monthly_limit: null, used_credits: null }));
+    assert.equal(usage.credits.remaining, null);
+    assert.equal(formatCredits(usage.credits), "credits on");
+    assert.equal(normaliseUsage(body(null)).credits, null);
+  });
+});
+
+describe("reset times in a row", () => {
+  const NOW = Date.parse("2026-09-17T12:00:00Z");
+  const usage = (overrides) => ({
+    state: "ok",
+    fiveHour: { pct: 78, resetsAt: NOW + 2 * 3_600_000 },
+    weekly: { pct: 4, resetsAt: NOW + 6 * 86_400_000 },
+    scoped: [],
+    credits: null,
+    ...overrides,
+  });
+
+  it("puts the clock on a window near its ceiling and leaves a quiet one bare", () => {
+    assert.equal(formatUsage(usage(), NOW), "5h 78% ⟳2h · wk 4%");
+  });
+
+  it("keeps a row readable when every window is under pressure", () => {
+    const text = formatUsage(
+      usage({
+        weekly: { pct: 88, resetsAt: NOW + 6 * 86_400_000 },
+        scoped: [{ name: "Fable", pct: 100, resetsAt: NOW + 6 * 86_400_000 }],
+      }),
+      NOW,
+    );
+    assert.equal(text, "5h 78% ⟳2h · wk 88% ⟳6d · Fable 100% ⟳6d");
+    assert.ok(text.length < 52, "a row this wide already crowds an 80-column terminal");
+  });
+
+  it("spells every window out where there is room", () => {
+    const rows = usageRows(usage(), NOW, { locale: "en-GB", timeZone: "Asia/Kolkata" });
+    assert.deepEqual(
+      rows.map((row) => [row.label, row.pct]),
+      [
+        ["5 hours", 78],
+        ["week", 4],
+      ],
+    );
+    assert.equal(rows[0].resets, "resets in 2h (19:30)");
+  });
+
+  it("has nothing to spell out when the lookup failed", () => {
+    assert.deepEqual(usageRows({ state: "unauthorized" }, NOW), []);
+    assert.deepEqual(usageRows(null, NOW), []);
   });
 });
 

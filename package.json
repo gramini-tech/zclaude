@@ -1,6 +1,6 @@
 {
   "name": "zclaude",
-  "version": "0.2.24",
+  "version": "0.2.25",
   "description": "Run several Claude Code accounts at once, one per terminal: profiles with their own logins and config, plus Z.ai GLM Coding Plan support with browser sign-in and model selection",
   "type": "module",
   "bin": {

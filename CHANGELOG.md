@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.2.25
+
+Usage now says when, not just how much.
+
+- Every window carries its reset time: the rolling 5 hours, the week, and each
+  separately metered model week. Shown as a countdown and as a wall-clock time
+  in your own zone, converted from the UTC the endpoint answers in. A clock
+  appears on a row only when that window is at half its limit or more, because
+  one on every window buries the numbers it sits beside.
+- Pay-as-you-go credit, which the API calls extra usage, is read and shown:
+  what is left when it is switched on, `credits spent` when the account has run
+  out, `credit limit reached` when a spend limit stopped it. An account that
+  never turned it on says nothing, since that is a choice rather than news.
+- `zclaude profile list --usage` spells each window out on its own line with
+  the exact local reset time; the menu does the same under the highlighted row,
+  and the VS Code hover in its tooltip. The name column in the menu is now
+  sized from the numbers actually being shown rather than a fixed reserve, so a
+  quiet day gives names their full width.
+- No timeago dependency: `Intl.DateTimeFormat` handles the zone and the locale,
+  and the countdown is a dozen lines. The VS Code extension ships no
+  dependencies at all and would have had to bundle one.
+- A reset time already in the past is left off rather than counted down to, and
+  a null amount from the endpoint stays null instead of becoming a confident
+  zero balance.
+
 ## 0.2.23
 
 - **Fixed: the built-in Z.ai entry could adopt a profile's key.** With no key of

@@ -14,6 +14,7 @@
 import { request } from "../http.js";
 import { log } from "../logger.js";
 import { registerSecret } from "../redact.js";
+import { resetTime } from "./when.js";
 
 export const USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
 export const TOKEN_URL = "https://platform.claude.com/v1/oauth/token";
@@ -62,7 +63,52 @@ export async function fetchUsage(accessToken, { fetchImpl, signal, timeoutMs = D
 function windowFrom(raw) {
   const pct = Number(raw?.utilization);
   if (!Number.isFinite(pct)) return null;
-  return { pct, resetsAt: typeof raw?.resets_at === "string" ? raw.resets_at : null };
+  return { pct, resetsAt: resetTime(raw?.resets_at) };
+}
+
+/**
+ * Pay-as-you-go credit, which the endpoint calls `extra_usage`. Measured
+ * against three real accounts: it is present but switched off on all of them,
+ * so the enabled shape is read defensively.
+ *
+ * `decimal_places` beside `currency` is the usual way of saying the amounts are
+ * in minor units, and it is what renders them; the alternative reading (that
+ * they are already major units and this is display precision) gives the same
+ * answer whenever it is 2 and the amount is small, so nothing here is ever
+ * reported without the currency beside it.
+ */
+function creditsFrom(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  // Number(null) is 0, which would turn "the endpoint sent nothing" into a
+  // confident zero balance. Only an actual number counts as one.
+  const numeric = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
+  const places = numeric(raw.decimal_places);
+  const scale = 10 ** (places ?? 0);
+  const amount = (value) => {
+    const parsed = numeric(value);
+    return parsed === null ? null : parsed / scale;
+  };
+  const limit = amount(raw.monthly_limit);
+  const used = amount(raw.used_credits);
+  return {
+    enabled: raw.is_enabled === true,
+    currency: typeof raw.currency === "string" ? raw.currency : null,
+    limit,
+    used,
+    remaining: limit !== null && used !== null ? Math.max(0, limit - used) : null,
+    pct: numeric(raw.utilization),
+    spendLimitReached: raw.spend_limit_reached === true,
+    // Why it is off. Switching it off yourself is not a thing worth reporting;
+    // running out is.
+    reason: typeof raw.disabled_reason === "string" ? raw.disabled_reason : null,
+    userDisabled: raw.user_disabled === true,
+  };
+}
+
+/** normal, warning or critical, as the endpoint grades it. */
+function severityOf(limit) {
+  const severity = limit?.severity;
+  return severity === "warning" || severity === "critical" ? severity : "normal";
 }
 
 /**
@@ -78,11 +124,12 @@ export function normaliseUsage(data) {
       const name = limit?.scope?.model?.display_name;
       const pct = Number(limit?.percent);
       if (typeof name !== "string" || !Number.isFinite(pct)) continue;
-      scoped.push({ name, pct, resetsAt: typeof limit.resets_at === "string" ? limit.resets_at : null });
+      scoped.push({ name, pct, resetsAt: resetTime(limit.resets_at), severity: severityOf(limit) });
     }
   }
+  const credits = creditsFrom(data?.extra_usage);
   if (!fiveHour && !weekly && scoped.length === 0) return null;
-  return { fiveHour, weekly, scoped };
+  return { fiveHour, weekly, scoped, credits };
 }
 
 /** Whether this credential needs a refresh before it can be used. */

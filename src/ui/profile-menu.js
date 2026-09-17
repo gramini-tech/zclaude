@@ -17,7 +17,7 @@ import {
   useState,
 } from "@inquirer/core";
 
-import { formatUsage } from "../usage/index.js";
+import { formatCredits, formatUsage, usageRows } from "../usage/index.js";
 import { paint } from "./log.js";
 import { guard, withSignal } from "./prompt.js";
 
@@ -31,14 +31,14 @@ const noop = () => {};
  * account and what it shares belong to the highlighted row only, on the detail
  * line below the list — the same shape `select` uses, and the only way an email
  * plus three percentages fit an 80-column terminal without wrapping.
- * @param {{profile: object, active: boolean, usage: object | undefined, loading: boolean, width: number, frame: number, columns?: number}} args
+ * @param {{profile: object, active: boolean, usage: object | undefined, loading: boolean, width: number, frame: number, columns?: number, now?: number}} args
  */
-export function renderRow({ profile, active, usage, loading, width, frame, columns = 80 }) {
+export function renderRow({ profile, active, usage, loading, width, frame, columns = 80, now = Date.now() }) {
   const marker = active ? "❯" : " ";
   // The names form a column, so a long one is cut rather than allowed to shove
   // every other row's numbers out of line.
   const name = (profile.label.length > width ? `${profile.label.slice(0, width - 1)}…` : profile.label).padEnd(width);
-  const numbers = formatUsage(usage);
+  const numbers = formatUsage(usage, now);
   const trailing = numbers || (loading ? `${SPINNER[frame % SPINNER.length]} usage` : "");
   const line = `${marker} ${name}  ${trailing}`.trimEnd().slice(0, columns - 1);
   return active ? paint(line, "cyan", process.stderr) : line;
@@ -49,6 +49,22 @@ export function renderDetail(profile, columns = 80) {
   const parts = [profile?.description, profile?.sharing].filter(Boolean);
   if (parts.length === 0) return "";
   const line = `  ${parts.join(", ")}`;
+  return line.length < columns ? line : `${line.slice(0, columns - 2)}…`;
+}
+
+/**
+ * When the highlighted profile's windows come back, on their own line.
+ *
+ * The rows carry a clock only for a window that is close to its ceiling, which
+ * keeps them inside 80 columns. This is where the rest of the picture goes: the
+ * local time each window resets, and what is left of any pay-as-you-go credit.
+ */
+export function renderUsageDetail(usage, now = Date.now(), columns = 80) {
+  const rows = usageRows(usage, now);
+  const credits = formatCredits(usage?.credits);
+  const parts = [...rows.map((row) => `${row.label} ${row.pct}%${row.resets ? ` ${row.resets}` : ""}`), credits];
+  const line = `  ${parts.filter(Boolean).join(" · ")}`;
+  if (line.trim().length === 0) return "";
   return line.length < columns ? line : `${line.slice(0, columns - 2)}…`;
 }
 
@@ -108,11 +124,15 @@ const menuPrompt = createPrompt((config, done) => {
     }
   });
 
+  const now = Date.now();
   const columns = process.stderr.columns || 80;
-  // Names get whatever the numbers do not need (three windows run to about 30
-  // characters), so a name is only ever cut on a genuinely narrow terminal.
+  // Names get whatever the numbers do not need, measured rather than guessed:
+  // a quiet day is "5h 4% · wk 1%" and a busy one adds a reset clock to every
+  // window, which is twice as wide. Reserving for the worst case all the time
+  // would cut names that had room.
   const longest = Math.max(...profiles.map((profile) => profile.label.length));
-  const width = Math.min(longest, Math.max(12, columns - 36));
+  const numbersWidth = Math.max(12, ...profiles.map((profile) => formatUsage(store?.get(profile.id), now).length));
+  const width = Math.min(longest, Math.max(12, columns - 4 - numbersWidth));
   const known = profiles.filter((profile) => store?.get(profile.id)).length;
   const rows = profiles.map((profile, index) =>
     renderRow({
@@ -123,17 +143,19 @@ const menuPrompt = createPrompt((config, done) => {
       width,
       frame,
       columns,
+      now,
     }),
   );
   const header = paint("?", "cyan", process.stderr);
   if (done_) return `${header} What do you want to launch? ${paint(profiles[cursor].label, "cyan", process.stderr)}`;
   const detail = paint(renderDetail(profiles[cursor], columns), "grey", process.stderr);
+  const resets = paint(renderUsageDetail(store?.get(profiles[cursor].id), Date.now(), columns), "grey", process.stderr);
   const footer = paint(
     renderFooter({ loading: Boolean(store?.loading), count: known, total: profiles.length, usageEnabled }),
     "grey",
     process.stderr,
   );
-  return [`${header} What do you want to launch?`, ...rows, detail, footer].filter(Boolean).join("\n");
+  return [`${header} What do you want to launch?`, ...rows, detail, resets, footer].filter(Boolean).join("\n");
 });
 
 /**

@@ -8,7 +8,7 @@ import { describe, it } from "node:test";
 
 import { usageRecords } from "../src/cli.js";
 import { DEFAULT_CREDENTIAL_SERVICE } from "../src/profiles/keychain-name.js";
-import { renderDetail, renderFooter, renderRow } from "../src/ui/profile-menu.js";
+import { renderDetail, renderFooter, renderRow, renderUsageDetail } from "../src/ui/profile-menu.js";
 
 const profile = { id: "work", label: "work", description: "me@x.y · Acme", sharing: "shares config and history" };
 const row = (overrides = {}) =>
@@ -43,6 +43,27 @@ describe("a row in the picker", () => {
     assert.ok(line.length < 80, `row must fit the terminal, got ${line.length}`);
     assert.match(line, /^ {2}Claude Code \+ Z\.ai GLM Co…/u, "the name column holds its width");
     assert.match(line, /5h 42% · wk 55% · Fable 100%$/u, "the numbers survive");
+  });
+
+  it("spells the reset times out on a line of their own", () => {
+    const now = Date.parse("2026-09-17T12:00:00Z");
+    const usage = {
+      state: "ok",
+      fiveHour: { pct: 78, resetsAt: now + 2 * 3_600_000 },
+      weekly: { pct: 4, resetsAt: now + 6 * 86_400_000 },
+      scoped: [],
+      credits: { enabled: false, reason: "out_of_credits" },
+    };
+    const line = renderUsageDetail(usage, now, 200);
+    assert.match(line, /5 hours 78% resets in 2h \(/u);
+    assert.match(line, /week 4% resets in 6d \(/u);
+    assert.match(line, /credits spent/u);
+    assert.ok(renderUsageDetail(usage, now, 40).length < 40, "a narrow terminal trims this line too");
+  });
+
+  it("has no reset line before the numbers arrive, or when they never will", () => {
+    assert.equal(renderUsageDetail(undefined), "");
+    assert.equal(renderUsageDetail({ state: "unauthorized" }), "");
   });
 
   it("puts the account and the sharing under the highlighted row", () => {

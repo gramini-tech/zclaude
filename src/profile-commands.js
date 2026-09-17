@@ -20,7 +20,7 @@ import { getRegistered, listRegistered, PROVIDERS } from "./profiles/registry.js
 import { mcpServersWithSecrets, readDefaultConfig, trustedProjects } from "./profiles/seed.js";
 import { detachedShares } from "./profiles/share.js";
 import { deleteCredential, loadCredential } from "./store.js";
-import { formatUsage, usageForAll } from "./usage/index.js";
+import { formatCredits, formatUsage, usageForAll, usageRows } from "./usage/index.js";
 import { info, mask, paint, success, warn } from "./ui/log.js";
 import { askCopyMcp, askCopyTrust, askProfileName, askProvider, askSharing, askSignIn } from "./ui/profile-wizard.js";
 import { confirmChoice } from "./ui/wizard.js";
@@ -214,10 +214,23 @@ async function cmdList({ env, options }) {
     process.stdout.write(
       `${record.name.padEnd(width)}  ${record.provider.padEnd(9)} ${account.padEnd(accountWidth)}  ${grey(`shares ${describeShare(record.share)}`)}\n`,
     );
-    // A second line rather than a wider one: an account plus an organization
-    // plus three percentages does not fit in 80 columns.
-    const numbers = usage ? formatUsage(usage[record.name]) : "";
-    if (numbers) process.stdout.write(`${" ".repeat(width + 2)}${grey(numbers)}\n`);
+    // Lines of their own rather than a wider row: an account plus an
+    // organization plus three windows and their reset times does not fit in 80
+    // columns, and this is the surface with room to spell them out.
+    if (!usage) continue;
+    const indent = " ".repeat(width + 2);
+    const windows = usageRows(usage[record.name]);
+    if (windows.length === 0) {
+      const numbers = formatUsage(usage[record.name]);
+      if (numbers) process.stdout.write(`${indent}${grey(numbers)}\n`);
+      continue;
+    }
+    for (const window of windows) {
+      const text = `${window.label.padEnd(12)} ${String(window.pct).padStart(3)}%  ${window.resets}`.trimEnd();
+      process.stdout.write(`${indent}${grey(text)}\n`);
+    }
+    const credits = formatCredits(usage[record.name]?.credits);
+    if (credits) process.stdout.write(`${indent}${grey(credits)}\n`);
   }
   return EXIT.OK;
 }

@@ -147,12 +147,76 @@ describe("the status bar", () => {
     );
     assert.match(text, /a@b\.com · Acme/u);
     assert.match(text, /Profile: `work`/u);
-    assert.match(text, /5h 1% · wk 2% · Fable 3%/u);
+    // The hover has room, so each window is spelled out rather than compressed.
+    assert.match(text, /- 5 hours 1%/u);
+    assert.match(text, /- week 2%/u);
+    assert.match(text, /- Fable week 3%/u);
   });
 
   it("says so plainly when the credential could not be read", () => {
     assert.match(items.tooltip({ unreadable: "the Keychain is locked" }, null), /could not be read: the Keychain/u);
     assert.match(items.tooltip(null, null), /Nobody is signed in/u);
+  });
+});
+
+describe("when a window comes back", () => {
+  const NOW = Date.parse("2026-09-17T12:00:00Z");
+  const at = (ms) => NOW + ms;
+
+  it("counts down in the units that matter at that distance", () => {
+    assert.equal(items.countdown(at(30_000), NOW), "now");
+    assert.equal(items.countdown(at(45 * 60_000), NOW), "45m");
+    assert.equal(items.countdown(at(2 * 3_600_000 + 8 * 60_000), NOW), "2h 8m");
+    assert.equal(items.countdown(at(6 * 86_400_000 + 7 * 3_600_000), NOW), "6d 7h");
+  });
+
+  it("says nothing about a reset already past, rather than counting down to yesterday", () => {
+    assert.equal(items.countdown(at(-60 * 60_000), NOW), "");
+    assert.equal(items.countdown(null, NOW), "");
+    assert.equal(items.countdown(undefined, NOW), "");
+  });
+
+  it("puts the clock on a window near its ceiling and leaves a quiet one alone", () => {
+    const pressed = {
+      state: "ok",
+      fiveHour: { pct: 78, resetsAt: at(2 * 3_600_000) },
+      weekly: { pct: 4, resetsAt: at(6 * 86_400_000) },
+      scoped: [],
+    };
+    assert.equal(items.usageText(pressed, NOW), "5h 78% ⟳2h · wk 4%");
+  });
+
+  it("converts to local time, which is the point of converting at all", () => {
+    // Asserted through the formatter rather than against a fixed string: the
+    // machine's zone is what it renders in, and a test that pinned one would
+    // pass only where it was written.
+    const expected = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(at(3_600_000));
+    assert.equal(items.localTime(at(3_600_000), NOW), expected);
+    assert.match(items.localTime(at(3 * 86_400_000), NOW), /,/u, "a date further out carries its day");
+  });
+
+  it("spells every window out for the hover", () => {
+    const lines = items.usageLines(
+      { state: "ok", fiveHour: { pct: 78, resetsAt: at(2 * 3_600_000) }, weekly: null, scoped: [] },
+      NOW,
+    );
+    assert.equal(lines.length, 1);
+    assert.match(lines[0], /^5 hours 78% — resets in 2h \(/u);
+  });
+});
+
+describe("credits", () => {
+  it("shows what is left when the account has them switched on", () => {
+    assert.equal(items.creditsText({ enabled: true, remaining: 12.5, currency: "USD" }), "credits $12.50 left");
+    assert.equal(items.creditsText({ enabled: true, remaining: 8, currency: "EUR" }), "credits 8.00 EUR left");
+    assert.equal(items.creditsText({ enabled: true, remaining: null }), "credits on");
+  });
+
+  it("reports running out, and stays quiet about a deliberate off", () => {
+    assert.equal(items.creditsText({ enabled: false, reason: "out_of_credits" }), "credits spent");
+    assert.equal(items.creditsText({ enabled: false, spendLimitReached: true }), "credit limit reached");
+    assert.equal(items.creditsText({ enabled: false, userDisabled: true, reason: null }), "");
+    assert.equal(items.creditsText(null), "");
   });
 });
 
