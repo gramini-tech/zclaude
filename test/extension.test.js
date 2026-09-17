@@ -78,60 +78,33 @@ describe("the picker's contents", () => {
   });
 });
 
-describe("the gauge in the hover", () => {
-  it("fills in proportion, and keeps its width whatever the number", () => {
-    assert.equal(items.gauge(0), "░░░░░░░░░░");
-    assert.equal(items.gauge(50), "█████░░░░░");
-    assert.equal(items.gauge(100), "██████████");
-    for (const pct of [0, 1, 37, 99, 100]) assert.equal(items.gauge(pct).length, 10, `${pct}% is the wrong width`);
+describe("the bar in the hover", () => {
+  // VS Code's hover sanitiser lets a span carry a background-colour and little
+  // else, so the bar is two coloured spans filled with figure spaces. It is the
+  // only way to draw one in the one anchored surface an extension has.
+  it("fills in proportion to the number", () => {
+    const cells = (text, colour) => (text.match(new RegExp(`${colour};">(\\u{2007}+)`, "u"))?.[1] ?? "").length;
+    assert.equal(cells(items.bar(0), "#6e768166"), 8, "nothing spent is an empty track");
+    assert.equal(cells(items.bar(50), "#3fb950"), 4);
+    assert.equal(cells(items.bar(100), "#f85149"), 8);
   });
 
   it("shows a cell for anything spent at all, so 5% is not an empty bar", () => {
-    assert.equal(items.gauge(5), "█░░░░░░░░░");
-    assert.equal(items.gauge(0.4), "█░░░░░░░░░");
+    assert.match(items.bar(5), /#3fb950;">\u{2007}<\/span>/u);
+    assert.match(items.bar(0.4), /#3fb950;">\u{2007}<\/span>/u);
   });
 
   it("clamps rather than overflowing on a number outside the range", () => {
-    assert.equal(items.gauge(140), "██████████");
-    assert.equal(items.gauge(-5), "░░░░░░░░░░");
+    assert.equal([...items.bar(140).matchAll(/\u{2007}/gu)].length, 8);
+    assert.equal([...items.bar(-5).matchAll(/\u{2007}/gu)].length, 8);
   });
 
-  it("gives each row the reset of the window closest to stopping it", () => {
-    const now = Date.parse("2026-09-17T12:00:00Z");
-    const table = items.usageTable({
-      profiles: [{ name: "work" }],
-      usage: {
-        work: {
-          state: "ok",
-          fiveHour: { pct: 10, resetsAt: now + 3_600_000 },
-          weekly: { pct: 88, resetsAt: now + 2 * 86_400_000 },
-          scoped: [{ name: "Fable", pct: 60, resetsAt: now + 2 * 86_400_000 }],
-        },
-      },
-      now,
-    });
-    const row = table.split("\n").find((line) => line.includes("work"));
-    assert.match(row, /2d$/u, "the week is the fullest, so its clock is the one shown");
-  });
-
-  it("holds a column open for a window a profile does not have", () => {
-    const table = items.usageTable({
-      profiles: [{ name: "zai" }, { name: "work" }],
-      usage: {
-        zai: { state: "ok", fiveHour: { pct: 10 }, weekly: { pct: 20 }, scoped: [] },
-        work: { state: "ok", fiveHour: { pct: 1 }, weekly: { pct: 2 }, scoped: [{ name: "Fable", pct: 3 }] },
-      },
-    });
-    const [head, ...rows] = table.split("\n");
-    assert.match(head, /Fable/u);
-    assert.match(
-      rows.find((row) => row.includes("zai")),
-      /–/u,
-      "a dash keeps the column, so the ones beside it still line up",
-    );
-    // Trailing padding is stripped, so rows differ in length; what has to
-    // match is where each column starts.
-    assert.equal(new Set(rows.map((row) => row.indexOf("%"))).size, 1, "the first percentage column drifted");
+  it("colours by how close the window is to stopping you", () => {
+    assert.equal(items.severity(5), "calm");
+    assert.equal(items.severity(60), "warn");
+    assert.equal(items.severity(92), "critical");
+    assert.match(items.bar(92), /#f85149/u);
+    assert.match(items.bar(70), /#d29922/u);
   });
 });
 
@@ -230,12 +203,12 @@ describe("the status bar", () => {
   it("names the account and marks which profile holds it", () => {
     const text = items.hoverPanel({
       status: { account: { email: "a@b.com", organization: "Acme" }, owner: "work" },
-      profiles: [{ name: "work" }],
+      profiles: [{ name: "work", provider: "anthropic" }],
       usage: { work: usage(1, 2, [{ name: "Fable", pct: 3 }]) },
       version: "9.9.9",
     });
     assert.match(text, /Signed in as \*\*a@b\.com\*\* · Acme/u);
-    assert.match(text, /^›\s+work/mu);
+    assert.match(text, /codicon-check"><\/span> <b>work<\/b>/u);
   });
 
   it("says so plainly when the credential could not be read", () => {
@@ -281,15 +254,16 @@ describe("when a window comes back", () => {
     assert.match(items.localTime(at(3 * 86_400_000), NOW), /,/u, "a date further out carries its day");
   });
 
-  it("draws the gauge and the clock in the hover, where both fit", () => {
-    const table = items.usageTable({
-      profiles: [{ name: "work" }],
+  it("draws the bar and the clock in the hover, where both fit", () => {
+    const text = items.hoverPanel({
+      status: null,
+      profiles: [{ name: "work", provider: "anthropic" }],
       usage: { work: { state: "ok", fiveHour: { pct: 78, resetsAt: at(2 * 3_600_000) }, weekly: null, scoped: [] } },
+      version: "9.9.9",
       now: NOW,
     });
-    const row = table.split("\n").at(-1);
-    assert.match(row, /████████░░\s+78%/u);
-    assert.match(row, /2h$/u);
+    assert.match(text, /background-color:#d29922;/u, "78% is in the warning band");
+    assert.match(text, /&nbsp;78%<br>2h/u);
   });
 });
 
@@ -309,71 +283,75 @@ describe("credits", () => {
 });
 
 describe("the hover panel", () => {
-  const profiles = [{ name: "chinese" }, { name: "gramini" }, { name: "max" }];
-  const window = (pct) => ({ pct });
+  const profiles = [
+    { name: "chinese", provider: "zai" },
+    { name: "gramini", provider: "anthropic" },
+    { name: "max", provider: "anthropic" },
+  ];
+  const PANEL_NOW = 1_800_000_000_000;
+  const window = (pct) => ({ pct, resetsAt: PANEL_NOW + 3_600_000 });
   const usage = {
-    chinese: { state: "ok", fiveHour: window(11), weekly: window(70), scoped: [] },
-    gramini: { state: "ok", fiveHour: window(30), weekly: window(28), scoped: [{ name: "Fable", pct: 45 }] },
-    max: { state: "ok", fiveHour: window(5), weekly: window(2), scoped: [{ name: "Fable", pct: 100 }] },
+    chinese: { state: "ok", fiveHour: window(21), weekly: window(72), scoped: [] },
+    gramini: { state: "ok", fiveHour: window(66), weekly: window(33), scoped: [{ name: "Fable", ...window(54) }] },
+    max: { state: "ok", fiveHour: window(5), weekly: window(3), scoped: [{ name: "Fable", ...window(4) }] },
   };
-  const status = { account: { email: "me@x.y", organization: "personal" }, owner: "max" };
-  const panel = (extra = {}) => hoverPanel({ status, profiles, usage, busy: {}, version: "9.9.9", ...extra });
+  const status = { account: { email: "a@b.com", organization: "Acme" }, owner: "gramini" };
+  const panel = (extra = {}) =>
+    hoverPanel({ status, profiles, usage, busy: {}, version: "9.9.9", now: PANEL_NOW, ...extra });
 
-  /** The fenced block, which is the only part rendered in a fixed font. */
-  const table = (text) => text.split("```", 2)[1].trim().split("\n");
-
-  it("lays the numbers out in columns that can be read down", () => {
-    const rows = table(panel());
-    const percentAt = rows.map((row) => row.indexOf("%"));
-    // Every row puts its first percentage in the same place, which is the
-    // whole claim of a table and the thing prose in a proportional font cannot
-    // do. The header has no % in it, so it is skipped.
-    const [, ...body] = percentAt;
-    assert.equal(new Set(body).size, 1, `columns drifted: ${JSON.stringify(rows)}`);
+  it("lays the accounts out as a table, which is what a hover can render", () => {
+    const text = panel();
+    assert.match(text, /<table>/u);
+    for (const label of ["5 hours", "week", "Fable"]) assert.match(text, new RegExp(`<th>${label}</th>`, "u"));
   });
 
-  it("gives every per-model window its own column, named in the header", () => {
-    const [head, ...body] = table(panel());
-    assert.match(head, /profile\s+5-hour\s+week\s+Fable\s+resets\s+sessions/u);
-    // chinese has no Fable window; the column stays, with nothing in it.
-    assert.match(
-      body.find((row) => row.includes("chinese")),
-      /chinese\s+█+░*\s+11%\s+█+░*\s+70%\s+–/u,
-    );
+  it("gives every window a bar and a reset, and a missing one a dash", () => {
+    const text = panel();
+    assert.match(text, /&nbsp;66%<br>1h/u, "the bar, the number and when it comes back");
+    assert.match(text, /<td>–<\/td>/u, "chinese has no Fable window");
   });
 
-  it("marks which account is in the global slot", () => {
-    const marked = table(panel()).filter((row) => row.startsWith("›"));
-    assert.equal(marked.length, 1);
-    assert.match(marked[0], /max/u);
+  it("offers switch as a command link, on the accounts that can take one", () => {
+    const text = panel();
+    assert.match(text, /<a href="command:zclaude\.switchTo\?%5B%22max%22%5D">switch<\/a>/u);
+    assert.doesNotMatch(text, /switchTo\?%5B%22gramini%22%5D/u, "gramini is already in use");
+    assert.doesNotMatch(text, /switchTo\?%5B%22chinese%22%5D/u, "a Z.ai login cannot be switched to");
+    assert.match(text, /<td>terminal<\/td>/u);
+  });
+
+  it("marks the account in the global slot", () => {
+    assert.match(panel(), /codicon codicon-check"><\/span> <b>gramini<\/b>/u);
   });
 
   it("counts sessions in their own column", () => {
-    const rows = table(panel({ busy: { max: { working: 1, idle: 0, unknown: 0, total: 2 } } }));
-    assert.match(
-      rows.find((row) => row.includes("max")),
-      /2 active$/u,
-    );
+    assert.match(panel({ busy: { max: { total: 2, working: 1 } } }), /<td>2 active<\/td>/u);
   });
 
-  it("says why a row has no numbers instead of leaving it blank", () => {
-    const rows = table(panel({ usage: { ...usage, gramini: { state: "unauthorized" } } }));
-    assert.match(
-      rows.find((row) => row.includes("gramini")),
-      /sign in to see usage/u,
-    );
+  it("says why a row has no numbers instead of drawing an empty bar", () => {
+    const text = panel({ usage: { ...usage, gramini: { state: "unauthorized" } } });
+    assert.match(text, /sign in to see usage/u);
   });
 
-  it("carries the commands as links, which is what makes the panel usable", () => {
+  it("carries the other four commands as links", () => {
     const text = panel();
-    assert.match(text, /\(command:zclaude\.pick\)/u);
-    assert.match(text, /\(command:zclaude\.refresh\)/u);
+    for (const command of ["refresh", "add", "remove", "restore"]) {
+      assert.match(text, new RegExp(`command:zclaude\\.${command}`, "u"));
+    }
   });
 
   it("drops the table entirely when zclaude is too old to fill it", () => {
     const text = hoverPanel({ status, profiles, usage, version: "0.0.1" });
-    assert.doesNotMatch(text, /```/u);
+    assert.doesNotMatch(text, /<table>/u);
     assert.match(text, /older than/u);
+  });
+
+  // An account name is an email address and an organisation: somebody else's
+  // text, arriving over the network, going into a document.
+  it("escapes what it is given rather than trusting it", () => {
+    assert.equal(items.escapeHtml('<img src=x onerror="go()">'), "&lt;img src=x onerror=&quot;go()&quot;&gt;");
+    const text = panel({ profiles: [{ name: "<script>evil</script>", provider: "anthropic" }], usage: {} });
+    assert.doesNotMatch(text, /<script>evil/u);
+    assert.match(text, /&lt;script&gt;evil/u);
   });
 });
 

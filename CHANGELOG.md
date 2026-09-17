@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.2.37
+
+The popup is a hover, because that is the only anchored surface an extension
+has. Established rather than assumed: VS Code renders Copilot's version of this
+panel with an internal `DomWidget` that extensions cannot reach, and there is no
+API to open a hover on command.
+
+- **The status bar hover is the panel now.** A table with a coloured bar per
+  window, the percentage, when it comes back, the sessions on each account, and
+  `switch` as a link on every row that can take one — plus Refresh, Add, Remove
+  and Restore. The bars are two coloured `span`s filled with figure spaces,
+  which is what VS Code's hover sanitiser allows; `var(--vscode-…)` colours are
+  stripped by it, so the chart colours are written out.
+- **Clicking opens a plain list of accounts.** Names and who they are, nothing
+  else. That is the one thing a QuickPick is good at, and everything that could
+  not render in it has moved to the hover.
+- The editor tab is gone. A webview panel could draw the UI but not sit where
+  it belonged.
+- Fixed: a window 59 minutes from resetting said "60m".
+
+Extension 0.6.0.
+
 ## 0.2.35
 
 Clicking the status bar item opens a panel now, and the terminal menu draws the

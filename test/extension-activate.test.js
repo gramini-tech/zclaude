@@ -19,7 +19,7 @@ const settle = () =>
 
 /** Just enough VS Code, recording what the extension did with it. */
 function stubVscode() {
-  const recorded = { messages: [], terminals: [], commands: new Map(), panels: [], progress: [] };
+  const recorded = { messages: [], terminals: [], commands: new Map(), picks: [], progress: [] };
   const disposable = () => ({ dispose() {} });
   const statusBar = { text: "", tooltip: null, command: null, shown: false, show() {}, hide() {}, dispose() {} };
   statusBar.show = () => {
@@ -29,46 +29,8 @@ function stubVscode() {
     statusBar.shown = false;
   };
 
-  /** Just enough of a webview panel to drive the extension through it. */
-  function createWebviewPanel(viewType, title) {
-    const panel = {
-      viewType,
-      title,
-      visible: true,
-      html: "",
-      renders: [],
-      disposed: false,
-      reveal() {
-        panel.revealed = (panel.revealed ?? 0) + 1;
-      },
-      dispose() {
-        panel.disposed = true;
-        panel.onDispose?.();
-      },
-      onDidDispose(handler) {
-        panel.onDispose = handler;
-      },
-      webview: {
-        cspSource: "vscode-webview://test",
-        onDidReceiveMessage(handler) {
-          panel.post = handler;
-        },
-        set html(value) {
-          panel.html = value;
-          panel.renders.push(value);
-        },
-        get html() {
-          return panel.html;
-        },
-      },
-    };
-    recorded.panels.push(panel);
-    return panel;
-  }
-
   const vscode = {
     StatusBarAlignment: { Left: 1, Right: 2 },
-    ViewColumn: { Active: -1, Beside: -2 },
     ProgressLocation: { Notification: 15 },
     MarkdownString: class {
       constructor(value) {
@@ -81,7 +43,6 @@ function stubVscode() {
     window: {
       statusBar,
       createStatusBarItem: () => statusBar,
-      createWebviewPanel,
       createOutputChannel: () => ({ appendLine() {}, show() {}, dispose() {} }),
       createTerminal: (name) => {
         const terminal = {
@@ -104,7 +65,12 @@ function stubVscode() {
       showErrorMessage: async (text) => {
         recorded.messages.push(text);
       },
-      showQuickPick: async (choices) => choices[0],
+      showQuickPick: async (choices, options) => {
+        recorded.picks.push({ choices, options });
+        const { answer } = recorded;
+        recorded.answer = null;
+        return answer ? answer(choices) : choices[0];
+      },
       withProgress: async (options, task) => {
         recorded.progress.push({ options, open: true });
         const entry = recorded.progress.at(-1);
@@ -182,18 +148,16 @@ const answers = (extra = {}) => ({
   ...extra,
 });
 
-/** Open the panel and wait for both renders. */
-async function open(loaded, force = false) {
-  await loaded.recorded.commands.get(force ? "zclaude.refresh" : "zclaude.pick")();
-  return loaded.recorded.panels.at(-1);
+/** Click the status bar item, choosing the entry `choose` matches. */
+async function click(loaded, choose = (items) => items[0]) {
+  loaded.recorded.answer = choose;
+  await loaded.recorded.commands.get("zclaude.pick")();
+  return loaded.recorded.picks.at(-1);
 }
 
-/** Open the panel, press one of its buttons, and wait for the work. */
-async function press(loaded, message) {
-  const panel = await open(loaded);
-  assert.ok(panel, "no panel was opened");
-  await panel.post(message);
-  return panel;
+/** The hover the status bar item is carrying right now. */
+function hover(loaded) {
+  return loaded.vscode.window.statusBar.tooltip?.value ?? "";
 }
 
 describe("the extension in a window", () => {
@@ -205,7 +169,7 @@ describe("the extension in a window", () => {
     assert.match(loaded.vscode.window.statusBar.text, /^zc /u);
     assert.equal(loaded.vscode.window.statusBar.command, "zclaude.pick");
     assert.ok(loaded.vscode.window.statusBar.shown);
-    assert.equal(subscriptions.length, 4, "the item, two commands and the focus listener");
+    assert.equal(subscriptions.length, 8, "the item, six commands and the focus listener");
     loaded.extension.deactivate();
   });
 
@@ -218,19 +182,26 @@ describe("the extension in a window", () => {
     }
   });
 
-  it("shows the list before the usage arrives, then fills it in", async () => {
+  it("carries the whole picture in the hover, not in the list", async () => {
     const loaded = loadExtension(answers());
     loaded.extension.activate({ subscriptions: [] });
-    const panel = await open(loaded);
-    assert.ok(panel.renders.length >= 2, "the table was drawn once and never updated");
-    assert.match(panel.renders[0], /checking usage/u, "the rows are on screen before the numbers");
-    assert.doesNotMatch(panel.renders.at(-1), /checking usage/u);
+    await settle();
+    await settle();
+    assert.match(hover(loaded), /<table>/u, "the hover holds the table");
+    assert.match(hover(loaded), /background-color:/u, "and the bars are drawn in it");
+    const picked = await click(loaded, (items) => items.find((item) => item.name === "home"));
+    // The list is names and accounts. Anything else in it either cannot render
+    // or is clipped, which is what the hover exists to avoid.
+    assert.ok(
+      picked.choices.every((item) => !item.detail),
+      "the list carries no usage of its own",
+    );
   });
 
   it("switches to the profile that was picked, without asking again", async () => {
     const loaded = loadExtension(answers());
     loaded.extension.activate({ subscriptions: [] });
-    await press(loaded, { type: "switch", name: "home" });
+    await click(loaded, (items) => items.find((item) => item.name === "home"));
     assert.deepEqual(loaded.ran, [["switch", "home", "--yes"]]);
     assert.match(loaded.recorded.messages.at(-1), /signed in as "home"/u);
   });
@@ -250,7 +221,7 @@ describe("the extension in a window", () => {
     loaded.extension.activate({ subscriptions: [] });
     // Bounded, so a regression fails here rather than hanging the run.
     const done = await Promise.race([
-      press(loaded, { type: "switch", name: "home" }).then(() => "finished"),
+      click(loaded, (items) => items.find((item) => item.name === "home")).then(() => "finished"),
       new Promise((resolve) => {
         setTimeout(() => resolve("still waiting"), 500).unref?.();
       }),
@@ -265,7 +236,7 @@ describe("the extension in a window", () => {
   it("reports progress where a sub-second job belongs, not in a popup", async () => {
     const loaded = loadExtension(answers());
     loaded.extension.activate({ subscriptions: [] });
-    await press(loaded, { type: "switch", name: "home" });
+    await click(loaded, (items) => items.find((item) => item.name === "home"));
     const { options } = loaded.recorded.progress.at(-1);
     assert.equal(options.location, loaded.vscode.ProgressLocation.Window);
     assert.match(options.title, /switching to home/u);
@@ -274,14 +245,14 @@ describe("the extension in a window", () => {
   it("does nothing when the profile picked is the one already signed in", async () => {
     const loaded = loadExtension(answers());
     loaded.extension.activate({ subscriptions: [] });
-    await press(loaded, { type: "switch", name: "work" });
+    await click(loaded, (items) => items.find((item) => item.name === "work"));
     assert.deepEqual(loaded.ran, []);
   });
 
   it("refuses to switch a Z.ai profile, and says where to run it instead", async () => {
     const loaded = loadExtension(answers());
     loaded.extension.activate({ subscriptions: [] });
-    await press(loaded, { type: "switch", name: "chinese" });
+    await click(loaded, (items) => items.find((item) => item.name === "chinese"));
     assert.deepEqual(loaded.ran, []);
     assert.match(loaded.recorded.messages.at(-1), /run `zclaude chinese` in a terminal/u);
   });
@@ -289,7 +260,7 @@ describe("the extension in a window", () => {
   it("opens a terminal to add a profile, because signing in needs one", async () => {
     const loaded = loadExtension(answers());
     loaded.extension.activate({ subscriptions: [] });
-    await press(loaded, { type: "add" });
+    await click(loaded, (items) => items.find((item) => item.action === "add"));
     assert.deepEqual(loaded.recorded.terminals[0].sent, ["/fake/zclaude profile add"]);
     assert.deepEqual(loaded.ran, [], "nothing was run behind the terminal");
   });
@@ -297,7 +268,7 @@ describe("the extension in a window", () => {
   it("restores the previous login on request", async () => {
     const loaded = loadExtension(answers());
     loaded.extension.activate({ subscriptions: [] });
-    await press(loaded, { type: "restore" });
+    await click(loaded, (items) => items.find((item) => item.action === "restore"));
     assert.deepEqual(loaded.ran[0], ["switch", "--restore", "--yes"]);
   });
 
@@ -306,7 +277,7 @@ describe("the extension in a window", () => {
     loaded.extension.activate({ subscriptions: [] });
     // showWarningMessage returns undefined in the stub, which is the modal
     // being dismissed.
-    await press(loaded, { type: "remove" });
+    await click(loaded, (items) => items.find((item) => item.action === "remove"));
     assert.deepEqual(loaded.ran, [], "a dismissed confirmation must not delete anything");
   });
 
@@ -315,7 +286,7 @@ describe("the extension in a window", () => {
       answers({ run: () => ({ ok: false, code: 1, stdout: "", stderr: "the Keychain is locked" }) }),
     );
     loaded.extension.activate({ subscriptions: [] });
-    await press(loaded, { type: "switch", name: "home" });
+    await click(loaded, (items) => items.find((item) => item.name === "home"));
     assert.match(loaded.recorded.messages.at(-1), /Could not switch to "home"/u);
     assert.doesNotMatch(loaded.recorded.messages.join("\n"), /signed in as/u);
   });
@@ -325,7 +296,7 @@ describe("the extension in a window", () => {
     // The modal's own button, which the stub otherwise dismisses.
     loaded.vscode.window.showWarningMessage = async (text, options, action) => action;
     loaded.extension.activate({ subscriptions: [] });
-    await press(loaded, { type: "remove" });
+    await click(loaded, (items) => items.find((item) => item.action === "remove"));
     assert.deepEqual(loaded.ran, [["profile", "remove", "work", "--yes"]]);
   });
 
@@ -333,7 +304,7 @@ describe("the extension in a window", () => {
     const loaded = loadExtension({ ...answers(), binary: null });
     loaded.extension.activate({ subscriptions: [] });
     await loaded.recorded.commands.get("zclaude.pick")();
-    assert.equal(loaded.recorded.panels.length, 0, "an empty panel helps nobody");
+    assert.equal(loaded.recorded.picks.length, 0, "an empty list helps nobody");
     assert.match(loaded.recorded.messages.at(-1), /zclaude was not found/u);
   });
 
@@ -343,7 +314,7 @@ describe("the extension in a window", () => {
     await settle();
     assert.equal(loaded.vscode.window.statusBar.text, "zc $(warning)");
     await loaded.recorded.commands.get("zclaude.pick")();
-    assert.equal(loaded.recorded.panels.length, 0, "an old zclaude answers every call with nothing");
+    assert.equal(loaded.recorded.picks.length, 0, "an old zclaude answers every call with nothing");
     assert.match(loaded.recorded.messages.at(-1), /zclaude 0\.2\.14 is older than/u);
   });
 

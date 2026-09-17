@@ -36,7 +36,9 @@ describe("counting down", () => {
     assert.equal(countdown(at(6 * DAY + 7 * HOUR), NOW), "6d 7h");
   });
 
-  it("never says 2h 60m or 6d 24h", () => {
+  it("never says 60m, 2h 60m or 6d 24h", () => {
+    // A minute short of an hour rounds to 60 minutes, which is an hour.
+    assert.equal(countdown(at(HOUR - 30_000), NOW), "1h");
     assert.equal(countdown(at(2 * HOUR - 30_000), NOW), "2h");
     assert.equal(countdown(at(6 * DAY - 30_000), NOW), "6d");
     assert.equal(countdown(at(3 * HOUR), NOW), "3h");

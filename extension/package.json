@@ -2,7 +2,7 @@
   "name": "zclaude",
   "displayName": "zclaude",
   "description": "Switch the Claude Code account from the status bar, with each plan's remaining usage.",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "publisher": "vipincr",
   "license": "MIT",
   "repository": {
@@ -34,6 +34,22 @@
       {
         "command": "zclaude.refresh",
         "title": "zclaude: Refresh usage"
+      },
+      {
+        "command": "zclaude.switchTo",
+        "title": "zclaude: Switch to a named profile"
+      },
+      {
+        "command": "zclaude.add",
+        "title": "zclaude: Add a profile"
+      },
+      {
+        "command": "zclaude.remove",
+        "title": "zclaude: Remove a profile"
+      },
+      {
+        "command": "zclaude.restore",
+        "title": "zclaude: Restore the previous login"
       }
     ],
     "configuration": {

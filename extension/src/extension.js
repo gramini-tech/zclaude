@@ -6,16 +6,12 @@
 
 "use strict";
 
-const { randomBytes } = require("node:crypto");
-
 const vscode = require("vscode");
 
 const { findBinary, run, runJson, version } = require("./cli.js");
-const { hoverPanel, isSupported, outdatedText, statusBarText } = require("./items.js");
-const { panelHtml } = require("./panel.js");
+const { accountOf, hoverPanel, isSupported, outdatedText, statusBarText } = require("./items.js");
 
 let item;
-let view = null;
 let binary = null;
 let found = null;
 let output;
@@ -90,12 +86,16 @@ async function readUsage(force) {
 function panel(markdown) {
   const text = new vscode.MarkdownString(markdown);
   text.supportThemeIcons = true;
+  // The table, the bars and the links are HTML; without this the hover shows
+  // the markup instead of rendering it. VS Code sanitises it to a safe subset,
+  // which is what the bars are drawn within.
+  text.supportHtml = true;
   // Only for the command: links this extension writes into its own hover.
   text.isTrusted = true;
   return text;
 }
 
-async function refreshStatusBar() {
+async function refreshStatusBar({ force = false } = {}) {
   if (!item) return;
   item.show();
   if (!locate()) {
@@ -120,7 +120,7 @@ async function refreshStatusBar() {
     // The hover carries the whole table, so it needs what the picker needs.
     // All of it is cached by zclaude for a minute, which is why this can run on
     // every window focus without becoming a network call each time.
-    const [profiles, usage, busy] = await Promise.all([readProfiles(), readUsage(false), readBusy()]);
+    const [profiles, usage, busy] = await Promise.all([readProfiles(), readUsage(force), readBusy()]);
     item.tooltip = panel(hoverPanel({ status, profiles, usage, busy, version: installed }));
   } catch (error) {
     // Whatever went wrong, the item stays, saying so.
@@ -134,14 +134,15 @@ async function refreshStatusBar() {
 
 /** The list. It opens immediately and fills in usage as answers arrive. */
 /**
- * Open the panel, or bring it forward if it is already open.
+ * The click: a plain list of accounts to pick from.
  *
- * A webview rather than a QuickPick. The QuickPick drops from the top of the
- * window, renders in the proportional UI font, clips each row to one line and
- * takes no styling, so the usage it was meant to show could not be drawn. This
- * is the same information with room for it.
+ * Deliberately just the names and who they are. VS Code gives an extension no
+ * way to open an anchored popup — the rich panel Copilot shows is drawn with an
+ * internal DomWidget, and there is no API to open a hover on command — so the
+ * whole picture lives in the hover, and the click does the one thing a
+ * QuickPick is genuinely good at.
  */
-async function pick(force = false) {
+async function pick() {
   if (!locate()) {
     const choice = await vscode.window.showWarningMessage(
       "zclaude was not found. Install it, or set zclaude.path.",
@@ -155,76 +156,54 @@ async function pick(force = false) {
     await reportTooOld(installed);
     return;
   }
-  if (view) view.reveal(undefined, true);
-  else {
-    view = vscode.window.createWebviewPanel("zclaude.accounts", "Claude Code account", vscode.ViewColumn.Active, {
-      enableScripts: true,
-      retainContextWhenHidden: true,
-    });
-    view.onDidDispose(() => {
-      view = null;
-    });
-    view.webview.onDidReceiveMessage((message) => handle(message));
-  }
-  await paint({ force });
-}
-
-/** Fill the panel: the rows first, then the usage when it arrives. */
-async function paint({ force = false } = {}) {
-  if (!view) return;
-  const [{ status }, profiles, busy] = await Promise.all([readStatus(), readProfiles(), readBusy()]);
-  render({ status, profiles, busy, usage: {}, loading: true });
-  // Usage is a network call per account, so the table is on screen before it.
-  const usage = await readUsage(force);
-  render({ status, profiles, busy, usage, loading: false });
-}
-
-function render({ status, profiles, busy, usage, loading }) {
-  if (!view) return;
-  view.webview.html = panelHtml({
-    status,
-    profiles,
-    usage,
-    busy,
-    loading,
-    nonce: randomBytes(16).toString("base64"),
-    cspSource: view.webview.cspSource,
+  const [{ status }, profiles] = await Promise.all([readStatus(), readProfiles()]);
+  const active = status?.owner ?? null;
+  /** @type {Array<{label: string, kind?: number, description?: string, name?: string, action?: string}>} */
+  const items = [
+    ...profiles.map((profile) => ({
+      label: `${profile.name === active ? "$(check) " : "$(blank) "}${profile.name}`,
+      description: accountOf(profile),
+      name: profile.name,
+      provider: profile.provider,
+    })),
+    { label: "", kind: -1 },
+    { label: "$(sync) Refresh usage", action: "refresh" },
+    { label: "$(add) Add a profile…", action: "add" },
+    { label: "$(trash) Remove a profile…", action: "remove" },
+    { label: "$(history) Restore the previous login", action: "restore" },
+  ];
+  const chosen = await vscode.window.showQuickPick(items, {
+    title: "Claude Code account",
+    placeHolder: "Hover the zc item in the status bar for usage",
   });
-}
-
-/** What the panel's buttons ask for. */
-async function handle(message) {
-  const profiles = await readProfiles();
-  switch (message?.type) {
-    case "switch": {
-      // The row for the account in use offers no Switch button, so this only
-      // arrives from a stale panel. Doing it anyway would take a backup and
-      // rewrite a credential to arrive where it already is.
-      const { status } = await readStatus();
-      if (message.name !== status?.owner) await switchTo(message.name, profiles);
-      break;
-    }
+  if (!chosen) return;
+  switch (chosen.action) {
     case "refresh": {
-      await paint({ force: true });
+      await refreshStatusBar({ force: true });
       return;
     }
     case "add": {
       await addProfile();
-      break;
+      return;
     }
     case "remove": {
       await removeProfile(profiles);
-      break;
+      return;
     }
     case "restore": {
       await restore();
-      break;
-    }
-    default: {
       return;
     }
+    default: {
+      if (chosen.name && chosen.name !== active) await switchTo(chosen.name, profiles);
+    }
   }
-  await paint();
+}
+
+/** The per-row `switch` link in the hover. */
+async function switchNamed(name) {
+  if (!locate()) return;
+  await switchTo(name, await readProfiles());
 }
 
 async function switchTo(name, profiles) {
@@ -319,15 +298,18 @@ function activate(context) {
   item.show();
   context.subscriptions.push(
     item,
-    vscode.commands.registerCommand("zclaude.pick", () => pick(false)),
-    vscode.commands.registerCommand("zclaude.refresh", () => pick(true)),
+    vscode.commands.registerCommand("zclaude.pick", () => pick()),
+    vscode.commands.registerCommand("zclaude.refresh", () => refreshStatusBar({ force: true })),
+    vscode.commands.registerCommand("zclaude.switchTo", (name) => switchNamed(name)),
+    vscode.commands.registerCommand("zclaude.add", () => addProfile()),
+    vscode.commands.registerCommand("zclaude.remove", async () => removeProfile(await readProfiles())),
+    vscode.commands.registerCommand("zclaude.restore", () => restore()),
     vscode.window.onDidChangeWindowState((state) => (state.focused ? refreshStatusBar() : undefined)),
   );
   refreshStatusBar().catch(() => {});
 }
 
 function deactivate() {
-  view?.dispose();
   item?.dispose();
   output?.dispose();
 }

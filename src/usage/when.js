@@ -34,7 +34,11 @@ export function resetTime(value) {
 function duration(ms) {
   if (!Number.isFinite(ms) || ms < 0) return "";
   if (ms < MINUTE) return "now";
-  if (ms < HOUR) return `${Math.round(ms / MINUTE)}m`;
+  if (ms < HOUR) {
+    const minutes = Math.round(ms / MINUTE);
+    // 59m30s rounds to 60 minutes, which is an hour and should say so.
+    return minutes === 60 ? "1h" : `${minutes}m`;
+  }
   if (ms < DAY) {
     const hours = Math.floor(ms / HOUR);
     const minutes = Math.round((ms % HOUR) / MINUTE);

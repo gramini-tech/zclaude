@@ -86,7 +86,11 @@ function countdown(at, now = Date.now()) {
   const left = at - now;
   if (left < 0) return "";
   if (left < MINUTE) return "now";
-  if (left < HOUR) return `${Math.round(left / MINUTE)}m`;
+  if (left < HOUR) {
+    const minutes = Math.round(left / MINUTE);
+    // 59m30s rounds to 60 minutes, which is an hour and should say so.
+    return minutes === 60 ? "1h" : `${minutes}m`;
+  }
   if (left < DAY) {
     const hours = Math.floor(left / HOUR);
     const minutes = Math.round((left % HOUR) / MINUTE);
@@ -156,26 +160,24 @@ function usageText(usage) {
   return usage.state === "stale" ? `${parts.join(" · ")} (cached)` : parts.join(" · ");
 }
 
-const CELLS = 10;
-const FULL = "█";
-const EMPTY = "░";
-/** A gauge cell plus " 100%": the width every window column is laid out to. */
-const COLUMN = CELLS + 5;
+/** Where a window stops being comfortable, and where it stops being fine. */
+const WARN = 60;
+const CRITICAL = 85;
 
 /**
- * A window as a bar — for the fenced block in the hover, and nowhere else.
+ * The colours a bar is drawn in.
  *
- * Blocks are a gauge only where the font is fixed. In the list they are
- * proportional and say nothing about their value; an earlier attempt used
- * heavy and light rules there, and they rendered as one unbroken line whatever
- * the number, which is worse than showing no gauge at all.
+ * Fixed hexes rather than theme variables: the sanitiser that runs over a
+ * hover's HTML only lets `background-color` through when it is a literal, so
+ * `var(--vscode-charts-green)` is dropped and the bar disappears. These are the
+ * chart colours from the default dark and light themes, which read on both.
  */
-function gauge(pct, cells = CELLS) {
-  const clamped = Math.min(100, Math.max(0, pct));
-  // Anything spent at all shows a cell: an empty bar beside "5%" reads as a
-  // rounding bug rather than as a nearly-untouched window.
-  const filled = clamped === 0 ? 0 : Math.max(1, Math.round((clamped / 100) * cells));
-  return `${FULL.repeat(filled)}${EMPTY.repeat(cells - filled)}`;
+const COLOURS = { calm: "#3fb950", warn: "#d29922", critical: "#f85149", track: "#6e768166" };
+
+function severity(pct) {
+  if (pct >= CRITICAL) return "critical";
+  if (pct >= WARN) return "warn";
+  return "calm";
 }
 
 /** Every window a column is needed for, in the order they first appear. */
@@ -187,77 +189,143 @@ function windowNames(profiles, usage) {
       if (!models.includes(scope.name)) models.push(scope.name);
     }
   }
-  return ["5-hour", "week", ...models];
+  return ["5 hours", "week", ...models];
 }
 
 function windowOf(own, name) {
-  if (name === "5-hour") return own?.fiveHour ?? null;
+  if (name === "5 hours") return own?.fiveHour ?? null;
   if (name === "week") return own?.weekly ?? null;
   return (own?.scoped ?? []).find((scope) => scope.name === name) ?? null;
 }
 
-/** The gauge and the number for one cell, or a dash holding the column open. */
-function cell(window) {
-  if (!window) return "–".padStart(Math.round(COLUMN / 2)).padEnd(COLUMN);
-  return `${gauge(window.pct)}${String(Math.round(window.pct)).padStart(4)}%`;
+/** Anything that reaches the hover's HTML is somebody else's text. */
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 }
 
-/**
- * The table: a row per profile, a column per window, and the reset time of
- * whichever window is closest to stopping you.
- * @param {{profiles: Array<object>, usage: Record<string, object>, busy: Record<string, object>, active: string | null, now?: number}} args
- */
-function usageTable({ profiles, usage = {}, busy = {}, active = null, now = Date.now() }) {
-  if (profiles.length === 0) return "";
-  const names = windowNames(profiles, usage);
-  const rows = profiles.map((profile) => {
-    const own = usage[profile.name];
-    const stopped = Object.hasOwn(STATES, own?.state) ? STATES[own.state] || "no usage" : "";
-    const windows = names.map((name) => windowOf(own, name));
-    const worst = windows.filter(Boolean).toSorted((a, b) => b.pct - a.pct)[0];
-    const counts = busy[profile.name];
-    const cells = stopped ? [stopped, ...names.slice(1).map(() => "")] : windows.map((window) => cell(window));
-    return [
-      profile.name === active ? "›" : " ",
-      profile.name,
-      ...cells,
-      stopped ? "" : countdown(worst?.resetsAt, now),
-      counts?.total ? `${counts.total} ${counts.working > 0 ? "active" : "open"}` : "",
-    ];
-  });
-  const head = ["", "profile", ...names.map((name) => name.padEnd(COLUMN)), "resets", "sessions"];
-  const widths = head.map((_, column) => Math.max(head[column].length, ...rows.map((row) => row[column].length)));
-  const lay = (row) => row.map((text, column) => text.padEnd(widths[column])).join("  ");
-  return [lay(head), ...rows.map((row) => lay(row))].map((line) => line.trimEnd()).join("\n");
-}
+const CELLS = 8;
 
 /**
- * The hover panel: every account, its windows and its sessions, laid out.
+ * A bar, drawn as two coloured spans.
  *
- * The fenced block is the whole trick. The rest of a hover is rendered in the
- * UI font, which lines nothing up; inside a fence it is monospace, so a space
- * is a space, columns are columns and a run of blocks is a gauge.
+ * VS Code's hover renders a safe subset of HTML: `span` may carry a
+ * `background-color`, and the only way to give it width is to fill it with
+ * something. Figure spaces are that something — fixed width, and invisible
+ * against the colour behind them.
+ */
+function bar(pct) {
+  const clamped = Math.min(100, Math.max(0, pct));
+  // Anything spent at all shows a cell: an empty bar beside "5%" reads as a
+  // rounding bug rather than as a nearly-untouched window.
+  const filled = clamped === 0 ? 0 : Math.max(1, Math.round((clamped / 100) * CELLS));
+  const block = (count, colour) => {
+    if (count === 0) return "";
+    const fill = "\u{2007}".repeat(count);
+    return `<span style="background-color:${colour};">${fill}</span>`;
+  };
+  return `${block(filled, COLOURS[severity(pct)])}${block(CELLS - filled, COLOURS.track)}`;
+}
+
+/** One window: the bar, the number, and when it comes back. */
+function windowCell(window, now) {
+  if (!window) return "<td>–</td>";
+  const pct = Math.round(window.pct);
+  const left = countdown(window.resetsAt, now);
+  return `<td>${bar(pct)}&nbsp;${pct}%${left ? `<br>${escapeHtml(left)}` : ""}</td>`;
+}
+
+/** A command link, which a trusted hover renders as a clickable word. */
+function link(text, command, ...args) {
+  const query = args.length > 0 ? `?${encodeURIComponent(JSON.stringify(args))}` : "";
+  return `[${text}](command:${command}${query})`;
+}
+
+/**
+ * The same, as HTML.
+ *
+ * Markdown is not processed inside a raw HTML block, so a `[text](command:…)`
+ * in a table cell renders as those literal characters. Inside the table
+ * everything has to be HTML, including the links and the bold.
+ */
+function anchor(text, command, ...args) {
+  const query = args.length > 0 ? `?${encodeURIComponent(JSON.stringify(args))}` : "";
+  return `<a href="command:${command}${query}">${escapeHtml(text)}</a>`;
+}
+
+/**
+ * The hover panel: every account, its windows, its sessions, and the things
+ * you can do to it.
+ *
+ * This is the popup, and it is a hover because that is the only anchored
+ * surface an extension has. VS Code renders Copilot's version of this with an
+ * internal DomWidget that extensions cannot reach, and there is no API to open
+ * a hover on click — so the rich view lives here and the click opens a plain
+ * list for picking, which is the one thing a QuickPick is good at.
  */
 function hoverPanel({ status, profiles = [], usage = {}, busy = {}, version, now = Date.now() }) {
   const lines = ["**zclaude** — the Claude Code account every terminal and this editor use", ""];
   if (version !== undefined && !isSupported(version)) {
-    lines.push(outdatedText(version), "", "[Update zclaude](command:zclaude.pick)");
+    lines.push(outdatedText(version), "", link("Update zclaude", "zclaude.pick"));
     return lines.join("\n");
   }
   if (status?.account?.email) {
-    const org = status.account.organization ? ` · ${status.account.organization}` : "";
-    lines.push(`Signed in as **${status.account.email}**${org}`);
+    const org = status.account.organization ? ` · ${escapeHtml(status.account.organization)}` : "";
+    lines.push(`Signed in as **${escapeHtml(status.account.email)}**${org}`, "");
   } else if (status?.unreadable) {
-    lines.push(`The credential could not be read: ${status.unreadable}`);
+    lines.push(`The credential could not be read: ${escapeHtml(status.unreadable)}`, "");
   } else {
-    lines.push("Nobody is signed in.");
+    lines.push("Nobody is signed in.", "");
   }
-  const table = usageTable({ profiles, usage, busy, active: status?.owner ?? null, now });
-  if (table) lines.push("", "```", table, "```");
+  if (profiles.length > 0) lines.push(accountTable({ profiles, usage, busy, active: status?.owner ?? null, now }), "");
   const credit = profiles.map((profile) => creditsText(usage[profile.name]?.credits)).find(Boolean);
-  if (credit) lines.push("", credit);
-  lines.push("", "[Switch account](command:zclaude.pick) · [Refresh usage](command:zclaude.refresh)");
+  if (credit) lines.push(escapeHtml(credit), "");
+  lines.push(
+    [
+      link("$(sync) Refresh", "zclaude.refresh"),
+      link("$(add) Add", "zclaude.add"),
+      link("$(trash) Remove", "zclaude.remove"),
+      link("$(history) Restore", "zclaude.restore"),
+    ].join(" · "),
+  );
   return lines.join("\n");
+}
+
+/** The table itself, as HTML, because a hover renders one and nothing else does. */
+function accountTable({ profiles, usage, busy, active, now }) {
+  const names = windowNames(profiles, usage);
+  const head = ["", ...names, "", ""].map((name) => `<th>${escapeHtml(name)}</th>`).join("");
+  const rows = profiles.map((profile) => profileRow({ profile, usage, busy, active, names, now }));
+  return `<table><tr>${head}</tr>${rows.join("")}</table>`;
+}
+
+function profileRow({ profile, usage, busy, active, names, now }) {
+  const own = usage[profile.name];
+  const stopped = own && Object.hasOwn(STATES, own.state) ? STATES[own.state] || "no usage" : "";
+  const cells = stopped
+    ? `<td colspan="${names.length}">${escapeHtml(stopped)}</td>`
+    : names.map((name) => windowCell(windowOf(own, name), now)).join("");
+  const counts = busy[profile.name];
+  const sessions = counts?.total ? `${counts.total} ${counts.working > 0 ? "active" : "open"}` : "";
+  return [
+    "<tr>",
+    `<td>${profile.name === active ? '<span class="codicon codicon-check"></span> ' : ""}<b>${escapeHtml(profile.name)}</b></td>`,
+    cells,
+    `<td>${sessions}</td>`,
+    `<td>${actionFor(profile, active)}</td>`,
+    "</tr>",
+  ].join("");
+}
+
+function actionFor(profile, active) {
+  if (profile.name === active) return "in use";
+  // A Z.ai login reaches Claude Code through the environment, never through the
+  // credential the switch moves.
+  if (profile.provider === "zai") return "terminal";
+  return anchor("switch", "zclaude.switchTo", profile.name);
 }
 
 /**
@@ -306,11 +374,13 @@ function quickPickItems({ profiles = [], active = null, usage = {}, loading = fa
 module.exports = {
   ACTIONS,
   accountOf,
+  bar,
+  escapeHtml,
+  severity,
   busyText,
   compareVersions,
   countdown,
   creditsText,
-  gauge,
   hoverPanel,
   isSupported,
   localTime,
@@ -318,6 +388,5 @@ module.exports = {
   outdatedText,
   quickPickItems,
   statusBarText,
-  usageTable,
   usageText,
 };
