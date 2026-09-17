@@ -128,6 +128,7 @@ function loadExtension(answers) {
   const fake = {
     ...cli,
     findBinary: () => (answers.binary === null ? null : "/fake/zclaude"),
+    version: async () => answers.version ?? "9.9.9",
     run: async (binary, args) => {
       ran.push(args);
       return answers.run?.(args) ?? { ok: true, code: 0, stdout: "", stderr: "" };
@@ -286,6 +287,25 @@ describe("the extension in a window", () => {
     await loaded.recorded.commands.get("zclaude.pick")();
     assert.equal(loaded.recorded.pickers.length, 0, "an empty picker helps nobody");
     assert.match(loaded.recorded.messages.at(-1), /zclaude was not found/u);
+  });
+
+  it("marks the status bar and offers the update when zclaude is too old", async () => {
+    const loaded = loadExtension({ ...answers(), version: "0.2.14" });
+    loaded.extension.activate({ subscriptions: [] });
+    await settle();
+    assert.equal(loaded.vscode.window.statusBar.text, "$(account) zc $(warning)");
+    await loaded.recorded.commands.get("zclaude.pick")();
+    assert.equal(loaded.recorded.pickers.length, 0, "an old zclaude answers every call with nothing");
+    assert.match(loaded.recorded.messages.at(-1), /zclaude 0\.2\.14 is older than/u);
+  });
+
+  it("runs self-update in a terminal when that offer is accepted", async () => {
+    const loaded = loadExtension({ ...answers(), version: "0.2.14" });
+    loaded.vscode.window.showWarningMessage = async (text, action) => action;
+    loaded.extension.activate({ subscriptions: [] });
+    await settle();
+    await loaded.recorded.commands.get("zclaude.pick")();
+    assert.deepEqual(loaded.recorded.terminals[0].sent, ["/fake/zclaude self-update"]);
   });
 
   it("hides the status bar item when zclaude is not installed", async () => {

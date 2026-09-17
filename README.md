@@ -355,6 +355,10 @@ confirmation, restores the previous global login, and re-fetches usage. That las
 than it sounds: percentages go stale while a list sits open, and it is the retry when the usage API
 was rate limited or unreachable.
 
+The extension needs zclaude 0.2.18 or newer, which is the version that has `switch`. An older one
+answers every `--json` call with nothing, so the item marks itself with a warning and offers to run
+`zclaude self-update` rather than showing an empty list.
+
 The extension holds no credential logic. It finds `zclaude`, shells out to it asking for `--json`,
 and renders the answer, so every Keychain read, every backup and every write to `~/.claude.json`
 happens in one place with one set of tests. If VS Code was started from the dock on macOS its PATH is

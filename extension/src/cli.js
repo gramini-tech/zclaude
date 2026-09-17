@@ -76,4 +76,10 @@ async function runJson(binary, args, options = {}) {
   }
 }
 
-module.exports = { candidatePaths, findBinary, run, runJson };
+/** The zclaude version, from its own `--version`, or null. */
+async function version(binary, options = {}) {
+  const result = await run(binary, ["--version"], options);
+  return result.stdout.match(/zclaude (\d+\.\d+\.\d+)/u)?.[1] ?? null;
+}
+
+module.exports = { candidatePaths, findBinary, run, runJson, version };

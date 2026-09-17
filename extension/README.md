@@ -30,7 +30,9 @@ npm install -g zclaude
 curl -fsSL https://raw.githubusercontent.com/vipincr/zclaude/main/install.sh | bash
 ```
 
-The extension shells out to it and renders its `--json` output. It holds no credential logic of its
+It needs zclaude 0.2.18 or newer, which is the version that has `switch`; the item says so and
+offers the update when what it finds is older. The extension shells out to it and renders its
+`--json` output. It holds no credential logic of its
 own: every Keychain read, every backup and every write to `~/.claude.json` happens in zclaude, which
 is also where the tests for that live.
 

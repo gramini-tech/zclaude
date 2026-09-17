@@ -8,11 +8,12 @@
 
 const vscode = require("vscode");
 
-const { findBinary, run, runJson } = require("./cli.js");
-const { ACTIONS, quickPickItems, statusBarText, tooltip } = require("./items.js");
+const { findBinary, run, runJson, version } = require("./cli.js");
+const { ACTIONS, isSupported, outdatedText, quickPickItems, statusBarText, tooltip } = require("./items.js");
 
 let item;
 let binary = null;
+let found = null;
 let output;
 
 function settings() {
@@ -20,8 +21,30 @@ function settings() {
 }
 
 function locate() {
-  binary = findBinary({ setting: settings().get("path", "") });
+  const next = findBinary({ setting: settings().get("path", "") });
+  if (next !== binary) found = null; // a different binary is a different version
+  binary = next;
   return binary;
+}
+
+/**
+ * Which zclaude this is, asked once per binary. An install that predates the
+ * switch answers every --json call with nothing, which would otherwise show as
+ * an empty list and no reason for it.
+ */
+async function zclaudeVersion() {
+  if (!binary) return null;
+  found ??= (await version(binary)) ?? "unknown";
+  return found === "unknown" ? null : found;
+}
+
+/** Offer the update rather than just refusing. */
+async function reportTooOld(installed) {
+  const choice = await vscode.window.showWarningMessage(outdatedText(installed), "Update zclaude");
+  if (choice !== "Update zclaude") return;
+  const terminal = vscode.window.createTerminal("zclaude self-update");
+  terminal.show();
+  terminal.sendText(`${binary} self-update`);
 }
 
 async function readStatus() {
@@ -49,9 +72,10 @@ async function refreshStatusBar() {
     item.hide();
     return;
   }
-  const { status } = await readStatus();
-  item.text = statusBarText(status);
-  item.tooltip = new vscode.MarkdownString(tooltip(status, null));
+  const installed = await zclaudeVersion();
+  const { status } = isSupported(installed) ? await readStatus() : { status: null };
+  item.text = statusBarText(status, installed);
+  item.tooltip = new vscode.MarkdownString(tooltip(status, null, installed));
   item.show();
 }
 
@@ -63,6 +87,11 @@ async function pick(force = false) {
       "Open settings",
     );
     if (choice === "Open settings") await vscode.commands.executeCommand("workbench.action.openSettings", "zclaude");
+    return;
+  }
+  const installed = await zclaudeVersion();
+  if (!isSupported(installed)) {
+    await reportTooOld(installed);
     return;
   }
   const picker = vscode.window.createQuickPick();

@@ -5,12 +5,37 @@
 
 "use strict";
 
+/** The first zclaude that has `switch`, `--json` status and usage. */
+const MINIMUM_ZCLAUDE = "0.2.18";
+
 const ACTIONS = Object.freeze({
   refresh: "zclaude.action.refresh",
   add: "zclaude.action.add",
   remove: "zclaude.action.remove",
   restore: "zclaude.action.restore",
 });
+
+/**
+ * -1, 0 or 1, comparing dotted versions numerically. "0.2.9" is older than
+ * "0.2.10", which a string comparison gets backwards.
+ */
+function compareVersions(a, b) {
+  const parts = (text) =>
+    String(text ?? "")
+      .split(".")
+      .map((part) => Number(part) || 0);
+  const [left, right] = [parts(a), parts(b)];
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    const difference = (left[index] ?? 0) - (right[index] ?? 0);
+    if (difference !== 0) return difference > 0 ? 1 : -1;
+  }
+  return 0;
+}
+
+/** Does this zclaude have what the extension needs? */
+function isSupported(version) {
+  return Boolean(version) && compareVersions(version, MINIMUM_ZCLAUDE) >= 0;
+}
 
 /** The account line for a profile, as `zclaude profile list --json` gives it. */
 function accountOf(profile) {
@@ -67,7 +92,8 @@ function quickPickItems({ profiles = [], active = null, usage = {}, loading = fa
 }
 
 /** The status bar: who is signed in, short enough to sit next to the branch. */
-function statusBarText(status) {
+function statusBarText(status, version) {
+  if (version !== undefined && !isSupported(version)) return "$(account) zc $(warning)";
   if (!status) return "$(account) zc";
   if (status.unreadable) return "$(account) zc ?";
   const email = status.account?.email;
@@ -76,8 +102,12 @@ function statusBarText(status) {
 }
 
 /** The hover: the full account, what it is, and its usage. */
-function tooltip(status, usage) {
+function tooltip(status, usage, version) {
   const lines = ["**zclaude** — the Claude Code account every terminal and the extension use"];
+  if (version !== undefined && !isSupported(version)) {
+    lines.push("", outdatedText(version), "", "Click for how to update.");
+    return lines.join("\n");
+  }
   if (status?.account?.email) {
     const org = status.account.organization ? ` · ${status.account.organization}` : "";
     lines.push("", `Signed in as \`${status.account.email}${org}\``);
@@ -93,4 +123,22 @@ function tooltip(status, usage) {
   return lines.join("\n");
 }
 
-module.exports = { ACTIONS, accountOf, quickPickItems, statusBarText, tooltip, usageText };
+/** What to say about a zclaude that predates this extension. */
+function outdatedText(version) {
+  return version
+    ? `zclaude ${version} is older than ${MINIMUM_ZCLAUDE}, which is what this needs to switch accounts.`
+    : `This needs zclaude ${MINIMUM_ZCLAUDE} or newer.`;
+}
+
+module.exports = {
+  ACTIONS,
+  accountOf,
+  compareVersions,
+  isSupported,
+  MINIMUM_ZCLAUDE,
+  outdatedText,
+  quickPickItems,
+  statusBarText,
+  tooltip,
+  usageText,
+};

@@ -90,6 +90,35 @@ describe("usage as a line", () => {
   });
 });
 
+describe("which zclaude it needs", () => {
+  it("compares versions numerically, not as strings", () => {
+    assert.equal(items.compareVersions("0.2.10", "0.2.9"), 1, "0.2.10 is newer than 0.2.9");
+    assert.equal(items.compareVersions("0.2.18", "0.2.18"), 0);
+    assert.equal(items.compareVersions("0.3", "0.2.99"), 1);
+    assert.equal(items.compareVersions("1.0.0", "0.9.9"), 1);
+  });
+
+  it("accepts the minimum and anything above it", () => {
+    assert.equal(items.isSupported(items.MINIMUM_ZCLAUDE), true);
+    assert.equal(items.isSupported("9.9.9"), true);
+    assert.equal(items.isSupported("0.2.14"), false, "0.2.14 predates `switch`");
+    assert.equal(items.isSupported(null), false);
+  });
+
+  it("names the version it found, so the message is actionable", () => {
+    assert.match(items.outdatedText("0.2.14"), /zclaude 0\.2\.14 is older than 0\.\d+\.\d+/u);
+    assert.match(items.outdatedText(null), /needs zclaude 0\.\d+\.\d+ or newer/u);
+  });
+
+  it("marks the status bar and the hover rather than showing a wrong account", () => {
+    assert.equal(items.statusBarText({ account: { email: "a@b.com" } }, "0.2.14"), "$(account) zc $(warning)");
+    assert.match(items.tooltip(null, null, "0.2.14"), /older than/u);
+    // Without a version the checks stay out of the way, which is what every
+    // other caller wants.
+    assert.equal(items.statusBarText({ account: { email: "a@b.com" } }), "$(account) a");
+  });
+});
+
 describe("the status bar", () => {
   it("shows the local part of the signed-in address, which fits", () => {
     assert.equal(items.statusBarText({ account: { email: "vipinr@gramini.com" } }), "$(account) vipinr");
@@ -198,6 +227,17 @@ describe("talking to zclaude", () => {
     const execFileImpl = fake({ stdout: "not json at all" });
     const { error } = await cli.runJson("/z", ["profile", "list"], { execFileImpl });
     assert.match(error, /did not answer in JSON/u);
+  });
+
+  it("reads the version out of --version, ignoring the claude line under it", async () => {
+    const execFileImpl = (bin, args, options, callback) =>
+      callback(null, "zclaude 0.2.18 — interactive preloader\nclaude 2.1.274 (Claude Code)\n", "");
+    assert.equal(await cli.version("/z", { execFileImpl }), "0.2.18");
+  });
+
+  it("returns null when the binary answers with something else entirely", async () => {
+    const execFileImpl = (bin, args, options, callback) => callback(null, "command not found", "");
+    assert.equal(await cli.version("/z", { execFileImpl }), null);
   });
 
   it("never rejects on a non-zero exit, so the extension can report it", async () => {
