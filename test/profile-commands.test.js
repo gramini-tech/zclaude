@@ -337,6 +337,33 @@ describe("profile commands", () => {
     assert.match(result.err, /glm: no Z\.ai key stored/u);
   });
 
+  // The built-in entry used to adopt a profile's Z.ai key, which showed one
+  // plan's usage under two names. The lookup no longer does that; a copy it
+  // already made is what this reports.
+  it("doctor spots the built-in Z.ai entry holding a profile's key", async () => {
+    await profile(["add", "glm"], { provider: "zai" });
+    const key = "0123456789abcdef0123.ABCDEFGHIJKLMNOPQRSTUV";
+    await saveCredential({ apiKey: key, email: "me@x.y" }, { env, profile: "glm" });
+    const quiet = await profile(["doctor"]);
+    assert.doesNotMatch(quiet.err, /same key/u, "a profile with its own key is nobody's business");
+
+    await saveCredential({ apiKey: key, email: "me@x.y" }, { env });
+    const result = await profile(["doctor"]);
+    assert.match(result.err, /built-in Z\.ai entry holds the same key as the "glm" profile/u);
+    assert.match(result.err, /`zclaude logout` removes the built-in copy and leaves "glm" alone/u);
+  });
+
+  it("doctor says nothing when the built-in key is a different plan", async () => {
+    await profile(["add", "glm"], { provider: "zai" });
+    await saveCredential(
+      { apiKey: "0123456789abcdef0123.ABCDEFGHIJKLMNOPQRSTUV", email: "one@x.y" },
+      { env, profile: "glm" },
+    );
+    await saveCredential({ apiKey: "fedcba9876543210fedc.VUTSRQPONMLKJIHGFEDCBA", email: "two@x.y" }, { env });
+    const result = await profile(["doctor"]);
+    assert.doesNotMatch(result.err, /same key/u);
+  });
+
   it("doctor reports a deleted directory without trying to repair it", async () => {
     await addWork();
     const record = await getRegistered("work", env);

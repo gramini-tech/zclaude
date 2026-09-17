@@ -459,10 +459,33 @@ async function environmentChecks(env) {
   ].filter(Boolean);
 }
 
+/**
+ * Until 0.2.23 the built-in Z.ai entry, finding no key of its own, searched the
+ * Keychain by service alone and adopted whichever item answered — a profile's.
+ * The lookup no longer does that, but a copy it already made stays where it is,
+ * quietly showing one plan's quota under two names.
+ */
+async function checkSharedZaiKey(records, env) {
+  const builtin = await loadCredential({ env });
+  if (!builtin) return [];
+  const zaiProfiles = records.filter((entry) => entry.provider === "zai");
+  for (const record of zaiProfiles) {
+    const theirs = await loadCredential({ env, profile: record.name });
+    if (theirs?.apiKey !== builtin.apiKey) continue;
+    return [
+      {
+        what: `The built-in Z.ai entry holds the same key as the "${record.name}" profile`,
+        fix: `Both rows then report one plan's usage. \`zclaude logout\` removes the built-in copy and leaves "${record.name}" alone.`,
+      },
+    ];
+  }
+  return [];
+}
+
 async function cmdDoctor({ env, options }) {
   const records = await listRegistered(env);
   /** @type {{what: string, fix?: string}[]} */
-  const found = [...(await environmentChecks(env))];
+  const found = [...(await environmentChecks(env)), ...(await checkSharedZaiKey(records, env))];
   for (const record of records) found.push(...(await checkProfile(record, env)));
 
   if (options.fix) {

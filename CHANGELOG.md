@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.23
+
+- **Fixed: the built-in Z.ai entry could adopt a profile's key.** With no key of
+  its own it fell back to a lookup that searched the Keychain by service alone,
+  and `security` answers that with whichever item carries the service — since
+  profiles, somebody else's. The menu then showed one plan's usage twice, under
+  the built-in row and under the profile that actually owns the key. The legacy
+  lookup now searches only the two account names a pre-profiles key could sit
+  under, and `profile doctor` reports a copy an earlier version already made,
+  along with the `zclaude logout` that removes it.
+- The menu's built-in `Claude Code` row names the account the global login
+  currently holds, so a profile for that same account no longer reads as a
+  duplicate of it.
+
 ## 0.2.18
 
 Switching the global login, and three things that make that useful.

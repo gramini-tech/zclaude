@@ -128,18 +128,33 @@ async function keychainAdd(account, secret, security = runSecurity, legacyAccoun
 }
 
 /**
+ * Where a key could sit from before profiles existed: under the signed-in
+ * email, or under the literal "default" for a login that never recorded one.
+ *
+ * Both are searched by name. An account-less search is never right here:
+ * `security find-generic-password -s zclaude` answers with whichever item
+ * carries that service, and since profiles that is somebody else's key — which
+ * is how the built-in entry came to show a profile's plan as its own.
+ */
+function legacyAccounts(email) {
+  return [email, "default"].filter(Boolean);
+}
+
+/**
  * Look the key up under its profile account. The built-in profile also looks
- * for a key stored before profiles existed, which sits under the account name
- * of the signed-in email, and moves it across on the way past.
+ * for a key stored before profiles existed and moves it across on the way past.
  */
 async function findOrMigrate(security, account, legacyEmail) {
   const secret = await keychainFind(security, account);
   if (secret || legacyEmail === null) return secret;
-  const legacy = await keychainFind(security, null);
-  if (!legacy) return null;
-  await keychainAdd(account, legacy, security, legacyEmail || null);
-  log.info("store", "migrated the legacy keychain item", { account, targeted: Boolean(legacyEmail) });
-  return legacy;
+  for (const candidate of legacyAccounts(legacyEmail)) {
+    const legacy = await keychainFind(security, candidate);
+    if (!legacy) continue;
+    await keychainAdd(account, legacy, security, candidate);
+    log.info("store", "migrated the legacy keychain item", { account, from: candidate });
+    return legacy;
+  }
+  return null;
 }
 
 // --------------------------------------------------------------- json files

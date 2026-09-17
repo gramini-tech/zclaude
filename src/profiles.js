@@ -10,6 +10,7 @@ import { foldsCase } from "./profiles/paths.js";
 import { accountLabel, readIdentity } from "./profiles/probe.js";
 import { listRegistered } from "./profiles/registry.js";
 import { parseDotenv } from "./settings.js";
+import { configFilePath, describeIdentity, readIdentityBlock } from "./swap/identity.js";
 import { warn } from "./ui/log.js";
 
 /**
@@ -84,9 +85,24 @@ async function fromRecord(record) {
   };
 }
 
+/**
+ * The built-in `claude` entry is whatever account the global login holds, which
+ * is often one a profile also has. Naming it is what stops the two rows reading
+ * as a duplicate, or as something stale worth deleting.
+ */
+async function describeBuiltin(profile, env) {
+  if (profile.id !== "claude") return profile;
+  // The global identity file sits beside the config directory rather than
+  // inside it, so this goes through the swap module's path helper — the one
+  // place that names Claude Code's own files — instead of readIdentity.
+  const block = await readIdentityBlock(configFilePath(env));
+  const account = accountLabel(describeIdentity(block));
+  return account ? { ...profile, description: `${account} (the global login)` } : profile;
+}
+
 export async function listProfiles(env = process.env) {
   /** @type {Profile[]} */
-  const profiles = [...BUILTIN_PROFILES];
+  const profiles = await Promise.all(BUILTIN_PROFILES.map((profile) => describeBuiltin(profile, env)));
   const registered = await listRegistered(env);
   const names = new Set(registered.map((record) => record.name));
   const menuEntries = await Promise.all(registered.map((record) => fromRecord(record)));

@@ -172,6 +172,50 @@ describe("keychain wrapper", () => {
     }
   });
 
+  // The bug this replaces: with no key of its own, the built-in entry searched
+  // the Keychain by service alone, which answers with any item carrying it —
+  // so it adopted a profile's key and reported that plan's usage as its own.
+  it("never adopts a profile's key as the built-in one", async () => {
+    const home = await tempHome();
+    try {
+      const env = { HOME: home.dir, ZCLAUDE_HOME: `${home.dir}/.zclaude` };
+      const store = new Map([["zai:chinese", "dddddddddddddddd.dddddddddddddddd"]]);
+      const security = fakeSecurity(store);
+      // The metadata of a login whose own key is gone, which is what makes the
+      // built-in look for a legacy item at all.
+      await mkdir(`${home.dir}/.zclaude`, { recursive: true });
+      await writeFile(`${home.dir}/.zclaude/profile.json`, JSON.stringify({ email: "me@x.y" }));
+
+      assert.equal(await loadCredential({ env, platform: "darwin", security }), null);
+      assert.equal(store.size, 1, "the profile's key was copied somewhere");
+      assert.ok(store.has("zai:chinese") && !store.has("zai:default"));
+      // The profile itself still works, which is the other half of the claim.
+      assert.equal(
+        (await loadCredential({ env, platform: "darwin", security, profile: "chinese" })).apiKey,
+        "dddddddddddddddd.dddddddddddddddd",
+      );
+    } finally {
+      await home.cleanup();
+    }
+  });
+
+  it("still finds a pre-profiles key stored under the literal default account", async () => {
+    const home = await tempHome();
+    try {
+      const env = { HOME: home.dir, ZCLAUDE_HOME: `${home.dir}/.zclaude` };
+      // A login that never recorded an email stored its key under "default".
+      const store = new Map([["default", "eeeeeeeeeeeeeeee.eeeeeeeeeeeeeeee"]]);
+      const security = fakeSecurity(store);
+      await mkdir(`${home.dir}/.zclaude`, { recursive: true });
+      await writeFile(`${home.dir}/.zclaude/profile.json`, JSON.stringify({ email: "" }));
+      const loaded = await loadCredential({ env, platform: "darwin", security });
+      assert.equal(loaded.apiKey, "eeeeeeeeeeeeeeee.eeeeeeeeeeeeeeee");
+      assert.ok(store.has("zai:default") && !store.has("default"));
+    } finally {
+      await home.cleanup();
+    }
+  });
+
   it("falls back to the file when the keychain fails", async () => {
     const home = await tempHome();
     try {
