@@ -1,7 +1,7 @@
 // Command-line front end and orchestration.
 
 import { execFile, spawn } from "node:child_process";
-import { rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { delimiter, dirname, join } from "node:path";
 
 import { openUrl } from "./browser.js";
@@ -116,6 +116,7 @@ const BOOL_FLAGS = Object.freeze({
   "--path": "pathOnly",
   "--yes": "yes",
   "--fix": "fix",
+  "--force": "force",
   "--sso": "sso",
   "--console": "useConsole",
 });
@@ -194,7 +195,7 @@ Usage
   zclaude models                               list models available to your Z.ai key
   zclaude log [--json] [--path]                show the latest run log (post-mortem)
   zclaude self-install                         install zclaude globally with npm (e.g. from npx)
-  zclaude self-update                          update to the newest version the same way it was installed
+  zclaude self-update [--force]                update the same way it was installed (--force skips the check)
   zclaude self-uninstall [--keep-config]       remove zclaude, its settings, logs and the stored key
 
 Profiles (one Claude or Z.ai account each, scoped to the terminal that started it)
@@ -226,6 +227,7 @@ Options (must come before any claude argument or profile name)
   --sso, --console, --email    passed to \`claude auth login\` for an Anthropic profile
   --yes                        profile remove: do not ask
   --fix                        profile doctor: relink what it can
+  --force                      self-update: install even when the check says you are current
   --no-store                   keep the key in memory for this session only
   --no-banner                  skip the splash
   --verbose                    show what zclaude is doing
@@ -1136,13 +1138,14 @@ async function verifyGlobalInstall(env) {
 }
 
 /** Update in place, using whichever install path put zclaude here. */
-async function cmdSelfUpdate({ env }) {
+async function cmdSelfUpdate({ options, env }) {
   const latest = await fetchLatestVersion();
   if (!latest) warn("Could not reach GitHub to look up the newest version; trying the update anyway.");
-  else if (compareVersions(latest, VERSION) <= 0) {
+  else if (compareVersions(latest, VERSION) <= 0 && !options.force) {
     success(`zclaude ${VERSION} is already the newest version.`);
+    info("If you know a newer one was just pushed, `zclaude self-update --force` installs it anyway.");
     return EXIT.OK;
-  } else info(`Updating zclaude ${VERSION} -> ${latest}`);
+  } else if (latest) info(`Updating zclaude ${VERSION} -> ${latest}${options.force ? " (forced)" : ""}`);
   const kind = detectInstallKind({ env });
   const code = await selfUpdate({ env, kind, npmSpec: await npmSpec(env) });
   if (code === null) {
@@ -1150,8 +1153,43 @@ async function cmdSelfUpdate({ env }) {
     return EXIT.OK;
   }
   if (code !== 0) throw new ZclaudeError(`The ${kind} update exited with ${code}.`, { exitCode: EXIT.INTERNAL });
-  success("Updated. Run `zclaude --version` in a new terminal to confirm.");
+  const installed = await installedVersion({ env, kind });
+  if (!installed) {
+    success("Updated. Run `zclaude --version` in a new terminal to confirm.");
+    return EXIT.OK;
+  }
+  if (installed === VERSION) {
+    warn(
+      `The update finished but ${installed} is still what is installed. Open a new terminal, or run \`zclaude self-update --force\`.`,
+    );
+    return EXIT.OK;
+  }
+  success(`Updated to ${installed}. Open a new terminal to use it.`);
   return EXIT.OK;
+}
+
+/**
+ * The version sitting on disk after an update, read from the package it just
+ * installed. Reporting what actually landed beats telling someone to go and
+ * check for themselves.
+ */
+async function installedVersion({ env, kind }) {
+  const binDir = kind === "npm" ? await npmBinDir(execFile, env) : null;
+  const roots = [
+    kind === "installer" ? env.ZCLAUDE_INSTALL_DIR || join(zclaudeHome(env), "app") : null,
+    binDir ? join(dirname(binDir), "lib", "node_modules", "zclaude") : null,
+    binDir ? join(binDir, "..", "lib", "node_modules", "zclaude") : null,
+  ].filter(Boolean);
+  for (const root of roots) {
+    try {
+      const raw = await readFile(join(root, "package.json"), "utf8");
+      const version = JSON.parse(raw)?.version;
+      if (typeof version === "string") return version;
+    } catch {
+      // try the next candidate
+    }
+  }
+  return null;
 }
 
 /** Show the latest run log so a failed run can be examined after the fact. */

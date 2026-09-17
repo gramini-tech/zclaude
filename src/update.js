@@ -18,6 +18,10 @@ const REPO = "vipincr/zclaude";
 // leaves a symlink into its cache instead of a real installation.
 export const GITHUB_SPEC = `https://codeload.github.com/${REPO}/tar.gz/refs/heads/main`;
 const RAW_PACKAGE_URL = `https://raw.githubusercontent.com/${REPO}/main/package.json`;
+// raw.githubusercontent sits behind a cache that holds a file for minutes and
+// ignores a no-cache request header, so a version pushed a moment ago reads as
+// the old one. A unique query makes it a different cache key.
+const cacheBusted = (url, now) => `${url}?t=${now}`;
 export const INSTALLER_URL = "https://vipincr.github.io/zclaude/install";
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
@@ -37,12 +41,12 @@ export function compareVersions(a, b) {
 
 /**
  * Fetch the latest published version, or null when unreachable.
- * @param {{fetchImpl?: typeof fetch, timeoutMs?: number}} [options]
+ * @param {{fetchImpl?: typeof fetch, timeoutMs?: number, now?: number}} [options]
  */
-export async function fetchLatestVersion({ fetchImpl, timeoutMs = 2500 } = {}) {
+export async function fetchLatestVersion({ fetchImpl, timeoutMs = 2500, now = Date.now() } = {}) {
   try {
     const response = await request({
-      url: RAW_PACKAGE_URL,
+      url: cacheBusted(RAW_PACKAGE_URL, now),
       timeoutMs,
       fetchImpl,
       headers: { "Cache-Control": "no-cache" },
@@ -63,9 +67,12 @@ export async function checkForUpdate({ env = process.env, now = Date.now(), fetc
   if (flag(env, "ZCLAUDE_NO_UPDATE_CHECK") || env.CI) return null;
   const state = await readState(env);
   const last = Number(state.lastUpdateCheck) || 0;
+  // The check is throttled to once a day: a launch must not wait on the
+  // network. A remembered version that is not newer than this one simply
+  // yields no notice, which the comparison below already handles.
   let latest = typeof state.latestVersion === "string" ? state.latestVersion : null;
   if (now - last >= CHECK_INTERVAL_MS) {
-    latest = await fetchLatestVersion({ fetchImpl });
+    latest = await fetchLatestVersion({ fetchImpl, now });
     log.debug("cli", "update check", { latest, current });
     await writeState({ lastUpdateCheck: now, latestVersion: latest ?? state.latestVersion ?? null }, env).catch(
       () => {},

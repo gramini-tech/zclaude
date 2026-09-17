@@ -80,13 +80,20 @@ a one-line notice when a newer version exists.
 
 ```sh
 zclaude self-update                        # re-runs whichever install path put zclaude here
+zclaude self-update --force                # install anyway, when the check says you are current
 npx github:vipincr/zclaude self-update     # the same, without a global install
 zclaude self-uninstall                     # remove zclaude, its profiles, their logins, settings and logs
 zclaude self-uninstall --keep-config       # keep ~/.zclaude
 ```
 
 `self-update` re-runs the curl installer for installer-based setups, `npm install -g` for npm-based
-ones, and tells you to `git pull` in a checkout.
+ones, and tells you to `git pull` in a checkout. It reads the version back from what it installed and
+reports that, rather than asking you to go and check.
+
+The check reads `package.json` from the default branch. GitHub serves that file through a cache that
+holds it for a few minutes, so a version pushed moments ago can still read as the previous one; the
+request carries a unique query to get around it. If a check still says you are current when you know
+better, `--force` installs anyway.
 
 ## Quick start
 
@@ -416,6 +423,7 @@ All zclaude options go before any argument meant for `claude`.
 | `--sso`, `--console`, `--email <addr>`  | passed to `claude auth login` for an Anthropic profile                   |
 | `--yes`                                 | `profile remove`: do not ask                                             |
 | `--fix`                                 | `profile doctor`: relink what it can                                     |
+| `--force`                               | `self-update`: install even when the check says you are current          |
 | `--reconfigure`, `--customize`          | run the model wizard even when config exists                             |
 | `--login`                               | sign in to Z.ai again before launching                                   |
 | `--model <id>`                          | primary model for a Z.ai profile; forwarded to `claude` otherwise        |
