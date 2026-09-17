@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.2.32
+
+The VS Code list was, as reported, "a bit haphazardly organized".
+
+- **A hover panel on the status bar item**, with every account's windows in
+  actual columns: a fenced block, because the rest of a hover is rendered in the
+  UI font and only inside a fence is a space a space. The panel carries Switch
+  and Refresh as links, so it is the place to look rather than a place to squint.
+- **Gauges in the picker.** Each window is a bar and its percentage —
+  `5h ━───────  11%` — so a row can be compared against the one above it.
+  Drawn with heavy and light rules rather than full blocks: the list has no
+  font size to set, and a row of solid blocks reads as a wall.
+- **Fixed-width spacing.** Percentages are padded with a figure space, which is
+  exactly one digit wide, and groups are separated by an em space. Ordinary
+  spaces line nothing up in a proportional font, which is what made the old
+  rows look assembled rather than laid out.
+- The terminal menu, which *is* monospace, now pads its percentages into real
+  columns and puts one reset clock at the end of the row rather than one after
+  each window, where it shifted every later column on every row.
+- Credit that nobody has stopped being repeated on every row. `credits spent`
+  on four rows of an account that never enabled it says nothing and costs the
+  width the numbers need; `profile list --usage` still spells it out.
+
+Extension 0.4.0.
+
 ## 0.2.28
 
 Two fixes for a status bar item that was installed, active, and useless.

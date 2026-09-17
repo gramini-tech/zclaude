@@ -71,11 +71,30 @@ const STATE_TEXT = Object.freeze({
  */
 const PRESSED = 50;
 
-function windowText(label, window, now) {
-  if (!window) return null;
-  const pct = Math.round(window.pct);
-  const left = pct >= PRESSED ? countdown(window.resetsAt, now) : "";
-  return left ? `${label} ${pct}% ⟳${left}` : `${label} ${pct}%`;
+/**
+ * One window, with its percentage in a fixed three columns.
+ *
+ * The terminal is monospace, so padding is the whole difference between rows
+ * that line up and rows that merely follow each other: "5h   3%" over
+ * "5h 100%" puts every later column in the same place on every row.
+ */
+function windowText(label, window) {
+  return window ? `${label} ${String(Math.round(window.pct)).padStart(3)}%` : null;
+}
+
+/**
+ * The clock for whichever window is closest to its ceiling, at the end of the
+ * line rather than beside its own percentage.
+ *
+ * One clock, and always last: a clock in the middle of the row pushed every
+ * later column somewhere different on every row, which is exactly what the
+ * padding above is there to prevent.
+ */
+function resetTail(windows, now) {
+  const worst = windows.filter(Boolean).toSorted((a, b) => b.pct - a.pct)[0];
+  if (!worst || Math.round(worst.pct) < PRESSED) return "";
+  const left = countdown(worst.resetsAt, now);
+  return left ? `⟳${left}` : "";
 }
 
 /** What is left to spend beyond the plan, when that is switched on. */
@@ -102,13 +121,21 @@ export function formatUsage(usage, now = Date.now()) {
   if (Object.hasOwn(STATE_TEXT, usage.state)) return STATE_TEXT[usage.state];
   const scoped = usage.scoped ?? [];
   const parts = [
-    windowText("5h", usage.fiveHour, now),
-    windowText("wk", usage.weekly, now),
-    ...scoped.map((scope) => windowText(scope.name, scope, now)),
-    formatCredits(usage.credits) || null,
+    windowText("5h", usage.fiveHour),
+    windowText("wk", usage.weekly),
+    ...scoped.map((scope) => windowText(scope.name, scope)),
   ].filter(Boolean);
   if (parts.length === 0) return "";
-  return usage.state === "stale" ? `${parts.join(" · ")} (cached)` : parts.join(" · ");
+  // Credit only when there is a balance to know about. An account that never
+  // turned it on repeating "credits spent" on every row says nothing and costs
+  // the width that the numbers need; `profile list --usage` spells it out.
+  const credit = usage.credits?.enabled || usage.credits?.spendLimitReached ? formatCredits(usage.credits) : "";
+  const tail = [
+    resetTail([usage.fiveHour, usage.weekly, ...scoped], now),
+    credit,
+    usage.state === "stale" ? "(cached)" : "",
+  ].filter(Boolean);
+  return [parts.join(" · "), ...tail].join("  ");
 }
 
 /**

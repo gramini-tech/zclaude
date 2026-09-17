@@ -9,7 +9,7 @@
 const vscode = require("vscode");
 
 const { findBinary, run, runJson, version } = require("./cli.js");
-const { ACTIONS, isSupported, outdatedText, quickPickItems, statusBarText, tooltip } = require("./items.js");
+const { ACTIONS, hoverPanel, isSupported, outdatedText, quickPickItems, statusBarText } = require("./items.js");
 
 let item;
 let binary = null;
@@ -82,6 +82,15 @@ async function readUsage(force) {
  * either call failed got no status bar item at all and no way to find out why.
  * A badge that says something is wrong beats one that is not there.
  */
+/** A hover that may carry theme icons and command links, which a plain one may not. */
+function panel(markdown) {
+  const text = new vscode.MarkdownString(markdown);
+  text.supportThemeIcons = true;
+  // Only for the command: links this extension writes into its own hover.
+  text.isTrusted = true;
+  return text;
+}
+
 async function refreshStatusBar() {
   if (!item) return;
   item.show();
@@ -96,15 +105,24 @@ async function refreshStatusBar() {
   }
   try {
     const installed = await zclaudeVersion();
-    const { status, error } = isSupported(installed) ? await readStatus() : { status: null, error: null };
+    if (!isSupported(installed)) {
+      item.text = statusBarText(null, installed);
+      item.tooltip = panel(hoverPanel({ status: null, version: installed }));
+      return;
+    }
+    const { status, error } = await readStatus();
     if (error) log(`zclaude switch --status: ${error}`);
     item.text = statusBarText(status, installed);
-    item.tooltip = new vscode.MarkdownString(tooltip(status, null, installed));
+    // The hover carries the whole table, so it needs what the picker needs.
+    // All of it is cached by zclaude for a minute, which is why this can run on
+    // every window focus without becoming a network call each time.
+    const [profiles, usage, busy] = await Promise.all([readProfiles(), readUsage(false), readBusy()]);
+    item.tooltip = panel(hoverPanel({ status, profiles, usage, busy, version: installed }));
   } catch (error) {
     // Whatever went wrong, the item stays, saying so.
     log(`could not read the account: ${error.message}`);
     item.text = "zc $(warning)";
-    item.tooltip = new vscode.MarkdownString(
+    item.tooltip = panel(
       ["**zclaude** could not be asked which account is signed in.", "", "See the zclaude output channel."].join("\n"),
     );
   }

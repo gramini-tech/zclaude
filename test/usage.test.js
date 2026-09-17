@@ -155,8 +155,8 @@ describe("reset times in a row", () => {
     ...overrides,
   });
 
-  it("puts the clock on a window near its ceiling and leaves a quiet one bare", () => {
-    assert.equal(formatUsage(usage(), NOW), "5h 78% ⟳2h · wk 4%");
+  it("puts one clock at the end, so the percentage columns stay in line", () => {
+    assert.equal(formatUsage(usage(), NOW), "5h  78% · wk   4%  ⟳2h");
   });
 
   it("keeps a row readable when every window is under pressure", () => {
@@ -167,7 +167,9 @@ describe("reset times in a row", () => {
       }),
       NOW,
     );
-    assert.equal(text, "5h 78% ⟳2h · wk 88% ⟳6d · Fable 100% ⟳6d");
+    // One clock, for the window closest to stopping you, rather than one after
+    // each percentage where it would shift every later column.
+    assert.equal(text, "5h  78% · wk  88% · Fable 100%  ⟳6d");
     assert.ok(text.length < 52, "a row this wide already crowds an 80-column terminal");
   });
 
@@ -519,9 +521,9 @@ describe("showing usage", () => {
         weekly: { pct: 61 },
         scoped: [{ name: "Fable", pct: 91.2 }],
       }),
-      "5h 12% · wk 61% · Fable 91%",
+      "5h  12% · wk  61% · Fable  91%",
     );
-    assert.equal(formatUsage({ state: "stale", fiveHour: { pct: 3 }, weekly: null, scoped: [] }), "5h 3% (cached)");
+    assert.equal(formatUsage({ state: "stale", fiveHour: { pct: 3 }, weekly: null, scoped: [] }), "5h   3%  (cached)");
     assert.equal(formatUsage({ state: "dead" }), "login expired");
     assert.equal(formatUsage({ state: "throttled" }), "usage rate limited, try again shortly");
     assert.equal(formatUsage({ state: "offline" }), "usage unavailable");

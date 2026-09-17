@@ -18,7 +18,7 @@ describe("a row in the picker", () => {
   it("is a name and a number, because that is the choice", () => {
     assert.equal(
       row({ usage: { state: "ok", fiveHour: { pct: 12 }, weekly: null, scoped: [] } }),
-      "  work       5h 12%",
+      "  work       5h  12%",
     );
     assert.equal(row(), "  work", "nothing known yet, nothing claimed");
   });
@@ -31,7 +31,9 @@ describe("a row in the picker", () => {
 
   it("replaces the spinner with the numbers, and a failure with its reason", () => {
     const usage = { state: "ok", fiveHour: { pct: 12 }, weekly: { pct: 61 }, scoped: [{ name: "Fable", pct: 91 }] };
-    assert.match(row({ usage, loading: true }), /5h 12% · wk 61% · Fable 91%$/u);
+    // Percentages in a fixed three columns, so "5h 100%" and "5h   2%" put
+    // every later column in the same place on every row.
+    assert.match(row({ usage, loading: true }), /5h {2}12% · wk {2}61% · Fable {2}91%$/u);
     assert.match(row({ usage: { state: "dead" } }), /login expired$/u);
     assert.match(row({ usage: { state: "throttled" } }), /rate limited/u);
   });
@@ -42,7 +44,7 @@ describe("a row in the picker", () => {
     const line = renderRow({ profile: long, active: false, usage, loading: false, width: 26, frame: 0, columns: 80 });
     assert.ok(line.length < 80, `row must fit the terminal, got ${line.length}`);
     assert.match(line, /^ {2}Claude Code \+ Z\.ai GLM Co…/u, "the name column holds its width");
-    assert.match(line, /5h 42% · wk 55% · Fable 100%$/u, "the numbers survive");
+    assert.match(line, /5h {2}42% · wk {2}55% · Fable 100%$/u, "the numbers survive");
   });
 
   it("spells the reset times out on a line of their own", () => {
@@ -69,7 +71,7 @@ describe("a row in the picker", () => {
   it("marks a busy account before the numbers, because it changes the choice more", () => {
     const busy = { working: 2, idle: 0, unknown: 0, total: 2, newest: 0 };
     const line = row({ usage: { state: "ok", fiveHour: { pct: 12 }, weekly: null, scoped: [] }, busy });
-    assert.equal(line, "  work       ● 2 running  5h 12%");
+    assert.equal(line, "  work       ● 2 running  5h  12%");
     assert.equal(row({ busy: { working: 0, idle: 1, unknown: 0, total: 1 } }), "  work       ○ idle");
     assert.equal(row({ busy: undefined }), "  work", "an account nobody is using gets no marker");
   });
