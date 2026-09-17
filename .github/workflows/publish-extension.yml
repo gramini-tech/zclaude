@@ -1,0 +1,34 @@
+name: Publish the VS Code extension
+
+# Dormant. It needs VSCE_PAT (VS Code Marketplace) and OVSX_PAT (Open VSX) in
+# the repository secrets, and until they exist the vsix is distributed with
+# zclaude itself. Run it by hand, or let a tag like extension-v0.1.0 trigger it.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["extension-v*"]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      # The committed vsix is what everything else installs, so publishing
+      # something built differently would be a second artefact nobody tested.
+      - run: npm run check:extension
+      - name: Publish
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          if [ -z "${VSCE_PAT:-}" ] && [ -z "${OVSX_PAT:-}" ]; then
+            echo "Neither VSCE_PAT nor OVSX_PAT is set; nothing to publish to." >&2
+            exit 0
+          fi
+          npm run publish:extension

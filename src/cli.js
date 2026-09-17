@@ -41,7 +41,12 @@ import { configureLogger, formatEntry, listLogs, log, logFilePath, readLog } fro
 import { cmdProfile, describeShare, forgetAllProfiles, launchContext, profileSummaries } from "./profile-commands.js";
 import { cmdRenewGroup } from "./renew-commands.js";
 import { uninstall as unschedule } from "./renew/schedule.js";
-import { uninstallEverywhere as uninstallExtension } from "./vscode/index.js";
+import {
+  findEditors,
+  installedVersion as editorExtensionVersion,
+  packagedVersion,
+  uninstallEverywhere as uninstallExtension,
+} from "./vscode/index.js";
 import { cmdSwitchGroup } from "./swap-commands.js";
 import { cmdVscodeGroup } from "./vscode-commands.js";
 import { clearBackups } from "./swap/backup.js";
@@ -1260,7 +1265,26 @@ async function cmdSelfUpdate({ options, env }) {
     return EXIT.OK;
   }
   success(`Updated to ${installed}. Open a new terminal to use it.`);
+  await mentionStaleExtension(env);
   return EXIT.OK;
+}
+
+/**
+ * An update replaces the packaged vsix; the copy inside the editor stays where
+ * it is. Saying so costs one line and saves a confusing afternoon.
+ */
+async function mentionStaleExtension(env) {
+  try {
+    const packaged = await packagedVersion();
+    if (!packaged) return;
+    const editors = await findEditors({ env });
+    const states = await Promise.all(editors.map((editor) => editorExtensionVersion(editor, { env })));
+    const stale = states.some((state) => state.state === "installed" && state.version !== packaged);
+    if (stale)
+      info(`The VS Code status bar item is older than ${packaged}. Update it with \`zclaude vscode install\`.`);
+  } catch (error) {
+    debug(`extension version not checked: ${error.message}`);
+  }
 }
 
 /**
