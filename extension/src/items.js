@@ -37,11 +37,16 @@ function isSupported(version) {
   return Boolean(version) && compareVersions(version, MINIMUM_ZCLAUDE) >= 0;
 }
 
-/** The account line for a profile, as `zclaude profile list --json` gives it. */
+/**
+ * The account line for a profile, as `zclaude profile list --json` gives it.
+ * A Z.ai profile has no Anthropic login, so zclaude reports it as signed out;
+ * saying that here would be wrong, since its key is somewhere else entirely.
+ */
 function accountOf(profile) {
+  if (profile.provider === "zai") return "Z.ai coding plan";
   if (profile.account) return profile.account;
   if (profile.identity?.email) return profile.identity.email;
-  return profile.provider === "zai" ? "Z.ai coding plan" : "signed out";
+  return "signed out";
 }
 
 /** "5h 12% · wk 61% · Fable 91%", or why there are no numbers. */

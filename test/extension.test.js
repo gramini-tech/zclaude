@@ -66,6 +66,13 @@ describe("the picker's contents", () => {
     assert.equal(row.switchable, false);
     assert.equal(row.description, "Z.ai coding plan");
   });
+
+  it("does not repeat zclaude's 'signed out' for a Z.ai profile, which has no Anthropic login", () => {
+    const [row] = items.quickPickItems({
+      profiles: [profile("chinese", { provider: "zai", account: "signed out" })],
+    });
+    assert.equal(row.description, "Z.ai coding plan");
+  });
 });
 
 describe("usage as a line", () => {
