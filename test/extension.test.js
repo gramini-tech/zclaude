@@ -54,18 +54,14 @@ describe("the picker's contents", () => {
     assert.match(row.detail, /checking usage/u);
   });
 
-  it("shows the numbers once they have, as bars a column can be read down", () => {
+  it("shows the numbers once they have, and nothing that cannot render", () => {
     const [row] = items.quickPickItems({
       profiles: [profile("work")],
       usage: { work: usage(12, 61, [{ name: "Fable", pct: 91 }]) },
     });
-    // The list is rendered in a proportional font, where ordinary spaces line
-    // nothing up. A figure space is one digit wide, so 12% and 100% take the
-    // same room; an em space is a constant gap between groups.
-    assert.match(
-      row.detail,
-      /^5h ━─────── \u{2007}12%\u{2003}wk ━━━━━─── \u{2007}61%\u{2003}Fable ━━━━━━━─ \u{2007}91%$/u,
-    );
+    // Numbers only. A gauge drawn in the list's proportional font says nothing
+    // about its value, and a clock after each window runs off the end.
+    assert.equal(row.detail, "5h 12% · wk 61% · Fable 91%");
   });
 
   it("marks a Z.ai profile as not switchable, because its login is an environment", () => {
@@ -82,50 +78,60 @@ describe("the picker's contents", () => {
   });
 });
 
-describe("the bar a row is read by", () => {
+describe("the gauge in the hover", () => {
   it("fills in proportion, and keeps its width whatever the number", () => {
-    assert.equal(items.gauge(0), "────────");
-    assert.equal(items.gauge(50), "━━━━────");
-    assert.equal(items.gauge(100), "━━━━━━━━");
-    for (const pct of [0, 1, 37, 99, 100]) assert.equal(items.gauge(pct).length, 8, `${pct}% is the wrong width`);
+    assert.equal(items.gauge(0), "░░░░░░░░░░");
+    assert.equal(items.gauge(50), "█████░░░░░");
+    assert.equal(items.gauge(100), "██████████");
+    for (const pct of [0, 1, 37, 99, 100]) assert.equal(items.gauge(pct).length, 10, `${pct}% is the wrong width`);
   });
 
   it("shows a cell for anything spent at all, so 5% is not an empty bar", () => {
-    assert.equal(items.gauge(5), "━───────");
-    assert.equal(items.gauge(0.4), "━───────");
+    assert.equal(items.gauge(5), "█░░░░░░░░░");
+    assert.equal(items.gauge(0.4), "█░░░░░░░░░");
   });
 
   it("clamps rather than overflowing on a number outside the range", () => {
-    assert.equal(items.gauge(140), "━━━━━━━━");
-    assert.equal(items.gauge(-5), "────────");
+    assert.equal(items.gauge(140), "██████████");
+    assert.equal(items.gauge(-5), "░░░░░░░░░░");
   });
 
-  it("puts one clock at the end, for the window closest to stopping you", () => {
+  it("gives each row the reset of the window closest to stopping it", () => {
     const now = Date.parse("2026-09-17T12:00:00Z");
-    const line = items.usageBars(
-      {
-        state: "ok",
-        fiveHour: { pct: 10, resetsAt: now + 3_600_000 },
-        weekly: { pct: 88, resetsAt: now + 2 * 86_400_000 },
-        scoped: [{ name: "Fable", pct: 60, resetsAt: now + 2 * 86_400_000 }],
-        credits: null,
+    const table = items.usageTable({
+      profiles: [{ name: "work" }],
+      usage: {
+        work: {
+          state: "ok",
+          fiveHour: { pct: 10, resetsAt: now + 3_600_000 },
+          weekly: { pct: 88, resetsAt: now + 2 * 86_400_000 },
+          scoped: [{ name: "Fable", pct: 60, resetsAt: now + 2 * 86_400_000 }],
+        },
       },
       now,
-    );
-    assert.equal(line.match(/resets/gu).length, 1, "one clock, not one per window");
-    assert.match(line, /resets 2d$/u, "and it is the week's, which is the fullest");
+    });
+    const row = table.split("\n").find((line) => line.includes("work"));
+    assert.match(row, /2d$/u, "the week is the fullest, so its clock is the one shown");
   });
 
-  it("keeps quiet about credit nobody has", () => {
-    const usage = {
-      state: "ok",
-      fiveHour: { pct: 10 },
-      weekly: null,
-      scoped: [],
-      credits: { enabled: false, reason: "out_of_credits" },
-    };
-    assert.doesNotMatch(items.usageBars(usage), /credit/u);
-    assert.match(items.usageBars({ ...usage, credits: { enabled: true, remaining: 4, currency: "USD" } }), /\$4\.00/u);
+  it("holds a column open for a window a profile does not have", () => {
+    const table = items.usageTable({
+      profiles: [{ name: "zai" }, { name: "work" }],
+      usage: {
+        zai: { state: "ok", fiveHour: { pct: 10 }, weekly: { pct: 20 }, scoped: [] },
+        work: { state: "ok", fiveHour: { pct: 1 }, weekly: { pct: 2 }, scoped: [{ name: "Fable", pct: 3 }] },
+      },
+    });
+    const [head, ...rows] = table.split("\n");
+    assert.match(head, /Fable/u);
+    assert.match(
+      rows.find((row) => row.includes("zai")),
+      /–/u,
+      "a dash keeps the column, so the ones beside it still line up",
+    );
+    // Trailing padding is stripped, so rows differ in length; what has to
+    // match is where each column starts.
+    assert.equal(new Set(rows.map((row) => row.indexOf("%"))).size, 1, "the first percentage column drifted");
   });
 });
 
@@ -147,7 +153,7 @@ describe("an account that is already busy", () => {
       profiles: [profile("work")],
       busy: { work: { working: 1, idle: 0, unknown: 0, total: 1 } },
     });
-    assert.match(row.description, /work@example\.com\u{2003}\$\(circle-filled\) running/u);
+    assert.match(row.description, /work@example\.com {3}\$\(circle-filled\) running/u);
   });
 });
 
@@ -195,7 +201,7 @@ describe("which zclaude it needs", () => {
 
   it("marks the status bar and the hover rather than showing a wrong account", () => {
     assert.equal(items.statusBarText({ account: { email: "a@b.com" } }, "0.2.14"), "zc $(warning)");
-    assert.match(items.tooltip(null, null, "0.2.14"), /older than/u);
+    assert.match(items.hoverPanel({ status: null, version: "0.2.14" }), /older than/u);
     // Without a version the checks stay out of the way, which is what every
     // other caller wants.
     assert.equal(items.statusBarText({ account: { email: "a@b.com" } }), "zc $(account) a");
@@ -221,22 +227,21 @@ describe("the status bar", () => {
     assert.equal(items.statusBarText({ unreadable: "the Keychain is locked" }), "zc $(warning)");
   });
 
-  it("puts the account, its organization and the profile in the tooltip", () => {
-    const text = items.tooltip(
-      { account: { email: "a@b.com", organization: "Acme" }, owner: "work" },
-      usage(1, 2, [{ name: "Fable", pct: 3 }]),
-    );
-    assert.match(text, /a@b\.com · Acme/u);
-    assert.match(text, /Profile: `work`/u);
-    // The hover has room, so each window is spelled out rather than compressed.
-    assert.match(text, /- 5 hours 1%/u);
-    assert.match(text, /- week 2%/u);
-    assert.match(text, /- Fable week 3%/u);
+  it("names the account and marks which profile holds it", () => {
+    const text = items.hoverPanel({
+      status: { account: { email: "a@b.com", organization: "Acme" }, owner: "work" },
+      profiles: [{ name: "work" }],
+      usage: { work: usage(1, 2, [{ name: "Fable", pct: 3 }]) },
+      version: "9.9.9",
+    });
+    assert.match(text, /Signed in as \*\*a@b\.com\*\* · Acme/u);
+    assert.match(text, /^›\s+work/mu);
   });
 
   it("says so plainly when the credential could not be read", () => {
-    assert.match(items.tooltip({ unreadable: "the Keychain is locked" }, null), /could not be read: the Keychain/u);
-    assert.match(items.tooltip(null, null), /Nobody is signed in/u);
+    const hover = (status) => items.hoverPanel({ status, version: "9.9.9" });
+    assert.match(hover({ unreadable: "the Keychain is locked" }), /could not be read: the Keychain/u);
+    assert.match(hover(null), /Nobody is signed in/u);
   });
 });
 
@@ -257,14 +262,14 @@ describe("when a window comes back", () => {
     assert.equal(items.countdown(undefined, NOW), "");
   });
 
-  it("puts the clock on a window near its ceiling and leaves a quiet one alone", () => {
+  it("keeps the clocks out of the list, where they would be clipped", () => {
     const pressed = {
       state: "ok",
       fiveHour: { pct: 78, resetsAt: at(2 * 3_600_000) },
       weekly: { pct: 4, resetsAt: at(6 * 86_400_000) },
       scoped: [],
     };
-    assert.equal(items.usageText(pressed, NOW), "5h 78% ⟳2h · wk 4%");
+    assert.equal(items.usageText(pressed), "5h 78% · wk 4%");
   });
 
   it("converts to local time, which is the point of converting at all", () => {
@@ -276,13 +281,15 @@ describe("when a window comes back", () => {
     assert.match(items.localTime(at(3 * 86_400_000), NOW), /,/u, "a date further out carries its day");
   });
 
-  it("spells every window out for the hover", () => {
-    const lines = items.usageLines(
-      { state: "ok", fiveHour: { pct: 78, resetsAt: at(2 * 3_600_000) }, weekly: null, scoped: [] },
-      NOW,
-    );
-    assert.equal(lines.length, 1);
-    assert.match(lines[0], /^5 hours 78% — resets in 2h \(/u);
+  it("draws the gauge and the clock in the hover, where both fit", () => {
+    const table = items.usageTable({
+      profiles: [{ name: "work" }],
+      usage: { work: { state: "ok", fiveHour: { pct: 78, resetsAt: at(2 * 3_600_000) }, weekly: null, scoped: [] } },
+      now: NOW,
+    });
+    const row = table.split("\n").at(-1);
+    assert.match(row, /████████░░\s+78%/u);
+    assert.match(row, /2h$/u);
   });
 });
 
@@ -327,11 +334,11 @@ describe("the hover panel", () => {
 
   it("gives every per-model window its own column, named in the header", () => {
     const [head, ...body] = table(panel());
-    assert.match(head, /profile\s+5-hour\s+week\s+Fable\s+sessions/u);
+    assert.match(head, /profile\s+5-hour\s+week\s+Fable\s+resets\s+sessions/u);
     // chinese has no Fable window; the column stays, with nothing in it.
     assert.match(
       body.find((row) => row.includes("chinese")),
-      /chinese\s+11%\s+70%\s+–/u,
+      /chinese\s+█+░*\s+11%\s+█+░*\s+70%\s+–/u,
     );
   });
 

@@ -1,7 +1,14 @@
-// Turning zclaude's JSON into what the status bar and the list show.
+// Turning zclaude's JSON into what the status bar, its hover and the list show.
 //
 // Pure: no VS Code, no child processes. The extension is mostly this plus
 // plumbing, so this is where the tests are.
+//
+// One constraint shapes all of it. The list and the status bar are drawn in the
+// editor's UI font, which is proportional and offers no styling hook, so
+// nothing there can be lined up or drawn as a gauge: blocks are proportional
+// too, and rules render as one unbroken line whatever their value. Inside a
+// fenced block in the hover the font is fixed. So the numbers go in the list,
+// and the picture goes in the hover.
 
 "use strict";
 
@@ -35,6 +42,13 @@ function compareVersions(a, b) {
 /** Does this zclaude have what the extension needs? */
 function isSupported(version) {
   return Boolean(version) && compareVersions(version, MINIMUM_ZCLAUDE) >= 0;
+}
+
+/** What to say about a zclaude that predates this extension. */
+function outdatedText(version) {
+  return version
+    ? `zclaude ${version} is older than ${MINIMUM_ZCLAUDE}, which is what this needs to switch accounts.`
+    : `This needs zclaude ${MINIMUM_ZCLAUDE} or newer.`;
 }
 
 /**
@@ -105,85 +119,6 @@ function busyText(counts) {
   return counts.total > 1 ? `$(circle-outline) ${counts.total} idle` : "$(circle-outline) idle";
 }
 
-/** A window a reset time is worth showing for; at 4% nobody is watching it. */
-const PRESSED = 50;
-
-function windowText(label, window, now) {
-  if (!window) return null;
-  const pct = Math.round(window.pct);
-  const left = pct >= PRESSED ? countdown(window.resetsAt, now) : "";
-  return left ? `${label} ${pct}% ⟳${left}` : `${label} ${pct}%`;
-}
-
-const CELLS = 8;
-// A rule rather than blocks. The list has no styling — `detail` is plain text,
-// so there is no font size to set — and a row of full blocks is the heaviest
-// mark the character set offers: it reads as a wall and crowds out the account
-// beside it. Heavy and light horizontal box-drawing draw the same gauge at a
-// fraction of the ink, and both have the font coverage full blocks do.
-const FULL = "━";
-const EMPTY = "─";
-
-/**
- * A window as a bar.
- *
- * The list is rendered in the editor's UI font, which is proportional, so no
- * amount of padding will line two rows up. Block characters are the exception:
- * they are one uniform width, so a bar of them is the only thing on the row
- * that can be compared down a column at a glance. That is the whole reason
- * these are here rather than tidier numbers.
- */
-function gauge(pct) {
-  const clamped = Math.min(100, Math.max(0, pct));
-  // Anything spent at all shows a cell: an empty bar beside "5%" reads as a
-  // rounding bug rather than as a nearly-untouched window.
-  const filled = clamped === 0 ? 0 : Math.max(1, Math.round((clamped / 100) * CELLS));
-  return `${FULL.repeat(filled)}${EMPTY.repeat(CELLS - filled)}`;
-}
-
-// Spacing that survives a proportional font.
-//
-// A run of ordinary spaces is narrow and, worse, collapses differently either
-// side of different letters, so padding with them lines nothing up. These two
-// hold their width: a figure space is exactly one digit wide, so a percentage
-// padded with them occupies the same room whether it is 5% or 100%; an em space
-// is a full, constant gap, which is what separates one group from the next.
-const FIGURE = "\u{2007}";
-const GAP = "\u{2003}";
-
-function windowBar(label, window) {
-  if (!window) return null;
-  const pct = Math.round(window.pct);
-  return `${label} ${gauge(pct)} ${String(pct).padStart(3, FIGURE)}%`;
-}
-
-/**
- * The line under a profile in the picker: one bar per window, and the reset
- * time for whichever is closest to its ceiling.
- *
- * Only one clock, not one per window: three of them pushed the line past the
- * width of the list, and the one that matters is the window about to stop you.
- */
-function usageBars(usage, now = Date.now()) {
-  if (!usage) return "";
-  if (Object.hasOwn(STATES, usage.state)) return STATES[usage.state];
-  const windows = [
-    usage.fiveHour ? { label: "5h", window: usage.fiveHour } : null,
-    usage.weekly ? { label: "wk", window: usage.weekly } : null,
-    ...(usage.scoped ?? []).map((scope) => ({ label: scope.name, window: scope })),
-  ].filter(Boolean);
-  const bars = windows.map(({ label, window }) => windowBar(label, window)).filter(Boolean);
-  if (bars.length === 0) return usageText(usage, now);
-  const worst = windows.toSorted((a, b) => b.window.pct - a.window.pct)[0];
-  const left = Math.round(worst.window.pct) >= PRESSED ? countdown(worst.window.resetsAt, now) : "";
-  // Credit only when there is a balance to know about. "credits spent" on every
-  // row of an account that never had any is the kind of noise this line is
-  // being rebuilt to remove; `profile list --usage` still spells it out.
-  const credit = usage.credits?.enabled || usage.credits?.spendLimitReached ? creditsText(usage.credits) : "";
-  const tail = [left ? `resets ${left}` : "", credit, usage.state === "stale" ? "cached" : ""].filter(Boolean);
-  return `${bars.join(GAP)}${tail.length > 0 ? `${GAP}${tail.join(" · ")}` : ""}`;
-}
-
 /** What is left to spend beyond the plan, when the account has that switched on. */
 function creditsText(credits) {
   if (!credits) return "";
@@ -196,34 +131,148 @@ function creditsText(credits) {
   return credits.reason === "out_of_credits" ? "credits spent" : "";
 }
 
-/** "5h 12% · wk 61% ⟳2d · Fable 91% ⟳2d", or why there are no numbers. */
-function usageText(usage, now = Date.now()) {
+/**
+ * A window in the list: the number, and nothing else.
+ *
+ * The list gives each row one short line in a proportional font. Anything more
+ * there either says nothing, like a gauge that cannot render, or runs off the
+ * end and is clipped, like a clock after every window. Both belong in the
+ * hover, which is wide, fixed-width and can hold them.
+ */
+function windowText(label, window) {
+  return window ? `${label} ${Math.round(window.pct)}%` : null;
+}
+
+/** "5h 12% · wk 61% · Fable 91%", or why there are no numbers. */
+function usageText(usage) {
   if (!usage) return "";
   if (Object.hasOwn(STATES, usage.state)) return STATES[usage.state];
   const parts = [
-    windowText("5h", usage.fiveHour, now),
-    windowText("wk", usage.weekly, now),
-    ...(usage.scoped ?? []).map((scope) => windowText(scope.name, scope, now)),
-    creditsText(usage.credits) || null,
+    windowText("5h", usage.fiveHour),
+    windowText("wk", usage.weekly),
+    ...(usage.scoped ?? []).map((scope) => windowText(scope.name, scope)),
   ].filter(Boolean);
   if (parts.length === 0) return "";
   return usage.state === "stale" ? `${parts.join(" · ")} (cached)` : parts.join(" · ");
 }
 
-/** Every window with its own reset time spelled out, for the hover. */
-function usageLines(usage, now = Date.now()) {
-  if (!usage || Object.hasOwn(STATES, usage.state)) return [];
-  const windows = [
-    usage.fiveHour ? ["5 hours", usage.fiveHour] : null,
-    usage.weekly ? ["week", usage.weekly] : null,
-    ...(usage.scoped ?? []).map((scope) => [`${scope.name} week`, scope]),
-  ].filter(Boolean);
-  return windows.map(([label, window]) => {
-    const left = countdown(window.resetsAt, now);
-    const clock = localTime(window.resetsAt, now);
-    const when = left === "now" ? "resets now" : left ? `resets in ${left} (${clock})` : "";
-    return `${label} ${Math.round(window.pct)}%${when ? ` — ${when}` : ""}`;
+const CELLS = 10;
+const FULL = "█";
+const EMPTY = "░";
+/** A gauge cell plus " 100%": the width every window column is laid out to. */
+const COLUMN = CELLS + 5;
+
+/**
+ * A window as a bar — for the fenced block in the hover, and nowhere else.
+ *
+ * Blocks are a gauge only where the font is fixed. In the list they are
+ * proportional and say nothing about their value; an earlier attempt used
+ * heavy and light rules there, and they rendered as one unbroken line whatever
+ * the number, which is worse than showing no gauge at all.
+ */
+function gauge(pct, cells = CELLS) {
+  const clamped = Math.min(100, Math.max(0, pct));
+  // Anything spent at all shows a cell: an empty bar beside "5%" reads as a
+  // rounding bug rather than as a nearly-untouched window.
+  const filled = clamped === 0 ? 0 : Math.max(1, Math.round((clamped / 100) * cells));
+  return `${FULL.repeat(filled)}${EMPTY.repeat(cells - filled)}`;
+}
+
+/** Every window a column is needed for, in the order they first appear. */
+function windowNames(profiles, usage) {
+  const models = [];
+  for (const profile of profiles) {
+    const scopes = usage[profile.name]?.scoped ?? [];
+    for (const scope of scopes) {
+      if (!models.includes(scope.name)) models.push(scope.name);
+    }
+  }
+  return ["5-hour", "week", ...models];
+}
+
+function windowOf(own, name) {
+  if (name === "5-hour") return own?.fiveHour ?? null;
+  if (name === "week") return own?.weekly ?? null;
+  return (own?.scoped ?? []).find((scope) => scope.name === name) ?? null;
+}
+
+/** The gauge and the number for one cell, or a dash holding the column open. */
+function cell(window) {
+  if (!window) return "–".padStart(Math.round(COLUMN / 2)).padEnd(COLUMN);
+  return `${gauge(window.pct)}${String(Math.round(window.pct)).padStart(4)}%`;
+}
+
+/**
+ * The table: a row per profile, a column per window, and the reset time of
+ * whichever window is closest to stopping you.
+ * @param {{profiles: Array<object>, usage: Record<string, object>, busy: Record<string, object>, active: string | null, now?: number}} args
+ */
+function usageTable({ profiles, usage = {}, busy = {}, active = null, now = Date.now() }) {
+  if (profiles.length === 0) return "";
+  const names = windowNames(profiles, usage);
+  const rows = profiles.map((profile) => {
+    const own = usage[profile.name];
+    const stopped = Object.hasOwn(STATES, own?.state) ? STATES[own.state] || "no usage" : "";
+    const windows = names.map((name) => windowOf(own, name));
+    const worst = windows.filter(Boolean).toSorted((a, b) => b.pct - a.pct)[0];
+    const counts = busy[profile.name];
+    const cells = stopped ? [stopped, ...names.slice(1).map(() => "")] : windows.map((window) => cell(window));
+    return [
+      profile.name === active ? "›" : " ",
+      profile.name,
+      ...cells,
+      stopped ? "" : countdown(worst?.resetsAt, now),
+      counts?.total ? `${counts.total} ${counts.working > 0 ? "active" : "open"}` : "",
+    ];
   });
+  const head = ["", "profile", ...names.map((name) => name.padEnd(COLUMN)), "resets", "sessions"];
+  const widths = head.map((_, column) => Math.max(head[column].length, ...rows.map((row) => row[column].length)));
+  const lay = (row) => row.map((text, column) => text.padEnd(widths[column])).join("  ");
+  return [lay(head), ...rows.map((row) => lay(row))].map((line) => line.trimEnd()).join("\n");
+}
+
+/**
+ * The hover panel: every account, its windows and its sessions, laid out.
+ *
+ * The fenced block is the whole trick. The rest of a hover is rendered in the
+ * UI font, which lines nothing up; inside a fence it is monospace, so a space
+ * is a space, columns are columns and a run of blocks is a gauge.
+ */
+function hoverPanel({ status, profiles = [], usage = {}, busy = {}, version, now = Date.now() }) {
+  const lines = ["**zclaude** — the Claude Code account every terminal and this editor use", ""];
+  if (version !== undefined && !isSupported(version)) {
+    lines.push(outdatedText(version), "", "[Update zclaude](command:zclaude.pick)");
+    return lines.join("\n");
+  }
+  if (status?.account?.email) {
+    const org = status.account.organization ? ` · ${status.account.organization}` : "";
+    lines.push(`Signed in as **${status.account.email}**${org}`);
+  } else if (status?.unreadable) {
+    lines.push(`The credential could not be read: ${status.unreadable}`);
+  } else {
+    lines.push("Nobody is signed in.");
+  }
+  const table = usageTable({ profiles, usage, busy, active: status?.owner ?? null, now });
+  if (table) lines.push("", "```", table, "```");
+  const credit = profiles.map((profile) => creditsText(usage[profile.name]?.credits)).find(Boolean);
+  if (credit) lines.push("", credit);
+  lines.push("", "[Switch account](command:zclaude.pick) · [Refresh usage](command:zclaude.refresh)");
+  return lines.join("\n");
+}
+
+/**
+ * The status bar: whose account this is, behind the name of the thing showing
+ * it. The name comes first because a status bar is a row of other people's
+ * icons, and a generic person glyph with an address beside it identifies
+ * nothing.
+ */
+function statusBarText(status, version) {
+  if (version !== undefined && !isSupported(version)) return "zc $(warning)";
+  if (!status) return "zc";
+  if (status.unreadable) return "zc $(warning)";
+  const email = status.account?.email;
+  if (!email) return "zc $(circle-slash)";
+  return `zc $(account) ${email.split("@", 1)[0]}`;
 }
 
 /**
@@ -233,14 +282,11 @@ function usageLines(usage, now = Date.now()) {
 function quickPickItems({ profiles = [], active = null, usage = {}, loading = false, busy = {} }) {
   const rows = profiles.map((profile) => {
     const current = profile.name === active;
-    const numbers = usageBars(usage[profile.name]);
+    const numbers = usageText(usage[profile.name]);
     const running = busyText(busy[profile.name]);
     return {
       label: `${current ? "$(check) " : "$(blank) "}${profile.name}`,
-      // Three spaces, not another "·": the account already contains one, and a
-      // second separator of a different width is what made the row look
-      // assembled rather than laid out.
-      description: [accountOf(profile), running].filter(Boolean).join(GAP),
+      description: [accountOf(profile), running].filter(Boolean).join(" ".repeat(3)),
       detail: numbers || (loading ? "$(sync~spin) checking usage…" : ""),
       profile: profile.name,
       picked: current,
@@ -257,141 +303,21 @@ function quickPickItems({ profiles = [], active = null, usage = {}, loading = fa
   ];
 }
 
-/**
- * The status bar: whose account this is, behind the name of the thing showing
- * it.
- *
- * The name comes first because a status bar is a row of other people's icons.
- * An earlier version led with the generic `$(account)` person glyph and showed
- * only the address, which read as somebody's username and identified nothing —
- * reported as "I couldn't tell if it was zclaude". No codicon is worth as much
- * as two letters that are ours.
- */
-function statusBarText(status, version) {
-  if (version !== undefined && !isSupported(version)) return "zc $(warning)";
-  if (!status) return "zc";
-  if (status.unreadable) return "zc $(warning)";
-  const email = status.account?.email;
-  if (!email) return "zc $(circle-slash)";
-  return `zc $(account) ${email.split("@", 1)[0]}`;
-}
-
-/**
- * The hover panel: every account, its windows and its sessions, in columns.
- *
- * A fenced block is the trick. The rest of a hover is rendered in the UI font,
- * which is proportional and lines nothing up; inside a fence it is monospace,
- * where a space is a space and columns are simply columns. That is the only
- * place in this extension where padding means what it says.
- */
-function hoverPanel({ status, profiles = [], usage = {}, busy = {}, version }) {
-  const lines = ["**zclaude** — the Claude Code account every terminal and this editor use", ""];
-  if (version !== undefined && !isSupported(version)) {
-    lines.push(outdatedText(version), "", "[Update zclaude](command:zclaude.pick)");
-    return lines.join("\n");
-  }
-  if (status?.account?.email) {
-    const org = status.account.organization ? ` · ${status.account.organization}` : "";
-    lines.push(`Signed in as **${status.account.email}**${org}`, "");
-  } else if (status?.unreadable) {
-    lines.push(`The credential could not be read: ${status.unreadable}`, "");
-  } else {
-    lines.push("Nobody is signed in.", "");
-  }
-  const table = usageTable(profiles, usage, busy, status?.owner ?? null);
-  if (table) lines.push("```", table, "```");
-  lines.push("", "[Switch account](command:zclaude.pick) · [Refresh usage](command:zclaude.refresh)");
-  return lines.join("\n");
-}
-
-/** The columns themselves: one row per profile, one column per window. */
-function usageTable(profiles, usage, busy, active) {
-  if (profiles.length === 0) return "";
-  // Whichever per-model windows exist, in the order they first appear, so every
-  // row has a column for each and the header says which is which.
-  const models = [];
-  for (const profile of profiles) {
-    const scopes = usage[profile.name]?.scoped ?? [];
-    for (const scope of scopes) {
-      if (!models.includes(scope.name)) models.push(scope.name);
-    }
-  }
-  const head = ["", "profile", "5-hour", "week", ...models, "sessions"];
-  const rows = profiles.map((profile) => {
-    const own = usage[profile.name];
-    const cell = (window) => (window ? `${Math.round(window.pct)}%` : "–");
-    const scoped = (name) => cell((own?.scoped ?? []).find((scope) => scope.name === name));
-    const counts = busy[profile.name];
-    const state = Object.hasOwn(STATES, own?.state) ? STATES[own.state] : "";
-    return [
-      profile.name === active ? "›" : "",
-      profile.name,
-      state || cell(own?.fiveHour),
-      state ? "" : cell(own?.weekly),
-      ...models.map((name) => (state ? "" : scoped(name))),
-      counts?.total ? `${counts.total} ${counts.working > 0 ? "active" : "open"}` : "–",
-    ];
-  });
-  const widths = head.map((_, column) => Math.max(head[column].length, ...rows.map((row) => row[column].length)));
-  // The name column reads left, every number reads right: a column of
-  // percentages you can compare down is the whole point of the table.
-  const lay = (row) =>
-    row.map((text, column) => (column <= 1 ? text.padEnd(widths[column]) : text.padStart(widths[column]))).join("  ");
-  return [lay(head), ...rows.map((row) => lay(row))].map((line) => line.trimEnd()).join("\n");
-}
-
-/** The hover: the full account, what it is, and its usage. */
-function tooltip(status, usage, version) {
-  const lines = ["**zclaude** — the Claude Code account every terminal and the extension use"];
-  if (version !== undefined && !isSupported(version)) {
-    lines.push("", outdatedText(version), "", "Click for how to update.");
-    return lines.join("\n");
-  }
-  if (status?.account?.email) {
-    const org = status.account.organization ? ` · ${status.account.organization}` : "";
-    lines.push("", `Signed in as \`${status.account.email}${org}\``);
-  } else if (status?.unreadable) {
-    lines.push("", `The credential could not be read: ${status.unreadable}`);
-  } else {
-    lines.push("", "Nobody is signed in.");
-  }
-  if (status?.owner) lines.push(`Profile: \`${status.owner}\``);
-  const spelled = usageLines(usage);
-  if (spelled.length > 0) lines.push("", ...spelled.map((line) => `- ${line}`));
-  else {
-    const numbers = usageText(usage);
-    if (numbers) lines.push("", numbers);
-  }
-  const credits = creditsText(usage?.credits);
-  if (credits && spelled.length > 0) lines.push(`- ${credits}`);
-  lines.push("", "Click to switch account.");
-  return lines.join("\n");
-}
-
-/** What to say about a zclaude that predates this extension. */
-function outdatedText(version) {
-  return version
-    ? `zclaude ${version} is older than ${MINIMUM_ZCLAUDE}, which is what this needs to switch accounts.`
-    : `This needs zclaude ${MINIMUM_ZCLAUDE} or newer.`;
-}
-
 module.exports = {
   ACTIONS,
   accountOf,
   busyText,
-  hoverPanel,
-  gauge,
-  usageBars,
+  compareVersions,
   countdown,
   creditsText,
-  localTime,
-  usageLines,
-  compareVersions,
+  gauge,
+  hoverPanel,
   isSupported,
+  localTime,
   MINIMUM_ZCLAUDE,
   outdatedText,
   quickPickItems,
   statusBarText,
-  tooltip,
+  usageTable,
   usageText,
 };
