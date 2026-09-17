@@ -7,7 +7,7 @@ import { basename, join } from "node:path";
 
 import { flag, zclaudeHome } from "./config.js";
 import { foldsCase } from "./profiles/paths.js";
-import { readIdentity } from "./profiles/probe.js";
+import { accountLabel, readIdentity } from "./profiles/probe.js";
 import { listRegistered } from "./profiles/registry.js";
 import { parseDotenv } from "./settings.js";
 import { warn } from "./ui/log.js";
@@ -66,7 +66,8 @@ async function fromRecord(record) {
   const shared = [record.share.config ? "config" : null, record.share.history ? "history" : null].filter(Boolean);
   const provider = record.provider === "zai" ? "Z.ai GLM Coding Plan" : "Anthropic account";
   const identity = record.provider === "zai" ? null : await readIdentity(record.dir);
-  const who = identity?.email ? ` · ${identity.email}` : "";
+  const account = accountLabel(identity);
+  const who = account ? ` · ${account}` : "";
   return {
     id: record.name,
     label: record.label || record.name,

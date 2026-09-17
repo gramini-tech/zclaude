@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.10
+
+- `zclaude <profile>` starts a profile: `zclaude work -p "..."` is `zclaude --profile work -p "..."`.
+  The first word is taken as a profile only when one by that name exists, so claude's own arguments
+  still pass through, and a name that matches nothing brings up the menu with the arguments intact.
+  Claude Code's command names are reserved, so a profile can never shadow `zclaude mcp list`.
+- The menu and `profile list` show which account each profile is signed in as, including the
+  organization. Two profiles can hold one login and still be two accounts to bill, which is what a
+  company seat and a personal subscription on the same address are; a personal organization reads as
+  `personal`. The identity comes from each profile's own config file, so picking from the menu never
+  waits on the Keychain.
+- `zclaude profile env` prints PowerShell syntax on Windows, and the installer's uninstall signs
+  every profile out of Claude Code.
+
 ## 0.2.0
 
 Profiles: several Claude Code accounts on one machine, each scoped to the terminal it runs in.

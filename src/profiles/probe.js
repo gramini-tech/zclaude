@@ -48,6 +48,29 @@ export async function readIdentity(configDir) {
 }
 
 /**
+ * Claude names a personal organization after the account that owns it, which
+ * is long and says nothing. Anything else is the organization's real name.
+ */
+function organizationLabel(email, organization) {
+  if (!organization) return null;
+  return organization === `${email}'s Organization` ? "personal" : organization;
+}
+
+/**
+ * How a signed-in account reads in a list. Two profiles can share one login
+ * and still be two accounts to bill: a company seat and a personal
+ * subscription on the same email are different organizations with different
+ * usage pools, so the organization belongs in the identity rather than in a
+ * detail view nobody opens.
+ * @param {{email?: string | null, organization?: string | null} | null} identity
+ */
+export function accountLabel(identity) {
+  if (!identity?.email) return null;
+  const organization = organizationLabel(identity.email, identity.organization);
+  return organization ? `${identity.email} · ${organization}` : identity.email;
+}
+
+/**
  * Where this profile's credential lives: "keychain", "file", "none" or
  * "unknown". A plaintext file is worth surfacing, so it is reported distinctly.
  */

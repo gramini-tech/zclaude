@@ -15,7 +15,7 @@ import { log } from "./logger.js";
 import { claudeCredentialService } from "./profiles/keychain-name.js";
 import { createProfile, defaultConfigDir, deleteProfile, prepareLaunch } from "./profiles/launch.js";
 import { canonicalConfigDir, CLAUDE_COMMANDS } from "./profiles/paths.js";
-import { authStatus, forgetCredential, probeProfile } from "./profiles/probe.js";
+import { accountLabel, authStatus, forgetCredential, probeProfile } from "./profiles/probe.js";
 import { getRegistered, listRegistered, PROVIDERS } from "./profiles/registry.js";
 import { mcpServersWithSecrets, readDefaultConfig, trustedProjects } from "./profiles/seed.js";
 import { detachedShares } from "./profiles/share.js";
@@ -164,7 +164,7 @@ async function profileRows(env) {
 function signedInText(probe) {
   if (probe.signedIn === "unknown") return "unknown (keychain locked?)";
   if (!probe.signedIn) return "signed out";
-  return probe.identity?.email || `signed in (${probe.credential})`;
+  return accountLabel(probe.identity) ?? `signed in (${probe.credential})`;
 }
 
 /** One line per profile, for `profile list` and for `zclaude status`. */
@@ -193,11 +193,16 @@ async function cmdList({ env, options }) {
     info("The built-in `claude` and `zai` entries always work and need no profile.");
     return EXIT.OK;
   }
-  const width = Math.max(...rows.map(({ record }) => record.name.length), 4);
+  // Columns are sized from the content: an account is an email plus its
+  // organization, which is how two profiles on one login stay distinguishable,
+  // and that is wider than any fixed guess.
+  const printed = rows.map(({ record, probe }) => ({ record, account: signedInText(probe) }));
+  const width = Math.max(...printed.map(({ record }) => record.name.length), 4);
+  const accountWidth = Math.max(...printed.map(({ account }) => account.length), 12);
   const grey = (text) => paint(text, "grey", process.stdout);
-  for (const { record, probe } of rows) {
+  for (const { record, account } of printed) {
     process.stdout.write(
-      `${record.name.padEnd(width)}  ${record.provider.padEnd(9)} ${signedInText(probe).padEnd(30)} ${grey(`shares ${describeShare(record.share)}`)}\n`,
+      `${record.name.padEnd(width)}  ${record.provider.padEnd(9)} ${account.padEnd(accountWidth)}  ${grey(`shares ${describeShare(record.share)}`)}\n`,
     );
   }
   return EXIT.OK;

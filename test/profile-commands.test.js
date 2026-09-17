@@ -72,7 +72,9 @@ describe("profile commands", () => {
         `echo "$* | $CLAUDE_CONFIG_DIR" >> "${claudeCalls}"`,
         'if [ "$1" = "auth" ] && [ "$2" = "login" ]; then',
         '  if [ -n "$ZC_LOGIN_FAILS" ]; then exit 4; fi',
-        `  printf '{"oauthAccount":{"emailAddress":"me@x.y","organizationName":"Acme"}}' > "$CLAUDE_CONFIG_DIR/.claude.json"`,
+        '  ORG="${ZC_ORG:-Acme}"',
+        '  if [ "$ORG" = "personal" ]; then ORG="me@x.y\'s Organization"; fi',
+        `  printf '{"oauthAccount":{"emailAddress":"me@x.y","organizationName":"%s"}}' "$ORG" > "$CLAUDE_CONFIG_DIR/.claude.json"`,
         `  printf '{"token":"t"}' > "$CLAUDE_CONFIG_DIR/.credentials.json"`,
         "fi",
         'if [ "$1" = "auth" ] && [ "$2" = "status" ]; then',
@@ -200,6 +202,8 @@ describe("profile commands", () => {
     assert.equal(listed.signedIn, true);
     assert.equal(listed.identity.email, "me@x.y");
 
+    assert.equal(listed.account, "me@x.y · Acme", "the organization is part of the account, not a detail");
+
     const shown = await profile(["show", "work"]);
     assert.match(shown.out, /signed in as\s+me@x\.y/u);
     assert.match(shown.out, /organization\s+Acme/u);
@@ -207,6 +211,26 @@ describe("profile commands", () => {
 
     const doctor = await profile(["doctor"]);
     assert.match(doctor.err, /credentials are in a plaintext file/u);
+  });
+
+  // Two profiles can hold one login and still be two accounts to bill: a
+  // company seat and a personal subscription on the same email.
+  it("tells two profiles on the same login apart by their organization", async () => {
+    await addWork();
+    await profile(["add", "personal"], { provider: "anthropic", share: "none" });
+    await profile(["login", "work"]);
+    env.ZC_ORG = "personal";
+    await profile(["login", "personal"]);
+
+    const rows = JSON.parse((await profile(["list"], { json: true })).out);
+    const accounts = Object.fromEntries(rows.map((row) => [row.name, row.account]));
+    assert.equal(accounts.work, "me@x.y · Acme");
+    assert.equal(accounts.personal, "me@x.y · personal", "a personal organization reads as personal");
+    assert.notEqual(accounts.work, accounts.personal);
+
+    const printed = await profile(["list"]);
+    assert.match(printed.out, /work\s+anthropic me@x\.y · Acme\s+shares/u);
+    assert.match(printed.out, /personal\s+anthropic me@x\.y · personal\s+shares/u);
   });
 
   it("starts a subshell with the profile pinned and says when you leave it", async () => {

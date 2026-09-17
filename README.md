@@ -26,6 +26,10 @@ zclaude solves both with **profiles**. Each profile has its own credentials and 
 configuration directory, scoped to the terminal you start it from. Three terminals can hold three
 different accounts at the same time, and the login you already had keeps working everywhere else.
 
+What a profile really holds is a billing context. A company seat and a personal Max subscription on
+the same email address are two accounts with separate usage, so each gets its own profile, and
+`profile list` prints the organization next to the address to keep them apart.
+
 ## Install
 
 Pick one. All of them end with a `zclaude` command on your PATH.
@@ -169,6 +173,18 @@ zclaude profile doctor                     # check every profile and this shell
 item exists, without ever reading the secret. A locked Keychain reports `unknown` rather than
 pretending you are signed out.
 
+```
+gramini    anthropic vipinr@gramini.com · Hoomanely Inc    shares config + history
+hoomanely  anthropic vipinr@hoomanely.com · Hoomanely Inc  shares config + history
+max        anthropic vipinr@hoomanely.com · personal       shares config + history
+chinese    zai       signed out                            shares config + history
+```
+
+The last two Anthropic rows are one login and two accounts: a team seat billed to the company, and a
+personal subscription billed to the individual. They have separate usage, so they get separate
+profiles, and the organization is what tells them apart at a glance. A personal organization, which
+Claude names after the account that owns it, is shown as `personal`.
+
 ## Multiple Claude accounts
 
 This is the case zclaude was extended for. Say you have a company account, a client account and a
@@ -179,6 +195,10 @@ zclaude profile add company --provider anthropic --share all
 zclaude profile add client  --provider anthropic --share config
 zclaude profile add personal --provider anthropic --share none
 ```
+
+One of these can be the same email as another. What makes them separate accounts is the
+organization: a seat on a company plan and a personal subscription are billed and metered apart, and
+Claude Code treats them as different logins. Give each one a profile.
 
 Then, in three terminals:
 

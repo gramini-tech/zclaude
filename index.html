@@ -51,7 +51,8 @@
         <p class="lede">
           Claude Code keeps one login per machine, so signing in to a second account signs you out of the first, VS Code
           included. zclaude gives each account a profile with its own credentials and its own config directory, scoped
-          to the terminal you start it from. Work, client and personal run side by side, and a
+          to the terminal you start it from. Work, client and personal run side by side, a company seat and a personal
+          subscription on one email count as two, and a
           <a href="https://z.ai/subscribe">Z.ai GLM Coding Plan</a> is just another profile.
         </p>
 
@@ -118,9 +119,10 @@
 <span class="dim">· claude · you@gmail.com · ~/.zclaude/profiles/personal/home</span>
 
 <span class="prompt">$</span> zclaude profile list
-<span class="sel">work</span>      anthropic  you@company.com   <span class="dim">shares config + history</span>
-<span class="sel">personal</span>  anthropic  you@gmail.com     <span class="dim">shares nothing</span>
-<span class="sel">glm</span>       zai        z.ai coding plan  <span class="dim">shares config</span>
+<span class="sel">work</span>      anthropic  you@company.com · Acme Inc  <span class="dim">shares config + history</span>
+<span class="sel">max</span>       anthropic  you@company.com · personal  <span class="dim">shares config</span>
+<span class="sel">personal</span>  anthropic  you@gmail.com · personal    <span class="dim">shares nothing</span>
+<span class="sel">glm</span>       zai        z.ai coding plan            <span class="dim">shares config</span>
 
 <span class="prompt">$</span> claude
 <span class="dim">· your original login, untouched</span></pre>
@@ -137,7 +139,9 @@
         <p>
           A profile is a name, a provider (an Anthropic account or a Z.ai coding plan), its own Claude Code config
           directory, and a choice about what it borrows from your main setup. Credentials are keyed by that directory,
-          which is what keeps the accounts apart.
+          which is what keeps the accounts apart. A profile holds a billing context as much as a login: a company seat
+          and a personal subscription on one email address are metered separately, so they get a profile each, and
+          <code>profile list</code> shows the organization beside the address to tell them apart.
         </p>
         <div class="table-scroll">
           <table>
@@ -205,6 +209,13 @@
             <p>
               Each profile gets its own config directory, so Claude Code stores its credentials under a separate
               Keychain item. No switching, no signing out.
+            </p>
+          </li>
+          <li>
+            <h3>One email, two plans</h3>
+            <p>
+              A company seat and a personal subscription bill and meter separately. Each gets a profile, and the list
+              shows the organization so you can see which is which.
             </p>
           </li>
           <li>
@@ -398,6 +409,16 @@ ZCLAUDE_PROFILE=work       # optional: pick a profile for this project</code></p
             Machine-wide policy from an employer's MDM applies to every profile, and the device key file Claude Code
             writes in your home directory is shared too. <code>zclaude profile doctor</code> tells you when either
             applies.
+          </p>
+        </details>
+
+        <details>
+          <summary>I use one email for a company seat and a personal plan. One profile or two?</summary>
+          <p>
+            Two. They are separate organizations with separate billing and separate usage, and Claude Code stores them
+            as different logins, so a profile each is what keeps their sessions and quotas apart. Both rows show the
+            same address in <code>zclaude profile list</code>, followed by the organization: the company name for the
+            seat, and <code>personal</code> for the subscription billed to you.
           </p>
         </details>
 

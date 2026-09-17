@@ -12,7 +12,7 @@ import {
   registryPath,
   removeRegistered,
 } from "../src/profiles/registry.js";
-import { credentialLocation, probeProfile, readIdentity } from "../src/profiles/probe.js";
+import { accountLabel, credentialLocation, probeProfile, readIdentity } from "../src/profiles/probe.js";
 import { isolatedEnv, tempHome } from "./helpers.js";
 
 describe("profile registry", () => {
@@ -146,5 +146,31 @@ describe("profile probe", () => {
     await mkdir(dir, { recursive: true });
     const probe = await probeProfile({ name: "y", dir }, { platform: "darwin", security: fakeSecurity(0) });
     assert.equal(probe.signedIn, true);
+  });
+});
+
+describe("how an account reads in a list", () => {
+  it("keeps the organization, because that is what separates two profiles on one login", () => {
+    assert.equal(
+      accountLabel({ email: "me@company.com", organization: "Hoomanely Inc" }),
+      "me@company.com · Hoomanely Inc",
+    );
+    // A company seat and a personal subscription on the same email are billed
+    // separately, so the two rows have to differ.
+    assert.equal(
+      accountLabel({ email: "me@company.com", organization: "me@company.com's Organization" }),
+      "me@company.com · personal",
+    );
+    assert.notEqual(
+      accountLabel({ email: "me@company.com", organization: "Hoomanely Inc" }),
+      accountLabel({ email: "me@company.com", organization: "me@company.com's Organization" }),
+    );
+  });
+
+  it("falls back to the email, and to nothing when there is no identity", () => {
+    assert.equal(accountLabel({ email: "me@x.y" }), "me@x.y");
+    assert.equal(accountLabel({ email: "me@x.y", organization: null }), "me@x.y");
+    assert.equal(accountLabel(null), null);
+    assert.equal(accountLabel({}), null);
   });
 });
