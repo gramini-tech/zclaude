@@ -116,6 +116,8 @@ const strictCore = {
   "unicorn/error-message": "error",
   "unicorn/no-unused-properties": "error",
   "unicorn/prefer-node-protocol": "error",
+  // Iterator helpers are Node 22; this package supports 20.17.
+  "unicorn/prefer-iterator-to-array": "off",
   "sonarjs/cognitive-complexity": ["error", 25],
   "sonarjs/no-duplicate-string": "off",
   "sonarjs/no-nested-conditional": "off",

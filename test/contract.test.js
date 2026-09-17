@@ -120,7 +120,9 @@ const WRITE_ALLOWED = new Map([
 describe("claude config boundary", () => {
   it("names every file allowed to write Claude Code's own state", () => {
     assert.deepEqual(
-      WRITE_ALLOWED.keys().toArray(),
+      // [...map.keys()] rather than .keys().toArray(): Iterator helpers are
+      // Node 22, and the test matrix still covers Node 20.
+      [...WRITE_ALLOWED.keys()],
       ["swap/identity.js"],
       "adding a writer here is a deliberate act; say why in the commit and prove it in test/swap.test.js",
     );

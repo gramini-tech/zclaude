@@ -255,14 +255,16 @@ describe("install.sh", { skip }, () => {
       PATH: `${scheduler}:${process.env.PATH}`,
     });
     assert.equal(withProfile.code, 0, withProfile.stderr);
-    assert.match(withProfile.stderr, /Scheduled with (launchd|a systemd user timer|cron)/u);
+    assert.match(withProfile.stderr, /Scheduled with (launchd|systemd|cron)/u);
     const gone = await sh([join(root, "install.sh"), "--uninstall"], env);
     assert.equal(gone.code, 0, gone.stderr);
-    await assert.rejects(
-      stat(join(home.dir, "Library", "LaunchAgents", "com.zclaude.renew.plist")),
-      /ENOENT/u,
-      "the uninstall left a LaunchAgent behind",
-    );
+    // Whichever mechanism this platform used, the uninstall leaves nothing.
+    for (const path of [
+      join(home.dir, "Library", "LaunchAgents", "com.zclaude.renew.plist"),
+      join(home.dir, ".config", "systemd", "user", "zclaude-renew.timer"),
+    ]) {
+      await assert.rejects(stat(path), /ENOENT/u, `the uninstall left ${path} behind`);
+    }
   });
 
   it("warns instead of editing rc files when told to, and appends once otherwise", async () => {

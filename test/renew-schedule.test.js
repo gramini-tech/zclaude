@@ -32,7 +32,8 @@ async function fakeTools(home, { present = ["launchctl", "systemctl", "crontab"]
     launchctl: `#!/bin/sh\necho "launchctl $*" >> "${calls}"\nexit 0\n`,
     systemctl: `#!/bin/sh\necho "systemctl $*" >> "${calls}"\nexit 0\n`,
     // Stands in for the user's crontab: -l prints it, - replaces it from stdin.
-    crontab: `#!/bin/sh\necho "crontab $*" >> "${calls}"\nif [ "$1" = "-l" ]; then cat "${cronFile}"; exit 0; fi\nif [ "$1" = "-" ]; then cat > "${cronFile}"; fi\nexit 0\n`,
+    // PATH holds only these fakes, so the script cannot rely on finding `cat`.
+    crontab: `#!/bin/sh\nPATH=/usr/bin:/bin\necho "crontab $*" >> "${calls}"\nif [ "$1" = "-l" ]; then cat "${cronFile}"; exit 0; fi\nif [ "$1" = "-" ]; then cat > "${cronFile}"; fi\nexit 0\n`,
   };
   for (const name of present) {
     await writeFile(join(bin, name), scripts[name]);
@@ -42,7 +43,10 @@ async function fakeTools(home, { present = ["launchctl", "systemctl", "crontab"]
     bin,
     read: () => readFile(calls, "utf8").catch(() => ""),
     cron: () => readFile(cronFile, "utf8").catch(() => ""),
-    env: { HOME: home.dir, PATH: `${bin}:/usr/bin:/bin` },
+    // Only the fakes: a PATH with /usr/bin on it would find the real systemctl
+    // on a Linux runner, and the "systemd is not in charge" cases would then
+    // take the systemd branch and pass for the wrong reason.
+    env: { HOME: home.dir, PATH: bin },
   };
 }
 
