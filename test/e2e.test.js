@@ -398,6 +398,42 @@ describe("end to end", () => {
     assert.equal((await run(["profile", "remove", "work", "--yes"], env)).code, 0);
   });
 
+  it("hands claude its own arguments, including the ones zclaude would otherwise claim", async () => {
+    await run(["profile", "add", "args", "--provider", "anthropic", "--share", "none", "--yes"], env);
+
+    const resumed = await run(["args", "--resume", "1b4f0e9a-session", "--fork-session"], env);
+    assert.equal(resumed.code, 0, resumed.stderr);
+    assert.deepEqual((await capture()).argv, ["--resume", "1b4f0e9a-session", "--fork-session"]);
+
+    // The profile name ends zclaude's options: --verbose after it is claude's,
+    // and --verbose before it is zclaude's.
+    const afterward = await run(["args", "--verbose", "-p", "hi"], env);
+    assert.equal(afterward.code, 0, afterward.stderr);
+    assert.deepEqual((await capture()).argv, ["--verbose", "-p", "hi"]);
+
+    const beforehand = await run(["--verbose", "args", "-p", "hi"], env);
+    assert.equal(beforehand.code, 0, beforehand.stderr);
+    assert.deepEqual((await capture()).argv, ["-p", "hi"]);
+    assert.match(beforehand.stderr, /Profile: args/u, "zclaude took that one for itself");
+
+    // --settings is claude's flag and repeatable; ours goes first so a shared
+    // profile's copy is the one yours overrides. There has to be something to
+    // share for that to happen at all.
+    await mkdir(join(home.dir, ".claude"), { recursive: true });
+    await writeFile(join(home.dir, ".claude", "settings.json"), JSON.stringify({ theme: "dark" }));
+    const shared = await run(["profile", "add", "sharing", "--provider", "anthropic", "--yes"], env);
+    assert.equal(shared.code, 0, shared.stderr);
+    const own = await run(["sharing", "--settings", "/tmp/mine.json", "-p", "hi"], env);
+    assert.equal(own.code, 0, own.stderr);
+    const { argv } = await capture();
+    assert.equal(argv[0], "--settings");
+    assert.match(argv[1], /shared-settings\.json$/u);
+    assert.deepEqual(argv.slice(2), ["--settings", "/tmp/mine.json", "-p", "hi"]);
+
+    for (const name of ["args", "sharing"]) await run(["profile", "remove", name, "--yes"], env);
+    await rm(join(home.dir, ".claude"), { recursive: true, force: true });
+  });
+
   it("a Z.ai profile keeps its own key and ignores ZAI_API_KEY from the shell", async () => {
     const added = await run(["profile", "add", "glm", "--provider", "zai", "--share", "none", "--yes"], env);
     assert.equal(added.code, 0, added.stderr);

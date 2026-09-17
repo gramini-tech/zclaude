@@ -349,6 +349,14 @@
                 <td>Forget the stored Z.ai key on this machine.</td>
               </tr>
               <tr>
+                <td><code>zclaude work --resume &lt;session-id&gt;</code></td>
+                <td>Resume one of that profile's sessions. Claude's own options follow the name.</td>
+              </tr>
+              <tr>
+                <td><code>zclaude -- [claude args...]</code></td>
+                <td>Everything after <code>--</code> is claude's, whether or not you named a profile.</td>
+              </tr>
+              <tr>
                 <td><code>zclaude -- --help</code></td>
                 <td>Claude Code's own help. <code>zclaude --help</code> shows zclaude's.</td>
               </tr>
@@ -505,6 +513,18 @@ ZCLAUDE_PROFILE=work       # optional: pick a profile for this project</code></p
             Whatever Z.ai's model list returns for your plan, such as <code>glm-5.3</code>,
             <code>glm-5.3-flash</code> and <code>glm-4.7</code>. The wizard also accepts a custom model id. Models with
             a 1M context window are passed to Claude Code with the <code>[1m]</code> suffix it expects.
+          </p>
+        </details>
+
+        <details>
+          <summary>How do I pass claude's own options, like resuming a session?</summary>
+          <p>
+            Put them after the profile name: <code>zclaude work --resume &lt;session-id&gt;</code>,
+            <code>zclaude work -c</code>, <code>zclaude work -p "explain this"</code>. The name ends zclaude's own
+            options, so everything after it is claude's, including flags zclaude also defines. Without a profile name,
+            <code>--</code> does the same job: <code>zclaude -- --resume &lt;session-id&gt;</code>, and
+            <code>zclaude -- --help</code> for claude's help. Session ids belong to a config directory, so they follow
+            the profile; with shared history a session started under one profile can be resumed from another.
           </p>
         </details>
 

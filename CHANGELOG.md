@@ -13,6 +13,11 @@
   waits on the Keychain.
 - `zclaude profile env` prints PowerShell syntax on Windows, and the installer's uninstall signs
   every profile out of Claude Code.
+- Documented how arguments reach Claude Code: a profile name, like `--`, ends zclaude's own options,
+  so `zclaude work --resume <session-id>` and `zclaude work --verbose` are claude's while
+  `zclaude --verbose work` is zclaude's. Session ids belong to a config directory and follow the
+  profile, and a profile that shares config already passes `--settings`, which a file of your own
+  overrides because claude reads the last one.
 
 ## 0.2.0
 

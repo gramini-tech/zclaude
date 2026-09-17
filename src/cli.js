@@ -183,6 +183,7 @@ export const HELP = `zclaude ${VERSION} — interactive preloader for Claude Cod
 Usage
   zclaude                                      pick a profile from the menu, then launch claude
   zclaude <profile> [claude args...]           launch that profile straight away
+  zclaude <profile> --resume <session-id>      resume one of that profile's sessions
   zclaude [zclaude options] [claude args...]   pick a profile, then launch claude with them
   zclaude --profile <name> [claude args...]    the same as naming it first
   zclaude -- [claude args...]                  pass everything after -- to claude
@@ -207,7 +208,13 @@ Profiles (one Claude or Z.ai account each, scoped to the terminal that started i
   zclaude profile remove <name> [--yes]        delete the profile, its login and its directory
   zclaude profile doctor [--fix]               check every profile and this shell
 
-Options (must come before any claude argument)
+Arguments
+  A profile name, or --, ends zclaude's options: everything after it is claude's, including
+  flags zclaude also defines. "zclaude work --verbose" passes --verbose to claude;
+  "zclaude --verbose work" keeps it. Bare words that are not profiles are claude's too, so
+  "zclaude mcp list" and "zclaude auth status" reach claude unchanged.
+
+Options (must come before any claude argument or profile name)
   --profile <claude|zai|name>  skip the menu
   --reconfigure                run the model wizard even if config exists (alias --customize)
   --login                      sign in again before launching

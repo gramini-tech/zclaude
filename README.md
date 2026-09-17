@@ -185,6 +185,71 @@ personal subscription billed to the individual. They have separate usage, so the
 profiles, and the organization is what tells them apart at a glance. A personal organization, which
 Claude names after the account that owns it, is shown as `personal`.
 
+## Passing arguments to Claude Code
+
+zclaude is a launcher, so most of what you type is not for it. The rule is positional:
+
+```
+zclaude [its own options] [profile] [everything else goes to claude]
+```
+
+Naming a profile ends zclaude's own options. After that word, every argument is claude's, including
+the ones zclaude also defines:
+
+```sh
+zclaude work --resume 1b4f0e9a-…          # claude gets --resume <id>
+zclaude work -c                            # claude gets --continue
+zclaude work --verbose -p "explain this"   # --verbose is claude's here
+zclaude --verbose work -p "explain this"   # --verbose is zclaude's here
+```
+
+Without a profile name, `--` does the same job, and you need it for anything zclaude would otherwise
+claim:
+
+```sh
+zclaude -- --resume 1b4f0e9a-…             # menu first, then claude with --resume
+zclaude -- --help                          # claude's help; zclaude --help is zclaude's
+zclaude -- --version                       # claude's version; zclaude -V is zclaude's
+zclaude work -- --verbose                  # the separator after a name is allowed and dropped
+```
+
+Bare words that are not profiles are claude's too, so its subcommands work unchanged:
+`zclaude mcp list`, `zclaude auth status`, `zclaude doctor`. Profile names cannot be one of claude's
+command names, so there is nothing to disambiguate.
+
+### The handful of flags zclaude takes first
+
+These matter only when they come **before** a profile name or without one:
+
+| Flag                                 | zclaude's meaning                                | How to reach claude's           |
+| ------------------------------------ | ------------------------------------------------ | ------------------------------- |
+| `--model <id>`                       | the primary model for a Z.ai profile             | after the profile name, or `--` |
+| `--verbose`                          | show what zclaude is doing                       | after the profile name, or `--` |
+| `--json`                             | machine-readable output for `status` and friends | after the profile name, or `--` |
+| `-h`, `--help`                       | zclaude's help                                   | `zclaude -- --help`             |
+| `-V`, `--version`                    | zclaude's and claude's versions                  | `zclaude -- --version`          |
+| `--profile`, `--share`, `--provider` | zclaude's own, no claude equivalent              | n/a                             |
+
+`--settings` is claude's alone. A profile that shares config already passes one, pointing at the
+filtered copy; claude reads the last `--settings` on the command line, so a file of your own comes
+after and wins.
+
+### Resuming a session
+
+Session ids come from claude (`claude --resume` with no value lists them, and `--bg` prints the id of
+a background session). They are per config directory, so they follow the profile:
+
+```sh
+zclaude work --resume 1b4f0e9a-…           # resume in the work profile
+zclaude work -c                            # most recent session in this directory
+zclaude work --resume 1b4f0e9a-… --fork-session
+```
+
+With **shared history**, `projects/` is shared, so a session started under any profile that shares it
+can be resumed from another, and `--continue` picks the most recent session in the directory whoever
+wrote it. With `--share config` or `--share none`, a profile sees only its own sessions and an id
+from elsewhere will not be found. `zclaude profile list` shows which profiles share history.
+
 ## Multiple Claude accounts
 
 This is the case zclaude was extended for. Say you have a company account, a client account and a
@@ -319,8 +384,10 @@ Not isolated, and worth knowing:
 ```
 zclaude                                    menu of every profile, then launch
 zclaude <profile> [claude args...]         launch that profile, pass the rest to claude
+zclaude <profile> --resume <session-id>    resume one of that profile's sessions
 zclaude -p "explain this repo"             menu, then launch claude with those arguments
 zclaude --profile <name>                   the same as naming the profile first
+zclaude -- [claude args...]                everything after -- is claude's
 zclaude -- --help                          claude's own help
 zclaude profile add [name]                 create a profile (wizard)
 zclaude profile list                       every profile, with its account and sharing
