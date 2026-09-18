@@ -9,12 +9,17 @@
 const vscode = require("vscode");
 
 const { findBinary, run, runJson, version } = require("./cli.js");
-const { accountOf, hoverPanel, isSupported, outdatedText, statusBarText } = require("./items.js");
+const { accountOf, hoverPanel, isSupported, outdatedText, rotatable, statusBarText } = require("./items.js");
 
 let item;
 let binary = null;
 let found = null;
 let output;
+let leaseId = null;
+let leaseTimer = null;
+
+/** Comfortably inside the three-minute staleness the watcher applies. */
+const LEASE_RENEW_MS = 60_000;
 
 function settings() {
   return vscode.workspace.getConfiguration("zclaude");
@@ -64,6 +69,37 @@ async function readBusy() {
   if (!binary) return {};
   const { data } = await runJson(binary, ["sessions"]);
   return Array.isArray(data?.byProfile) ? Object.fromEntries(data.byProfile) : {};
+}
+
+/** What the watcher is doing, if one is running. */
+async function readAuto() {
+  if (!binary) return null;
+  const { data } = await runJson(binary, ["auto", "status"]);
+  return data ?? null;
+}
+
+/**
+ * Hold a lease for as long as this window is open.
+ *
+ * The lease belongs to the extension host, not to the short-lived `zclaude`
+ * that records it, so its pid is passed explicitly. Renewing is the same call,
+ * which is why this needs no state beyond the id it was given and why a lease
+ * reaped during a sleep simply comes back.
+ *
+ * A window can only ever ask the watcher to *watch*. Moving the global login
+ * needs a session that asked for it; an editor being open is not that.
+ */
+async function holdLease() {
+  if (!binary || !settings().get("auto", true)) return;
+  const { data } = await runJson(binary, [
+    "auto",
+    "attach",
+    "vscode",
+    ...(leaseId ? [leaseId] : []),
+    "--pid",
+    String(process.pid),
+  ]);
+  if (data?.id) leaseId = data.id;
 }
 
 async function readUsage(force) {
@@ -120,8 +156,8 @@ async function refreshStatusBar({ force = false } = {}) {
     // The hover carries the whole table, so it needs what the picker needs.
     // All of it is cached by zclaude for a minute, which is why this can run on
     // every window focus without becoming a network call each time.
-    const [profiles, usage, busy] = await Promise.all([readProfiles(), readUsage(force), readBusy()]);
-    item.tooltip = panel(hoverPanel({ status, profiles, usage, busy, version: installed }));
+    const [profiles, usage, busy, auto] = await Promise.all([readProfiles(), readUsage(force), readBusy(), readAuto()]);
+    item.tooltip = panel(hoverPanel({ status, profiles, usage, busy, auto, version: installed }));
   } catch (error) {
     // Whatever went wrong, the item stays, saying so.
     log(`could not read the account: ${error.message}`);
@@ -156,16 +192,23 @@ async function pick() {
     await reportTooOld(installed);
     return;
   }
-  const [{ status }, profiles] = await Promise.all([readStatus(), readProfiles()]);
+  const [{ status }, profiles, usage] = await Promise.all([readStatus(), readProfiles(), readUsage()]);
   const active = status?.owner ?? null;
-  /** @type {Array<{label: string, kind?: number, description?: string, name?: string, action?: string}>} */
+  /** @type {Array<{label: string, kind?: number, description?: string, detail?: string, name?: string, action?: string, reason?: string}>} */
   const items = [
-    ...profiles.map((profile) => ({
-      label: `${profile.name === active ? "$(check) " : "$(blank) "}${profile.name}`,
-      description: accountOf(profile),
-      name: profile.name,
-      provider: profile.provider,
-    })),
+    ...profiles.map((profile) => {
+      const can = rotatable(profile, usage[profile.name]);
+      return {
+        label: `${profile.name === active ? "$(check) " : "$(blank) "}${profile.name}`,
+        description: accountOf(profile),
+        // Said before it is picked rather than after. The list used to offer a
+        // switch that three layers below it would refuse.
+        detail: can.ok ? undefined : `$(circle-slash) ${can.reason}`,
+        name: profile.name,
+        provider: profile.provider,
+        reason: can.reason,
+      };
+    }),
     { label: "", kind: -1 },
     { label: "$(sync) Refresh usage", action: "refresh" },
     { label: "$(add) Add a profile…", action: "add" },
@@ -195,7 +238,12 @@ async function pick() {
       return;
     }
     default: {
-      if (chosen.name && chosen.name !== active) await switchTo(chosen.name, profiles);
+      if (!chosen.name || chosen.name === active) return;
+      if (chosen.reason) {
+        tell(`"${chosen.name}" cannot hold the global login: ${chosen.reason}.`);
+        return;
+      }
+      await switchTo(chosen.name, profiles);
     }
   }
 }
@@ -323,12 +371,29 @@ function activate(context) {
     vscode.commands.registerCommand("zclaude.add", () => addProfile()),
     vscode.commands.registerCommand("zclaude.remove", async () => removeProfile(await readProfiles())),
     vscode.commands.registerCommand("zclaude.restore", () => restore()),
-    vscode.window.onDidChangeWindowState((state) => (state.focused ? refreshStatusBar() : undefined)),
+    vscode.window.onDidChangeWindowState((state) => {
+      if (!state.focused) return;
+      refreshStatusBar().catch(() => {});
+      holdLease().catch(() => {});
+    }),
   );
   refreshStatusBar().catch(() => {});
+  // Renewed on a timer, and again whenever the window is focused. A lease not
+  // renewed expires on its own clock, which is what lets a window that crashes
+  // stop keeping a watcher alive without anything having to notice.
+  holdLease().catch(() => {});
+  leaseTimer = setInterval(() => {
+    holdLease().catch(() => {});
+  }, LEASE_RENEW_MS);
+  leaseTimer.unref?.();
 }
 
 function deactivate() {
+  if (leaseTimer) clearInterval(leaseTimer);
+  // Best effort on the way out. A window that crashes runs none of this, which
+  // is exactly why the lease carries its own clock: dropping it politely is a
+  // courtesy, not the mechanism.
+  if (binary && leaseId) run(binary, ["auto", "detach", leaseId]).catch(() => {});
   item?.dispose();
   output?.dispose();
 }

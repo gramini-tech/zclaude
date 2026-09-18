@@ -74,6 +74,31 @@ const STATES = {
 /** The two states a sign-in fixes, and nothing else does. Mirrors `signInHint`. */
 const NEEDS_SIGN_IN = new Set(["unauthorized", "dead"]);
 
+/**
+ * Whether the global login could be moved to this profile at all.
+ *
+ * One predicate for three places: the row's action in the hover, the click
+ * list, and — in the CLI, as `rotatable` — the scheduler's own eligibility.
+ * They used to disagree. The list offered `switch` on a Z.ai row and three
+ * layers below it refused, which is safe and still wrong: a list should not
+ * offer what it knows will be turned down.
+ *
+ * @param {{provider?: string}} profile
+ * @param {{state?: string} | undefined} usage
+ * @returns {{ok: boolean, reason: string | null}}
+ */
+function rotatable(profile, usage) {
+  if (profile?.provider === "zai") {
+    return {
+      ok: false,
+      reason: "its login is an endpoint and a key, which only reach Claude Code through the environment",
+    };
+  }
+  if (usage?.state === "dead") return { ok: false, reason: "its login expired" };
+  if (usage?.state === "unauthorized") return { ok: false, reason: "it is signed out" };
+  return { ok: true, reason: null };
+}
+
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
@@ -292,7 +317,27 @@ function anchor(text, command, ...args) {
  * a hover on click — so the rich view lives here and the click opens a plain
  * list for picking, which is the one thing a QuickPick is good at.
  */
-function hoverPanel({ status, profiles = [], usage = {}, busy = {}, version, now = Date.now() }) {
+/**
+ * One line about the watcher, when there is anything to say.
+ *
+ * Deliberately no "start it" link: starting the watcher for real means starting
+ * a session, which needs a terminal, and a button that cannot do what it says
+ * is worse than no button.
+ */
+function autoLine(auto) {
+  if (!auto) return "";
+  if (!auto.running) {
+    const would = auto.decision?.action === "switch" ? ` It would move to ${escapeHtml(auto.decision.target)}.` : "";
+    return `$(circle-outline) Auto rotation is off.${would}`;
+  }
+  const where = auto.rotating ? "rotating" : "watching only";
+  const last = auto.daemon?.leases?.length
+    ? ` · held by ${escapeHtml(auto.daemon.leases.map((l) => l.kind).join(", "))}`
+    : "";
+  return `$(sync) Auto: ${where}${last}`;
+}
+
+function hoverPanel({ status, profiles = [], usage = {}, busy = {}, auto = null, version, now = Date.now() }) {
   const lines = ["**zclaude** — the Claude Code account every terminal and this editor use", ""];
   if (version !== undefined && !isSupported(version)) {
     lines.push(outdatedText(version), "", link("Update zclaude", "zclaude.pick"));
@@ -309,6 +354,8 @@ function hoverPanel({ status, profiles = [], usage = {}, busy = {}, version, now
   if (profiles.length > 0) lines.push(accountTable({ profiles, usage, busy, active: status?.owner ?? null, now }), "");
   const credit = profiles.map((profile) => creditsText(usage[profile.name]?.credits)).find(Boolean);
   if (credit) lines.push(escapeHtml(credit), "");
+  const rotation = autoLine(auto);
+  if (rotation) lines.push(rotation, "");
   lines.push(
     [
       link("$(sync) Refresh", "zclaude.refresh"),
@@ -367,9 +414,7 @@ function actionFor(profile, active, usage) {
   // would otherwise say "login expired" with no way out of the editor.
   if (NEEDS_SIGN_IN.has(usage?.state)) return anchor("sign in", "zclaude.signIn", profile.name);
   if (profile.name === active) return "in use";
-  // A Z.ai login reaches Claude Code through the environment, never through the
-  // credential the switch moves.
-  if (profile.provider === "zai") return "terminal";
+  if (!rotatable(profile, usage).ok) return "terminal";
   return anchor("switch", "zclaude.switchTo", profile.name);
 }
 
@@ -397,13 +442,17 @@ function quickPickItems({ profiles = [], active = null, usage = {}, loading = fa
     const current = profile.name === active;
     const numbers = usageText(usage[profile.name]);
     const running = busyText(busy[profile.name]);
+    const can = rotatable(profile, usage[profile.name]);
     return {
       label: `${current ? "$(check) " : "$(blank) "}${profile.name}`,
       description: [accountOf(profile), running].filter(Boolean).join(" ".repeat(3)),
-      detail: numbers || (loading ? "$(sync~spin) checking usage…" : ""),
+      // The reason takes the detail line when there is one, because a row the
+      // list will refuse should say so before it is picked, not after.
+      detail: can.ok ? numbers || (loading ? "$(sync~spin) checking usage…" : "") : `$(circle-slash) ${can.reason}`,
       profile: profile.name,
       picked: current,
-      switchable: profile.provider !== "zai" && !current,
+      switchable: can.ok && !current,
+      reason: can.reason,
     };
   });
   return [
@@ -418,6 +467,7 @@ function quickPickItems({ profiles = [], active = null, usage = {}, loading = fa
 
 module.exports = {
   ACTIONS,
+  rotatable,
   accountOf,
   bar,
   escapeHtml,

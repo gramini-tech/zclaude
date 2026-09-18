@@ -282,6 +282,29 @@ describe("credits", () => {
   });
 });
 
+describe("what can hold the global login", () => {
+  // One predicate for the hover's action, the click list and — as `rotatable`
+  // in the CLI — the scheduler's eligibility. They used to disagree.
+  it("refuses a Z.ai profile, whose login never reaches the credential store", () => {
+    const said = items.rotatable({ provider: "zai" }, { state: "ok" });
+    assert.equal(said.ok, false);
+    assert.match(said.reason, /endpoint and a key/u);
+  });
+
+  it("refuses an account whose login cannot answer", () => {
+    assert.equal(items.rotatable({ provider: "anthropic" }, { state: "dead" }).ok, false);
+    assert.equal(items.rotatable({ provider: "anthropic" }, { state: "unauthorized" }).ok, false);
+  });
+
+  it("allows a healthy Anthropic profile, and one whose numbers merely failed to arrive", () => {
+    assert.equal(items.rotatable({ provider: "anthropic" }, { state: "ok" }).ok, true);
+    // "offline" is a lookup that did not answer, which says nothing about the
+    // login itself.
+    assert.equal(items.rotatable({ provider: "anthropic" }, { state: "offline" }).ok, true);
+    assert.equal(items.rotatable({ provider: "anthropic" }, undefined).ok, true);
+  });
+});
+
 describe("the hover panel", () => {
   const profiles = [
     { name: "chinese", provider: "zai" },
@@ -298,6 +321,24 @@ describe("the hover panel", () => {
   const status = { account: { email: "a@b.com", organization: "Acme" }, owner: "gramini" };
   const panel = (extra = {}) =>
     hoverPanel({ status, profiles, usage, busy: {}, version: "9.9.9", now: PANEL_NOW, ...extra });
+
+  it("says what the watcher is doing, and never offers to start it", () => {
+    // Starting it for real means starting a session, which needs a terminal. A
+    // button that cannot do what it says is worse than no button.
+    const off = panel({ auto: { running: false, decision: { action: "switch", target: "max" } } });
+    assert.match(off, /Auto rotation is off\./u);
+    assert.match(off, /It would move to max\./u);
+    assert.doesNotMatch(off, /command:zclaude\.autoStart/u);
+
+    const watching = panel({ auto: { running: true, rotating: false, daemon: { leases: [{ kind: "vscode" }] } } });
+    assert.match(watching, /Auto: watching only/u);
+    assert.match(watching, /held by vscode/u);
+
+    const going = panel({ auto: { running: true, rotating: true, daemon: { leases: [{ kind: "session" }] } } });
+    assert.match(going, /Auto: rotating/u);
+
+    assert.doesNotMatch(panel(), /Auto/u, "and nothing at all when zclaude is too old to answer");
+  });
 
   it("offers a sign-in on a broken login, ahead of a switch it could not honour", () => {
     // Switching to an account whose token the server has rejected would put a

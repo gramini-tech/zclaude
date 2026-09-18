@@ -52,9 +52,9 @@ export function selfScript(env = process.env) {
  * detached process holding a cwd keeps a deleted worktree pinned and dies when
  * somebody removes the branch directory underneath it.
  *
- * @param {{env?: NodeJS.ProcessEnv, spawnImpl?: typeof spawn, logPath?: string}} [options]
+ * @param {{env?: NodeJS.ProcessEnv, spawnImpl?: typeof spawn, logPath?: string, selfLease?: boolean}} [options]
  */
-export async function startDaemon({ env = process.env, spawnImpl = spawn, logPath } = {}) {
+export async function startDaemon({ env = process.env, spawnImpl = spawn, logPath, selfLease = false } = {}) {
   const { zclaudeHome } = await import("../config.js");
   const home = zclaudeHome(env);
   const path = logPath ?? `${home}/logs/auto.log`;
@@ -75,7 +75,11 @@ export async function startDaemon({ env = process.env, spawnImpl = spawn, logPat
   } catch (error) {
     log.debug("auto", "daemon log not opened", { error });
   }
-  const child = spawnImpl(process.execPath, [selfScript(env), "auto", "run", "--daemon"], {
+  // The self-lease is only for a watcher somebody asked for by name. Started as
+  // a side effect of an editor attaching, it must hold nothing of its own, or
+  // an open editor window would silently become permission to move the login.
+  const args = [selfScript(env), "auto", "run", "--daemon", ...(selfLease ? ["--self-lease"] : [])];
+  const child = spawnImpl(process.execPath, args, {
     detached: true,
     stdio: /** @type {any} */ (["ignore", fd, fd]),
     cwd: home,

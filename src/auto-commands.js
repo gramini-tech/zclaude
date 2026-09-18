@@ -14,7 +14,7 @@ import { log } from "./logger.js";
 import { autoConfigPath, initAutoConfig, loadAutoConfig } from "./auto/config.js";
 
 import { duplicates, inventory } from "./auto/inventory.js";
-import { grantsOf, liveLeases } from "./auto/lease.js";
+import { dropLease, grantsOf, holdLease, liveLeases } from "./auto/lease.js";
 import { ownerAlive, readDaemonOwner } from "./auto/lock.js";
 import { runDaemon, startDaemon, stopDaemon } from "./auto/daemon.js";
 import { autoStatePath, describeAutoState, forgetAutoState } from "./auto/state.js";
@@ -236,14 +236,14 @@ async function cmdConfig(context) {
 async function cmdRun(context) {
   const { options, env, interactive } = context;
   if (!options.daemon) {
-    const { started, pid } = await startDaemon({ env });
+    const { started, pid } = await startDaemon({ env, selfLease: true });
     if (!started) throw usageError("The watcher could not be started.");
     success(`Watching in the background (pid ${pid}).`);
     info("`zclaude auto off` stops it. `zclaude auto status` says what it is doing.");
     return EXIT.OK;
   }
   if (interactive) info("Running the watcher here. Ctrl-C stops it.");
-  const result = await runDaemon({ env, selfLease: true });
+  const result = await runDaemon({ env, selfLease: Boolean(options.selfLease) });
   if (!result.ran) {
     info(`Not started: ${result.reason}`);
     return EXIT.OK;
@@ -262,7 +262,51 @@ async function cmdOff(context) {
   return EXIT.OK;
 }
 
-const SUBCOMMANDS = { status: cmdStatus, config: cmdConfig, run: cmdRun, off: cmdOff };
+/**
+ * Take or renew a lease, for a holder that is not a zclaude session.
+ *
+ * The editor calls this on activation and on its own timer. It is idempotent by
+ * id, so renewing is the same call and a lease reaped in between simply comes
+ * back — which is why the extension needs no second code path and no state of
+ * its own beyond the id it was given.
+ */
+async function cmdAttach(context) {
+  const { options, env, args } = context;
+  const [kind = "vscode", id] = args;
+  // Whose lease this is. The caller is a short-lived `zclaude` process that
+  // exits the moment it has printed the id, so without this the lease belongs
+  // to something already gone and is reaped on the very next read. The editor
+  // passes its extension host's pid.
+  const pid = Number(options.pid) || process.ppid || process.pid;
+  const lease = await holdLease({ env, kind, id, pid });
+  if (!options.daemon) await startDaemon({ env }).catch(() => ({ started: false }));
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify({ id: lease.id, kind: lease.kind, grants: lease.grants }, null, 2)}\n`);
+    return EXIT.OK;
+  }
+  info(`Holding a ${lease.kind} lease (${lease.id.slice(0, 8)}) for pid ${pid}.`);
+  return EXIT.OK;
+}
+
+/** Give one up. Best effort on both sides: an unheld lease expires anyway. */
+async function cmdDetach(context) {
+  const { env, args, options } = context;
+  const [id] = args;
+  if (!id) throw usageError("Which lease?", "`zclaude auto attach` prints the id it took.");
+  await dropLease(id, env);
+  if (options.json) process.stdout.write(`${JSON.stringify({ dropped: id }, null, 2)}\n`);
+  else info(`Dropped ${id.slice(0, 8)}.`);
+  return EXIT.OK;
+}
+
+const SUBCOMMANDS = {
+  status: cmdStatus,
+  config: cmdConfig,
+  run: cmdRun,
+  off: cmdOff,
+  attach: cmdAttach,
+  detach: cmdDetach,
+};
 export const AUTO_SUBCOMMANDS = Object.freeze(Object.keys(SUBCOMMANDS));
 
 /**

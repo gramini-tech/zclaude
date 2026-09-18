@@ -502,10 +502,29 @@ zclaude auto config path               # where it lives
 zclaude auto config init               # write the defaults out, with the explanations
 zclaude auto run                       # start the watcher in the background
 zclaude auto off                       # stop it; the login stays where it is
+zclaude auto attach vscode --pid 42    # hold a lease for that process
+zclaude auto detach <id>               # give it up
 ```
 
-`auto run` starts a detached watcher and holds a lease for the shell that
-started it. The watcher exits when the last lease lapses, and `auto run --daemon`
+### Leases
+
+The watcher runs because something holds a **lease**, and exits when the last one
+lapses. A lease carries a process and a clock, and needs both: the process check
+catches a closed terminal, and the clock catches what it cannot, a holder still
+running but no longer talking.
+
+**A VS Code window can only ever ask it to watch.** An open editor is not consent
+to move the global login: if it were, an idle window plus a plain `claude` in
+another terminal would have zclaude moving that terminal's account out from under
+work nobody pointed it at. Rotation needs a lease that was asked for by name.
+
+The lease belongs to the process that wants the watcher, not to the short-lived
+`zclaude` that records it, which is what `--pid` is for. The extension passes its
+own, renews every minute and on window focus, and drops it on the way out —
+though dropping it is only a courtesy, since a lease nobody renews expires by
+itself.
+
+`auto run` starts a detached watcher that holds its own lease. The watcher exits when the last lease lapses, and `auto run --daemon`
 is the form it runs as inside that process. Detaching is a safety requirement
 rather than a convenience: every output path here writes to stderr, and the
 launcher's stderr is Claude Code's own terminal, so a rotation warning would
@@ -688,6 +707,8 @@ These matter only when they come **before** a profile name or without one:
 | `--model <id>`                       | the primary model for a Z.ai profile             | after the profile name, or `--` |
 | `--class <c>`                        | which model class `auto status` reasons about    | n/a                             |
 | `--daemon`                           | be the watcher in this process, not a launcher   | n/a                             |
+| `--self-lease`                       | the watcher holds its own lease and stays up     | n/a                             |
+| `--pid <n>`                          | whose process a lease belongs to                 | n/a                             |
 | `--verbose`                          | show what zclaude is doing                       | after the profile name, or `--` |
 | `--json`                             | machine-readable output for `status` and friends | after the profile name, or `--` |
 | `-h`, `--help`                       | zclaude's help                                   | `zclaude -- --help`             |

@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+The editor holds a lease, so the watcher stays up while a window is open, and
+the hover says what it is doing. A window can only ever ask it to **watch**: an
+open editor is not consent to move the global login.
+
+- **One predicate decides what can hold the global login**, shared by the
+  hover's action column, the click list and the scheduler. They used to
+  disagree: the list offered `switch` on a Z.ai row and three layers below it
+  refused. Safe, and still wrong — a list should not offer what it knows will be
+  turned down. Such a row now says why before you pick it, and picking it
+  explains rather than tries.
+- `zclaude auto attach [kind] [id] --pid <n>` holds or renews a lease, and
+  `auto detach <id>` gives one up. The pid matters: the lease belongs to the
+  process that wants the watcher, not to the short-lived `zclaude` that records
+  it, which would otherwise be reaped on the next read.
+
+One guardrail failure found by running it: **an editor attaching started a
+watcher that granted rotation.** The daemon always took a `manual` self-lease,
+whoever started it, so an open window silently became permission to move the
+login — the exact thing the two lease kinds exist to prevent. The self-lease is
+now only taken when somebody asked for a watcher by name.
+
+
 The watcher runs. `zclaude auto run` starts it in the background, `auto off`
 stops it, and `auto status` says what it is doing. It still only rotates when
 something holds a lease that grants it: an editor window watching is not consent

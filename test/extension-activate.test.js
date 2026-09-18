@@ -104,6 +104,9 @@ function loadExtension(answers) {
   // eslint-disable-next-line security/detect-non-literal-require -- a path this file resolved
   const cli = require(cliPath);
   const ran = [];
+  // Recorded separately: `run` is for things that change something, `runJson`
+  // for things that only ask, and a test usually cares which it was.
+  const asked = [];
   const fake = {
     ...cli,
     findBinary: () => (answers.binary === null ? null : "/fake/zclaude"),
@@ -112,7 +115,10 @@ function loadExtension(answers) {
       ran.push(args);
       return answers.run?.(args) ?? { ok: true, code: 0, stdout: "", stderr: "" };
     },
-    runJson: async (binary, args) => ({ data: answers.json?.(args) ?? null, error: null }),
+    runJson: async (binary, args) => {
+      asked.push(args);
+      return { data: answers.json?.(args) ?? null, error: null };
+    },
   };
 
   const original = Module._load;
@@ -124,7 +130,7 @@ function loadExtension(answers) {
   try {
     delete require.cache[extensionPath];
     // eslint-disable-next-line security/detect-non-literal-require -- see above
-    return { extension: require(extensionPath), vscode, recorded, ran };
+    return { extension: require(extensionPath), vscode, recorded, ran, asked };
   } finally {
     Module._load = original;
     delete require.cache[extensionPath];
@@ -143,6 +149,8 @@ const answers = (extra = {}) => ({
     if (args[0] === "profile" && args.includes("--usage"))
       return PROFILES.map((profile) => ({ ...profile, usage: { state: "ok", fiveHour: { pct: 5 }, weekly: null } }));
     if (args[0] === "profile") return PROFILES;
+    if (args[0] === "auto" && args[1] === "attach") return { id: "lease-1", kind: "vscode", grants: ["watch"] };
+    if (args[0] === "auto") return { running: false };
     return null;
   },
   ...extra,
@@ -190,11 +198,13 @@ describe("the extension in a window", () => {
     assert.match(hover(loaded), /<table>/u, "the hover holds the table");
     assert.match(hover(loaded), /background-color:/u, "and the bars are drawn in it");
     const picked = await click(loaded, (items) => items.find((item) => item.name === "home"));
-    // The list is names and accounts. Anything else in it either cannot render
-    // or is clipped, which is what the hover exists to avoid.
+    // The list is names and accounts. Usage in it either cannot render or is
+    // clipped, which is what the hover exists to avoid. The one detail a row
+    // may carry is why it cannot be picked, and that is not usage.
+    const details = picked.choices.filter((item) => item.detail).map((item) => item.detail);
     assert.ok(
-      picked.choices.every((item) => !item.detail),
-      "the list carries no usage of its own",
+      details.every((detail) => detail.startsWith("$(circle-slash)")),
+      `the list carries no usage of its own, only refusals: ${details.join(" | ")}`,
     );
   });
 
@@ -249,12 +259,38 @@ describe("the extension in a window", () => {
     assert.deepEqual(loaded.ran, []);
   });
 
-  it("refuses to switch a Z.ai profile, and says where to run it instead", async () => {
+  it("holds a lease for its own process, and gives it up on the way out", async () => {
+    // The lease belongs to the extension host, not to the short-lived zclaude
+    // that records it — without the pid it would be reaped on the next read.
     const loaded = loadExtension(answers());
     loaded.extension.activate({ subscriptions: [] });
-    await click(loaded, (items) => items.find((item) => item.name === "chinese"));
-    assert.deepEqual(loaded.ran, []);
-    assert.match(loaded.recorded.messages.at(-1), /run `zclaude chinese` in a terminal/u);
+    await settle();
+    await settle();
+    const attach = loaded.asked.find((args) => args[0] === "auto" && args[1] === "attach");
+    assert.ok(attach, `no attach among ${JSON.stringify(loaded.asked)}`);
+    assert.equal(attach[2], "vscode", "a window may only ask it to watch");
+    assert.equal(attach.at(-2), "--pid");
+    assert.equal(attach.at(-1), String(process.pid));
+
+    loaded.extension.deactivate();
+    await settle();
+    assert.ok(
+      loaded.ran.some((args) => args[1] === "detach"),
+      "dropped politely, though the lease would expire on its own anyway",
+    );
+  });
+
+  it("marks a Z.ai row as unpickable before it is picked, and refuses it if it is", async () => {
+    // It used to accept the pick and explain afterwards, with three layers
+    // below the list refusing the same thing again. Safe, and still wrong: a
+    // list should not offer what it knows will be turned down.
+    const loaded = loadExtension(answers());
+    loaded.extension.activate({ subscriptions: [] });
+    const picked = await click(loaded, (items) => items.find((item) => item.name === "chinese"));
+    const row = picked.choices.find((item) => item.name === "chinese");
+    assert.match(row.detail, /endpoint and a key/u, "the row says why before you pick it");
+    assert.deepEqual(loaded.ran, [], "and picking it runs nothing");
+    assert.match(loaded.recorded.messages.at(-1), /cannot hold the global login/u);
   });
 
   it("opens a terminal to add a profile, because signing in needs one", async () => {

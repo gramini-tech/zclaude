@@ -126,6 +126,7 @@ const VALUE_FLAGS = Object.freeze({
   "--email": "email",
   "--log-level": "logLevel",
   "--class": "class",
+  "--pid": "pid",
   "--log-file": "logFile",
   "--model": "model",
   "--subagent-model": "subagentModel",
@@ -143,6 +144,7 @@ const BOOL_FLAGS = Object.freeze({
   "--verbose": "verbose",
   "--json": "json",
   "--daemon": "daemon",
+  "--self-lease": "selfLease",
   "--quiet": "quiet",
   "--no-log": "noLog",
   "--keep-config": "keepConfig",
@@ -235,8 +237,10 @@ Usage
   zclaude auto status [--json] [--class <c>]   which account rotation would use, and why
   zclaude auto config [show|path|init]         the inventory: what each plan is worth, and when work moves
   zclaude auto run                             start the watcher in the background
-  zclaude auto run --daemon                    be the watcher in this process; auto run calls this
+  zclaude auto run --daemon [--self-lease]     be the watcher in this process; auto run calls this
   zclaude auto off                             stop the watcher and leave the login where it is
+  zclaude auto attach [kind] [id] [--pid n]    hold or renew a lease; the editor uses this
+  zclaude auto detach <id>                     give one up
   zclaude renew status [--json]                is the token-renewal job scheduled, and what did it do
   zclaude renew install                        schedule it
   zclaude renew uninstall                      remove the schedule
