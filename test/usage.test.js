@@ -305,6 +305,66 @@ describe("usage for a profile", () => {
     }
   });
 
+  it("escalates to a machine-wide backoff only when a second account is throttled too", async () => {
+    const home = await tempHome();
+    try {
+      const env = { HOME: home.dir, ZCLAUDE_HOME: join(home.dir, ".zclaude"), USER: "tester" };
+      const one = join(home.dir, "one");
+      const two = join(home.dir, "two");
+      const blobs = new Map([
+        [claudeCredentialService(one), JSON.stringify(credential())],
+        [claudeCredentialService(two), JSON.stringify(credential())],
+      ]);
+      const records = [
+        { name: "one", provider: "anthropic", dir: one },
+        { name: "two", provider: "anthropic", dir: two },
+      ];
+      const throttle = () => new Response("{}", { status: 429, headers: { "retry-after": "300" } });
+
+      await usageForAll(records, {
+        env,
+        fetchImpl: fakeFetch(throttle),
+        security: keychain(blobs),
+        now: NOW,
+        force: true,
+      });
+
+      const cache = await readCache(env);
+      assert.equal(cache.profiles.one.backoffUntil, NOW + 300_000);
+      assert.equal(cache.profiles.two.backoffUntil, NOW + 300_000);
+      assert.equal(cache.backoffUntil, NOW + 300_000, "two at once is not a per-account limit");
+    } finally {
+      await home.cleanup();
+    }
+  });
+
+  it("writes the cache once for a fan-out, keeping every profile's answer", async () => {
+    const home = await tempHome();
+    try {
+      const env = { HOME: home.dir, ZCLAUDE_HOME: join(home.dir, ".zclaude"), USER: "tester" };
+      const dirs = ["a", "b", "c"].map((name) => join(home.dir, name));
+      const blobs = new Map(dirs.map((dir) => [claudeCredentialService(dir), JSON.stringify(credential())]));
+      const records = dirs.map((dir, index) => ({ name: `p${index}`, provider: "anthropic", dir }));
+
+      await usageForAll(records, {
+        env,
+        fetchImpl: fakeFetch(() => Response.json(USAGE_BODY)),
+        security: keychain(blobs),
+        now: NOW,
+      });
+
+      // The bug this guards: each profile used to read the cache, add itself and
+      // write, so the slowest to finish overwrote the two that landed first.
+      const cache = await readCache(env);
+      assert.deepEqual(
+        Object.keys(cache.profiles).toSorted((a, b) => a.localeCompare(b)),
+        ["p0", "p1", "p2"],
+      );
+    } finally {
+      await home.cleanup();
+    }
+  });
+
   it("keeps the last good numbers when a fetch fails, and backs off on a throttle", async () => {
     const home = await tempHome();
     try {
@@ -329,7 +389,12 @@ describe("usage for a profile", () => {
       assert.equal(throttled.weekly.pct, 61, "the numbers we had are better than none");
 
       const cache = await readCache(env);
-      assert.equal(cache.backoffUntil, NOW + 120_000 + 300_000);
+      assert.equal(
+        cache.profiles.work.backoffUntil,
+        NOW + 120_000 + 300_000,
+        "the account that earned the 429 is the one held back",
+      );
+      assert.equal(cache.backoffUntil, 0, "one throttled account does not blind the others");
       const duringBackoff = await usageFor(record(dir), {
         env,
         fetchImpl: fakeFetch(() => {

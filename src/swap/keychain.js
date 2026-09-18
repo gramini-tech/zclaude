@@ -176,6 +176,12 @@ export function describeCredential(blob, now = Date.now()) {
   const refresh = refreshExpiresIn(blob, now);
   return {
     subscriptionType: typeof oauth.subscriptionType === "string" ? oauth.subscriptionType : null,
+    // How large this plan's allowance is, as Anthropic names it:
+    // "default_claude_max_5x", "default_claude_max_20x", and so on. It is the
+    // only machine-readable statement of plan size on the credential —
+    // `subscriptionType` says "team" for a 5x seat and a 20x seat alike — so
+    // anything comparing accounts of different sizes has to read this.
+    rateLimitTier: typeof oauth.rateLimitTier === "string" ? oauth.rateLimitTier : null,
     scopes: Array.isArray(oauth.scopes) ? oauth.scopes : [],
     hasRefreshToken: typeof oauth.refreshToken === "string" && oauth.refreshToken.length > 0,
     accessExpiresInMs: Number.isNaN(access) ? null : access,

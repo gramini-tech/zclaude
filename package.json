@@ -1,7 +1,11 @@
 {
   "name": "zclaude",
-  "version": "0.2.39",
-  "description": "Run several Claude Code accounts at once, one per terminal: profiles with their own logins and config, plus Z.ai GLM Coding Plan support with browser sign-in and model selection",
+  "version": "0.2.40",
+  "description": "An account manager for Claude Code: run several accounts at once, one per terminal, see how much of each plan is left, and move the global login everything else uses",
+  "author": {
+    "name": "Gramini Labs",
+    "url": "https://gramini.com"
+  },
   "type": "module",
   "bin": {
     "zclaude": "bin/zclaude.js"
@@ -49,14 +53,17 @@
   },
   "keywords": [
     "claude-code",
-    "profiles",
+    "anthropic",
     "multi-account",
-    "z.ai",
-    "glm",
-    "coding-plan",
-    "cli",
+    "profiles",
+    "usage",
+    "rate-limits",
+    "quota",
     "oauth",
-    "preloader"
+    "vscode",
+    "cli",
+    "z.ai",
+    "glm"
   ],
   "license": "MIT",
   "devDependencies": {

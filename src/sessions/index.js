@@ -30,6 +30,8 @@ import { forgetSession, readSessions } from "./store.js";
  * @property {number} lastActiveAt 0 when nothing could be read
  * @property {"working" | "idle" | "unknown"} state
  * @property {boolean} tracked false for one zclaude did not start
+ * @property {string | null} host the machine that started it
+ * @property {boolean} auto whether it asked to be rotated between accounts
  */
 
 /**
@@ -64,6 +66,8 @@ export async function liveSessions({ env = process.env, now = Date.now(), reap =
         pid: record.pid,
         cwd: record.cwd,
         startedAt: record.startedAt,
+        host: record.host ?? null,
+        auto: record.auto === true,
         lastActiveAt,
         state: activityState(lastActiveAt, record.startedAt, now),
         tracked: true,
@@ -92,6 +96,11 @@ export async function untrackedSessions({ ours, owner = null, account = null, ps
       // Nothing outside the process says when it last did anything, and its
       // transcript cannot be told from any other session's on the same login.
       startedAt: 0,
+      host: null,
+      // Never. A session zclaude did not start never asked to be rotated, and
+      // this is the marker anything deciding whether it may move the global
+      // login reads.
+      auto: false,
       lastActiveAt: 0,
       state: "unknown",
       tracked: false,

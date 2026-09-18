@@ -31,7 +31,13 @@ export function sessionsDir(env = process.env) {
  * @property {string} cwd
  * @property {string} host
  * @property {number} startedAt
+ * @property {boolean} [auto] this session asked to be rotated between accounts
  */
+
+// Extra keys are added to version 1 rather than bumping it. `readSessions`
+// discards any record whose version it does not recognise, so an older zclaude
+// on the same machine would stop reaping new records and leave orphans that
+// make every account look permanently busy.
 
 /**
  * Write the record for a session that is starting.

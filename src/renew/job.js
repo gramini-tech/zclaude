@@ -22,6 +22,7 @@ import { log } from "../logger.js";
 import { claudeCredentialService } from "../profiles/keychain-name.js";
 import { listRegistered } from "../profiles/registry.js";
 import { captureBack } from "../swap/index.js";
+import { withCredentialsLock } from "../swap/locks.js";
 import { parseCredential, readCredential, writeCredential } from "../swap/keychain.js";
 import { refreshCredential } from "../usage/anthropic.js";
 import { isQuarantined, readRenewState, tokenFingerprint, withoutProfile, writeRenewState } from "./state.js";
@@ -58,7 +59,15 @@ export async function runRenewal({
   if (captured.captured) log.info("renew", "captured the live login back", { profile: captured.profile });
 
   for (const profile of profiles) {
-    const outcome = await renewOne(profile, { env, security, fetchImpl, now, horizonMs, force, state });
+    // Held across the read, the refresh and the write-back of this one profile.
+    // A switch copying this same profile into the global slot must not read its
+    // credential between the refresh and the store, or the slot gets the token
+    // the server has just rotated away.
+    const seen = state;
+    const outcome = await withCredentialsLock(
+      () => renewOne(profile, { env, security, fetchImpl, now, horizonMs, force, state: seen }),
+      { env },
+    );
     results.push({ profile: profile.name, ...outcome });
     state = outcome.state ?? state;
     if (outcome.stop) {

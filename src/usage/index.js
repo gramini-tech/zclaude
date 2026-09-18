@@ -13,6 +13,7 @@ import { zaiConfig, zclaudeHome } from "../config.js";
 import { log } from "../logger.js";
 import { claudeCredentialService } from "../profiles/keychain-name.js";
 import { describeCredential, parseCredential, readCredential, writeCredential } from "../swap/keychain.js";
+import { acquire } from "../swap/locks.js";
 import { loadCredential } from "../store.js";
 import { fetchQuota } from "../zai.js";
 import { fetchUsage, needsRefresh, normaliseUsage, refreshCredential } from "./anthropic.js";
@@ -108,6 +109,47 @@ export function formatCredits(credits) {
   if (credits.spendLimitReached) return "credit limit reached";
   // A deliberate "off" is not news; running out is.
   return credits.reason === "out_of_credits" ? "credits spent" : "";
+}
+
+/**
+ * States where the answer is not a number but a sign-in.
+ *
+ * `unauthorized` is a profile with no usable token at all; `dead` is one whose
+ * refresh lineage the server has rejected, which no amount of retrying will
+ * undo. Both are fixed by the same thing, and neither is fixed by waiting.
+ */
+const NEEDS_SIGN_IN = new Set(["unauthorized", "dead"]);
+
+/**
+ * What to do about a login, when that is what is wrong.
+ *
+ * One place, because four surfaces show this state — the picker, `profile list
+ * --usage`, `doctor` and the editor's hover — and a row that says "login
+ * expired" without saying what to do about it is a dead end in all four.
+ *
+ * Three answers, because the rows are not the same kind of thing. A registered
+ * profile is signed in by name. The built-in Z.ai row has a key rather than an
+ * account, so it goes through `zclaude login`. And the built-in Claude row is
+ * the default installation's own login, which Claude Code owns and asks for
+ * itself: there is nothing for zclaude to run, and saying otherwise would send
+ * somebody looking for a command that does not exist.
+ *
+ * @param {object | null} usage
+ * @param {string | {id?: string, name?: string, builtin?: boolean}} profile
+ * @returns {{command: string | null, why: string, how: string, here: boolean} | null}
+ */
+export function signInHint(usage, profile) {
+  const state = usage?.state;
+  if (!state || !NEEDS_SIGN_IN.has(state)) return null;
+  const why = STATE_TEXT[state];
+  const name = typeof profile === "string" ? profile : (profile?.id ?? profile?.name ?? "");
+  const builtin = typeof profile === "object" && profile?.builtin === true;
+  if (!builtin) {
+    const command = `zclaude profile login ${name}`;
+    return { command, why, how: `run \`${command}\``, here: true };
+  }
+  if (name === "zai") return { command: "zclaude login", why, how: "run `zclaude login`", here: true };
+  return { command: null, why, how: "launch it; Claude Code asks for a login itself", here: false };
 }
 
 /**
@@ -275,6 +317,8 @@ export async function usageFor(record, options = {}) {
     allowRefresh = true,
     security,
     cache: given = null,
+    persist = true,
+    settled: collect = null,
   } = options;
   const cache = given ?? (await readCache(env));
   const served = servedFromCache(cache, record.name, { now, ttlMs, force });
@@ -284,7 +328,10 @@ export async function usageFor(record, options = {}) {
     record.provider === "zai"
       ? await zaiUsage(record, { env, fetchImpl, signal, now })
       : await anthropicUsage(record, { env, fetchImpl, signal, allowRefresh, now, security });
-  return recordResult(record.name, fetched, { env, now, previous: cache.profiles[record.name] });
+  const result = settle(record.name, fetched, { now, previous: cache.profiles[record.name] });
+  collect?.push(result);
+  if (persist) await persistSettled([result], { env, now });
+  return result.returned;
 }
 
 /** Numbers worth keeping when the next lookup fails. */
@@ -296,8 +343,9 @@ function hasNumbers(usage) {
 function servedFromCache(cache, name, { now, ttlMs, force }) {
   const cached = cache.profiles[name];
   if (!force && cached && now - (cached.fetchedAt ?? 0) < ttlMs) return { ...cached, state: cached.state ?? "ok" };
-  if (cache.backoffUntil > now) {
-    log.debug("usage", "in backoff, serving cache", { profile: name, until: cache.backoffUntil });
+  const until = backoffFor(cache, name);
+  if (until > now) {
+    log.debug("usage", "in backoff, serving cache", { profile: name, until });
     if (!cached) return empty("throttled");
     // "stale" means "these numbers are old". An entry with no numbers has a
     // reason instead, and relabelling it would render as an empty row.
@@ -321,14 +369,59 @@ const DEFINITE = new Set(["unauthorized", "dead"]);
  * marking *that* stale would replace a row that said "sign in to see usage"
  * with a blank one.
  */
-async function recordResult(name, fetched, { env, now, previous }) {
-  const next = await readCache(env);
-  if (fetched.state === "ok" || DEFINITE.has(fetched.state)) next.profiles[name] = fetched;
-  else if (hasNumbers(previous)) next.profiles[name] = { ...previous, state: "stale", detail: fetched.detail ?? null };
-  else next.profiles[name] = fetched;
-  if (fetched.state === "throttled") next.backoffUntil = now + (fetched.retryAfterMs ?? 60_000);
-  await writeCache(next, env);
-  return fetched.state === "ok" || DEFINITE.has(fetched.state) ? fetched : (next.profiles[name] ?? fetched);
+function settle(name, fetched, { now, previous }) {
+  const definite = fetched.state === "ok" || DEFINITE.has(fetched.state);
+  let entry;
+  if (definite) entry = fetched;
+  else if (hasNumbers(previous)) entry = { ...previous, state: "stale", detail: fetched.detail ?? null };
+  else entry = fetched;
+  const backoffUntil = fetched.state === "throttled" ? now + (fetched.retryAfterMs ?? 60_000) : 0;
+  if (backoffUntil > 0) entry = { ...entry, backoffUntil };
+  return { name, entry, backoffUntil, returned: definite ? fetched : entry };
+}
+
+/** Whatever is holding this profile back: its own 429, or a machine-wide one. */
+function backoffFor(cache, name) {
+  const own = Number(cache.profiles[name]?.backoffUntil) || 0;
+  return Math.max(Number(cache.backoffUntil) || 0, own);
+}
+
+/**
+ * Merge settled results into the cache and write it once.
+ *
+ * Under a lock, because every caller does read-modify-write on one shared file:
+ * the launch menu, the VS Code hover and the auto daemon. Without it, one
+ * profile's 429 write landing between another's read and write erases the
+ * backoff just recorded, and that backoff is the whole machine's request
+ * budget. A write that cannot take the lock is skipped rather than failed: a
+ * cache that is not written costs a re-fetch and nothing more.
+ */
+async function persistSettled(settled, { env, now }) {
+  if (settled.length === 0) return;
+  let release;
+  try {
+    release = await acquire(`${usagePath(env)}.lock`, { staleMs: 5000, timeoutMs: 2000 });
+  } catch (error) {
+    log.debug("usage", "cache lock busy; not writing", { error });
+    return;
+  }
+  try {
+    const next = await readCache(env);
+    for (const { name, entry } of settled) next.profiles[name] = entry;
+    const throttled = settled.filter((one) => one.backoffUntil > now);
+    const affected = Object.values(next.profiles).filter((one) => (Number(one.backoffUntil) || 0) > now).length;
+    // A 429 now backs off the account that earned it. The machine-wide backoff
+    // is kept for the case that says something different: a limit catching two
+    // accounts at once is not per-account, so there is nothing to learn by
+    // spending requests on the rest. Monotonic, never last-writer-wins, because
+    // two processes recording different throttles must not undo each other.
+    if (throttled.length > 0 && affected > 1) {
+      next.backoffUntil = Math.max(Number(next.backoffUntil) || 0, ...throttled.map((one) => one.backoffUntil));
+    }
+    await writeCache(next, env);
+  } finally {
+    await release();
+  }
 }
 
 /**
@@ -338,12 +431,13 @@ async function recordResult(name, fetched, { env, now, previous }) {
  * @param {{onResult?: (name: string, usage: object) => void, env?: NodeJS.ProcessEnv, fetchImpl?: typeof fetch, signal?: AbortSignal, now?: number, ttlMs?: number, force?: boolean, allowRefresh?: boolean}} [options]
  */
 export async function usageForAll(records, options = {}) {
-  const { onResult, env = process.env, ...rest } = options;
+  const { onResult, env = process.env, now = Date.now(), ...rest } = options;
   const cache = await readCache(env);
   const results = {};
+  const settled = [];
   await Promise.all(
     records.map(async (record) => {
-      const usage = await usageFor(record, { ...rest, env, cache }).catch((error) => {
+      const usage = await usageFor(record, { ...rest, env, now, cache, persist: false, settled }).catch((error) => {
         log.warn("usage", "usage lookup failed", { profile: record.name, error });
         return empty("unknown", error.message);
       });
@@ -351,6 +445,10 @@ export async function usageForAll(records, options = {}) {
       onResult?.(record.name, usage);
     }),
   );
+  // One write for the whole fan-out. It used to be one per profile, each doing
+  // its own read-modify-write, so whoever finished last quietly reverted what
+  // the others had recorded in between.
+  await persistSettled(settled, { env, now });
   return results;
 }
 

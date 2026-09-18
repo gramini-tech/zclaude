@@ -160,6 +160,40 @@ describe("switching the global login", () => {
     }
   });
 
+  // The renewal job and a switch can run at the same moment, and the capture
+  // reads the identity and the credential one after the other. If the slot
+  // changes hands in between, the token read second belongs to the account read
+  // second, and filing it under the first would write one account's login into
+  // another's profile. Silent, permanent, and only visible weeks later as a
+  // profile that mysteriously stops working.
+  it("refuses to capture when the slot changes hands mid-read", async () => {
+    const { home, env, security, profileDir } = await setup({ globalWho: "bob", profileWho: "bob" });
+    try {
+      const mine = security.items.get(claudeCredentialService(profileDir));
+      const racing = async (args, options) => {
+        const result = await security(args, options);
+        // Reading the slot's credential is the moment between the two identity
+        // reads; a switch lands here and the slot is now somebody else's.
+        if (args[0] === "find-generic-password" && args.includes(DEFAULT_CREDENTIAL_SERVICE)) {
+          const config = JSON.parse(await readFile(join(home.dir, ".claude.json"), "utf8"));
+          await writeFile(
+            join(home.dir, ".claude.json"),
+            JSON.stringify({ ...config, oauthAccount: identity("carol") }, null, 2),
+          );
+        }
+        return result;
+      };
+
+      assert.deepEqual(await captureBack({ env, security: racing }), {
+        captured: false,
+        reason: "the slot changed hands while it was being read",
+      });
+      assert.equal(security.items.get(claudeCredentialService(profileDir)), mine, "bob's profile is left alone");
+    } finally {
+      await home.cleanup();
+    }
+  });
+
   // The capture runs unattended from the renewal job now, so it has to be safe
   // in the other direction too: a profile refreshed more recently than the slot
   // must not have its working token replaced by the slot's older one.

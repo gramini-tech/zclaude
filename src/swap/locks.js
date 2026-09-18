@@ -22,8 +22,9 @@
 // owning it. We wait, then give up and say so.
 
 import { mkdir, rm, stat, utimes } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 
+import { zclaudeHome } from "../config.js";
 import { log } from "../logger.js";
 
 export const CREDENTIAL_STALE_MS = 60_000;
@@ -130,4 +131,30 @@ export function swapLocks({ configDir, configFile }) {
     { dir: `${configDir}.lock`, staleMs: CREDENTIAL_STALE_MS },
     { dir: `${configFile}.lock`, staleMs: CONFIG_STALE_MS },
   ];
+}
+
+/**
+ * zclaude's own lock, taken around anything that moves a credential between
+ * stores. Claude Code's three locks cover the global slot and nothing else, so
+ * two zclaude operations touching a *profile's* Keychain item — a renewal
+ * writing a refreshed token while a switch reads the same profile to copy it
+ * into the slot — are not exclusive without this. The window is small and the
+ * damage is not: the slot gets a token the server has already rotated away, and
+ * the account is logged out at its next refresh.
+ *
+ * It is taken *before* Claude Code's locks, always, so two callers can never
+ * take the same pair in opposite orders.
+ * @param {NodeJS.ProcessEnv} [env]
+ */
+export function credentialsLock(env = process.env) {
+  return { dir: join(zclaudeHome(env), "credentials.lock"), staleMs: CREDENTIAL_STALE_MS };
+}
+
+/**
+ * Run something holding zclaude's credentials lock.
+ * @param {() => Promise<any>} run
+ * @param {{env?: NodeJS.ProcessEnv, timeoutMs?: number}} [options]
+ */
+export function withCredentialsLock(run, { env = process.env, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+  return withLocks([credentialsLock(env)], run, { timeoutMs });
 }

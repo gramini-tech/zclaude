@@ -91,10 +91,13 @@ function loadSecret(entry, { env, security }) {
 /**
  * Capture what is in the global slot right now.
  * @param {{credential: string, identity: object | null, account: object | null, config: string | null}} what
- * @param {{env?: NodeJS.ProcessEnv, platform?: NodeJS.Platform, security?: import("./keychain.js").SecurityRunner, now?: Date}} [options]
+ * @param {{env?: NodeJS.ProcessEnv, platform?: NodeJS.Platform, security?: import("./keychain.js").SecurityRunner, now?: Date, pin?: boolean}} [options]
  * @returns {Promise<object>} the backup entry
  */
-export async function takeBackup(what, { env = process.env, platform = process.platform, security, now } = {}) {
+export async function takeBackup(
+  what,
+  { env = process.env, platform = process.platform, security, now, pin = false } = {},
+) {
   const id = backupId(now);
   const dir = backupDir(id, env);
   await mkdir(dir, { recursive: true, mode: 0o700 });
@@ -110,6 +113,11 @@ export async function takeBackup(what, { env = process.env, platform = process.p
     account: what.account ?? null,
     location: stored.location,
     service: stored.service ?? null,
+    // A pinned backup is never pruned. Ten is enough history to undo a mistake
+    // by hand, and far too few to survive anything that switches on a timer:
+    // auto mode rotating hourly would put the login you started the day with
+    // out of reach of `switch --restore` before lunch.
+    ...(pin && { pinned: true }),
   };
   await writeJson(join(dir, "backup.json"), entry);
 
@@ -121,7 +129,7 @@ export async function takeBackup(what, { env = process.env, platform = process.p
     throw new Error("The backup could not be read back. Nothing has been changed; the login in place is untouched.");
   }
   log.info("swap", "backup taken", { id, location: entry.location, account: entry.account?.email ?? null });
-  await prune(env);
+  await prune(env, security);
   return entry;
 }
 
@@ -148,12 +156,13 @@ export async function loadBackup(id, { env = process.env, security } = {}) {
   return { entry, credential, identity };
 }
 
-async function prune(env) {
+async function prune(env, security) {
   const all = await listBackups(env);
-  for (const entry of all.slice(KEEP)) {
+  const disposable = all.filter((entry) => !entry.pinned);
+  for (const entry of disposable.slice(KEEP)) {
     await rm(backupDir(entry.id, env), { recursive: true, force: true }).catch(() => {});
     if (entry.location === "keychain" && entry.service) {
-      await removeCredential({ service: entry.service, env }).catch(() => {});
+      await removeCredential({ service: entry.service, env, security }).catch(() => {});
     }
   }
 }

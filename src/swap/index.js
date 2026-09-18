@@ -37,7 +37,7 @@ import {
   writeIdentityBlock,
 } from "./identity.js";
 import { describeCredential, parseCredential, readCredential, writeCredential } from "./keychain.js";
-import { swapLocks, withLocks } from "./locks.js";
+import { credentialsLock, swapLocks, withLocks } from "./locks.js";
 
 /** Everything a swap needs to know about where things live. */
 function places(env) {
@@ -93,14 +93,32 @@ async function findOwner(identity, profiles) {
 
 /**
  * Put the live credential back into the profile it belongs to.
- * @param {{env?: NodeJS.ProcessEnv, security?: import("./keychain.js").SecurityRunner}} [options]
  *
  * Claude Code refreshes the token in the slot as it works, and the server
  * rotates the refresh token when it does. The profile's own copy is then a
  * generation behind, and using it later would fail. This is the step that keeps
  * a round trip lossless.
+ *
+ * This is the locking entry point, for callers that hold nothing: the renewal
+ * job, `zclaude switch capture`, and the auto daemon. `switchTo` and `restore`
+ * are already inside the locks and call `captureBackHere` instead — taking a
+ * lock you already hold spins until the timeout and then reports itself as
+ * somebody else's.
+ * @param {{env?: NodeJS.ProcessEnv, security?: import("./keychain.js").SecurityRunner}} [options]
  */
-export async function captureBack({ env = process.env, security } = {}) {
+export function captureBack({ env = process.env, security } = {}) {
+  const { configFile, configDir } = places(env);
+  return withLocks([credentialsLock(env), ...swapLocks({ configDir, configFile })], () =>
+    captureBackHere({ env, security }),
+  );
+}
+
+/**
+ * The same, for a caller that already holds the credentials lock and Claude
+ * Code's three.
+ * @param {{env?: NodeJS.ProcessEnv, security?: import("./keychain.js").SecurityRunner}} [options]
+ */
+async function captureBackHere({ env = process.env, security } = {}) {
   const { service, configFile } = places(env);
   const identity = await readIdentityBlock(configFile);
   const profiles = await listRegistered(env);
@@ -108,6 +126,14 @@ export async function captureBack({ env = process.env, security } = {}) {
   if (!owner) return { captured: false, reason: "the account in the slot does not belong to a profile" };
   const live = await readCredential({ service, env, security });
   if (!live) return { captured: false, reason: "there is no credential in the slot" };
+  // Whose credential this is was decided from the identity read a moment ago,
+  // and the slot can move between those two reads. Writing then would file this
+  // token under the *previous* account's profile, which is silent and permanent
+  // and only shows up as a login that mysteriously stops working.
+  const stillTheirs = await readIdentityBlock(configFile);
+  if (!stillTheirs || !sameAccount(identity, stillTheirs)) {
+    return { captured: false, reason: "the slot changed hands while it was being read" };
+  }
   const target = claudeCredentialService(owner.dir);
   const stored = await readCredential({ service: target, env, security }).catch(() => null);
   if (stored === live) return { captured: false, reason: "already in step", profile: owner.name };
@@ -185,32 +211,44 @@ export async function planSwitch(name, { env = process.env, security } = {}) {
 /**
  * Move the global login to a profile.
  * @param {string} name
- * @param {{env?: NodeJS.ProcessEnv, security?: import("./keychain.js").SecurityRunner, platform?: NodeJS.Platform}} [options]
+ * @param {{env?: NodeJS.ProcessEnv, security?: import("./keychain.js").SecurityRunner, platform?: NodeJS.Platform, backup?: boolean, pinBackup?: boolean, by?: "user" | "auto"}} [options]
  */
-export async function switchTo(name, { env = process.env, security, platform = process.platform } = {}) {
+export async function switchTo(
+  name,
+  { env = process.env, security, platform = process.platform, backup = true, pinBackup = false, by = "user" } = {},
+) {
   const plan = await planSwitch(name, { env, security });
   if (plan.refusals.length > 0) throw new Error(plan.refusals[0]);
   const { record } = plan;
   const { service, configFile, configDir } = places(env);
 
-  return withLocks(swapLocks({ configDir, configFile }), async () => {
+  return withLocks([credentialsLock(env), ...swapLocks({ configDir, configFile })], async () => {
     const before = await readCredential({ service, env, security });
     const beforeIdentity = await readIdentityBlock(configFile);
     const beforeConfig = before === null ? null : await readFile(configFile, "utf8").catch(() => null);
 
     if (before) {
-      await captureBack({ env, security }).catch((error) =>
-        log.warn("swap", "capture-back failed; continuing to the backup", { error }),
-      );
-      await takeBackup(
-        {
-          credential: before,
-          identity: beforeIdentity,
-          account: describeIdentity(beforeIdentity),
-          config: beforeConfig,
-        },
-        { env, platform, security },
-      );
+      const captured = await captureBackHere({ env, security }).catch((error) => {
+        log.warn("swap", "capture-back failed; continuing to the backup", { error });
+        return { captured: false };
+      });
+      // A caller that rotates on a timer can skip the ring when the outgoing
+      // login has just been written into the profile that owns it: the backup
+      // would be a second copy of something already safe, and ten of them push
+      // the login the user started with out of reach of `switch --restore`.
+      // Anything zclaude does not own is always backed up, whatever was asked.
+      const owned = captured.captured || Boolean(plan.current?.owner);
+      if (backup || !owned) {
+        await takeBackup(
+          {
+            credential: before,
+            identity: beforeIdentity,
+            account: describeIdentity(beforeIdentity),
+            config: beforeConfig,
+          },
+          { env, platform, security, pin: pinBackup },
+        );
+      }
     }
 
     const targetService = claudeCredentialService(record.dir);
@@ -226,7 +264,7 @@ export async function switchTo(name, { env = process.env, security, platform = p
     }
 
     await writeSwapState(
-      { active: record.name, swappedAt: new Date().toISOString(), previous: describeIdentity(beforeIdentity) },
+      { active: record.name, swappedAt: new Date().toISOString(), by, previous: describeIdentity(beforeIdentity) },
       env,
     );
     log.info("swap", "global login switched", { profile: record.name });
@@ -261,8 +299,8 @@ export async function restore({ env = process.env, security, id } = {}) {
   if (!loaded) throw new Error(`Backup ${chosen.id} could not be read; its credential may have been removed.`);
   const { service, configFile, configDir } = places(env);
 
-  return withLocks(swapLocks({ configDir, configFile }), async () => {
-    await captureBack({ env, security }).catch(() => {});
+  return withLocks([credentialsLock(env), ...swapLocks({ configDir, configFile })], async () => {
+    await captureBackHere({ env, security }).catch(() => {});
     await writeCredential({ service, secret: loaded.credential, env, security });
     await writeIdentityBlock(configFile, loaded.identity);
     await writeSwapState({ active: null, restoredAt: new Date().toISOString(), from: chosen.id }, env);

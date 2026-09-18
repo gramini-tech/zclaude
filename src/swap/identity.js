@@ -75,6 +75,12 @@ export function describeIdentity(account) {
     organizationUuid: typeof account.organizationUuid === "string" ? account.organizationUuid : null,
     accountUuid: typeof account.accountUuid === "string" ? account.accountUuid : null,
     seat: typeof account.seatTier === "string" ? account.seatTier : null,
+    // The same plan size as the credential's `rateLimitTier`, cached here when
+    // the profile was last used. `organizationRateLimitTier` is an opaque name
+    // ("default_raven" on this machine) that maps to nothing published, so it
+    // is carried for diagnosis and never used to size anything.
+    tier: typeof account.userRateLimitTier === "string" ? account.userRateLimitTier : null,
+    organizationTier: typeof account.organizationRateLimitTier === "string" ? account.organizationRateLimitTier : null,
   };
 }
 
