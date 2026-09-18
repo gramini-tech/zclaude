@@ -1181,7 +1181,7 @@ function npmOutput(args, env) {
 }
 
 /**
- * Install zclaude globally with npm, so `npx github:vipincr/zclaude self-install`
+ * Install zclaude globally with npm, so `npx github:gramini-tech/zclaude self-install`
  * leaves a plain `zclaude` command behind. Uses the npm registry when this
  * package is published there, GitHub otherwise.
  */

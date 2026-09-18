@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { log } from "../logger.js";
 
 /** publisher.name from extension/package.json: what `code` calls it. */
-export const EXTENSION_ID = "vipincr.zclaude";
+export const EXTENSION_ID = "gramini-labs.zclaude";
 
 const here = dirname(fileURLToPath(import.meta.url));
 

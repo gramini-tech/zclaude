@@ -12,7 +12,7 @@ import { request } from "./http.js";
 import { log } from "./logger.js";
 import { readState, writeState } from "./store.js";
 
-const REPO = "vipincr/zclaude";
+const REPO = "gramini-tech/zclaude";
 // npm installs from a tarball URL rather than the git spec: a git install
 // needs npm to "prepare" the package, and when script running is disabled npm
 // leaves a symlink into its cache instead of a real installation.
@@ -25,7 +25,7 @@ export const GITHUB_SPEC = `https://codeload.github.com/${REPO}/tar.gz/refs/head
 // rate limit (60 an hour per address, against a once-a-day check) is hit.
 const API_PACKAGE_URL = `https://api.github.com/repos/${REPO}/contents/package.json?ref=main`;
 const RAW_PACKAGE_URL = `https://raw.githubusercontent.com/${REPO}/main/package.json`;
-export const INSTALLER_URL = "https://vipincr.github.io/zclaude/install";
+export const INSTALLER_URL = "https://gramini-tech.github.io/zclaude/install";
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 /** Positive when a is newer than b. */

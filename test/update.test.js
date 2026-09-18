@@ -117,7 +117,7 @@ describe("looking up the newest version", () => {
       return Response.json({ version: "9.9.9" });
     };
     assert.equal(await fetchLatestVersion({ fetchImpl, now: 1234 }), "9.9.9");
-    assert.deepEqual(seen, ["https://api.github.com/repos/vipincr/zclaude/contents/package.json?ref=main"]);
+    assert.deepEqual(seen, ["https://api.github.com/repos/gramini-tech/zclaude/contents/package.json?ref=main"]);
   });
 
   it("falls back to raw when the API is rate limited", async () => {
@@ -130,7 +130,7 @@ describe("looking up the newest version", () => {
     };
     assert.equal(await fetchLatestVersion({ fetchImpl, now: 1234 }), "8.8.8");
     assert.equal(seen.length, 2);
-    assert.match(seen[1], /raw\.githubusercontent\.com\/vipincr\/zclaude\/main\/package\.json\?t=1234$/u);
+    assert.match(seen[1], /raw\.githubusercontent\.com\/gramini-tech\/zclaude\/main\/package\.json\?t=1234$/u);
   });
 
   it("returns null for anything that is not a version, and for a failure", async () => {

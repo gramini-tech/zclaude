@@ -158,7 +158,7 @@ async function readSettingsFile(path) {
 }
 
 const FILE_HEADER = [
-  "# managed by zclaude (https://github.com/vipincr/zclaude)",
+  "# managed by zclaude (https://github.com/gramini-tech/zclaude)",
   "# Model choices for Claude Code on the Z.ai GLM Coding Plan.",
   "# Credentials never live here; this file is safe to commit.",
 ].join("\n");

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # zclaude installer for a fresh machine (macOS or Linux, x64 or arm64).
 #
-#   curl -fsSL https://vipincr.github.io/zclaude/install | bash
+#   curl -fsSL https://gramini-tech.github.io/zclaude/install | bash
 #
 # What it does, in order:
 #   1. Uses the Node.js already on the machine when it is 20.17 or newer. Only
@@ -36,7 +36,7 @@
 #                              Add --keep-config to keep ~/.zclaude.
 set -euo pipefail
 
-REPO="vipincr/zclaude"
+REPO="gramini-tech/zclaude"
 REF="${ZCLAUDE_INSTALL_REF:-main}"
 ZCLAUDE_HOME="${ZCLAUDE_HOME:-$HOME/.zclaude}"
 APP_DIR="${ZCLAUDE_INSTALL_DIR:-$ZCLAUDE_HOME/app}"
@@ -190,7 +190,7 @@ remove_vscode_extension() {
   local editor removed=0
   while IFS= read -r editor; do
     [ -n "$editor" ] || continue
-    if "$editor" --uninstall-extension vipincr.zclaude >/dev/null 2>&1; then
+    if "$editor" --uninstall-extension gramini-labs.zclaude >/dev/null 2>&1; then
       removed=$((removed + 1))
     fi
   done <<<"$(find_editors)"

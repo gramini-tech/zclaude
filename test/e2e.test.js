@@ -547,7 +547,7 @@ describe("end to end", () => {
     assert.equal(result.code, 0, result.stderr);
     assert.equal(
       (await readFile(npmCapture, "utf8")).trim(),
-      "install -g https://codeload.github.com/vipincr/zclaude/tar.gz/refs/heads/main",
+      "install -g https://codeload.github.com/gramini-tech/zclaude/tar.gz/refs/heads/main",
       "installs from the tarball, not the git spec npm cannot prepare",
     );
     assert.match(result.stderr, /zclaude 9\.9\.9 installed/u);

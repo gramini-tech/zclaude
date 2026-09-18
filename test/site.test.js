@@ -21,9 +21,9 @@ describe("site", () => {
   it("offers the same install commands as the README", async () => {
     const [html, readme] = await Promise.all([read("index.html"), read("README.md")]);
     const commands = [
-      "curl -fsSL https://vipincr.github.io/zclaude/install | bash",
-      "npx github:vipincr/zclaude self-install",
-      "npm install -g github:vipincr/zclaude",
+      "curl -fsSL https://gramini-tech.github.io/zclaude/install | bash",
+      "npx github:gramini-tech/zclaude self-install",
+      "npm install -g github:gramini-tech/zclaude",
     ];
     for (const command of commands) {
       assert.ok(html.includes(command), `index.html is missing: ${command}`);

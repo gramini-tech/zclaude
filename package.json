@@ -1,6 +1,6 @@
 {
   "name": "zclaude",
-  "version": "0.2.43",
+  "version": "0.2.44",
   "description": "An account manager for Claude Code: run several accounts at once, one per terminal, see how much of each plan is left, and move the global login everything else uses",
   "author": {
     "name": "Gramini Labs",
@@ -45,11 +45,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vipincr/zclaude.git"
+    "url": "git+https://github.com/gramini-tech/zclaude.git"
   },
-  "homepage": "https://vipincr.github.io/zclaude/",
+  "homepage": "https://gramini-tech.github.io/zclaude/",
   "bugs": {
-    "url": "https://github.com/vipincr/zclaude/issues"
+    "url": "https://github.com/gramini-tech/zclaude/issues"
   },
   "keywords": [
     "claude-code",

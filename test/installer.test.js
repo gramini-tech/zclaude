@@ -227,7 +227,7 @@ describe("install.sh", { skip }, () => {
     await sh([join(root, "install.sh")], withEditor);
     const gone = await sh([join(root, "install.sh"), "--uninstall"], withEditor);
     assert.equal(gone.code, 0, gone.stderr);
-    assert.match(await editor.read(), /code --uninstall-extension vipincr\.zclaude/u);
+    assert.match(await editor.read(), /code --uninstall-extension gramini-labs\.zclaude/u);
     assert.match(gone.stderr, /Removed the status bar item from 1 editor/u);
   });
 

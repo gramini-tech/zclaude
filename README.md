@@ -8,7 +8,7 @@ else on the machine uses.
   <img src="site/logo.svg" alt="zclaude" width="560">
 </p>
 
-<p align="center"><a href="https://vipincr.github.io/zclaude/">vipincr.github.io/zclaude</a></p>
+<p align="center"><a href="https://gramini-tech.github.io/zclaude/">gramini-tech.github.io/zclaude</a></p>
 
 ## What it does
 
@@ -66,7 +66,7 @@ Pick one. All of them end with a `zclaude` command on your PATH.
 **New machine, nothing installed** (macOS or Linux, x64 or arm64; needs only `curl` and `tar`):
 
 ```sh
-curl -fsSL https://vipincr.github.io/zclaude/install | bash
+curl -fsSL https://gramini-tech.github.io/zclaude/install | bash
 ```
 
 The installer uses the Node.js already on your machine when it is 20.17 or newer. Only when Node is
@@ -76,7 +76,7 @@ zclaude in `~/.zclaude/app`, links `~/.local/bin/zclaude`, adds `~/.local/bin` t
 and runs Anthropic's Claude Code installer if `claude` is missing. When it finds VS Code it offers
 the status bar item, and when there is an Anthropic profile already it offers the token renewal;
 both install silently when there is no terminal to ask on. Re-running it updates zclaude in
-place; `curl -fsSL https://vipincr.github.io/zclaude/install | bash -s -- --uninstall` removes
+place; `curl -fsSL https://gramini-tech.github.io/zclaude/install | bash -s -- --uninstall` removes
 everything: the app, the private Node, the command, the PATH line it added, `~/.zclaude`, the
 stored Z.ai keys and the Claude Code login of each profile. Add `--keep-config` to keep `~/.zclaude`. Knobs: `ZCLAUDE_INSTALL_REF` (git ref,
 default `main`), `ZCLAUDE_INSTALL_DIR`, `ZCLAUDE_BIN_DIR`, `ZCLAUDE_NODE_VERSION` (default 22),
@@ -88,16 +88,16 @@ checkout or `.tgz` for offline installs).
 **Node.js already installed:**
 
 ```sh
-npx github:vipincr/zclaude                 # run it once, nothing kept
-npx github:vipincr/zclaude self-install    # install globally through npm, then just type zclaude
-npm install -g github:vipincr/zclaude      # the same, directly
+npx github:gramini-tech/zclaude                 # run it once, nothing kept
+npx github:gramini-tech/zclaude self-install    # install globally through npm, then just type zclaude
+npm install -g github:gramini-tech/zclaude      # the same, directly
 npm install -g zclaude                     # once published to the npm registry
 ```
 
 **From a clone:**
 
 ```sh
-git clone https://github.com/vipincr/zclaude.git && cd zclaude && npm install
+git clone https://github.com/gramini-tech/zclaude.git && cd zclaude && npm install
 ln -s "$PWD/zclaude" ~/.local/bin/zclaude
 ```
 
@@ -113,7 +113,7 @@ a one-line notice when a newer version exists.
 ```sh
 zclaude self-update                        # re-runs whichever install path put zclaude here
 zclaude self-update --force                # install anyway, when the check says you are current
-npx github:vipincr/zclaude self-update     # the same, without a global install
+npx github:gramini-tech/zclaude self-update     # the same, without a global install
 zclaude self-uninstall                     # remove zclaude, its profiles, their logins, settings and logs
 zclaude self-uninstall --keep-config       # keep ~/.zclaude
 ```

@@ -7,11 +7,11 @@
     "url": "https://gramini.com"
   },
   "version": "0.6.2",
-  "publisher": "vipincr",
+  "publisher": "gramini-labs",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vipincr/zclaude.git"
+    "url": "git+https://github.com/gramini-tech/zclaude.git"
   },
   "engines": {
     "vscode": "^1.75.0"

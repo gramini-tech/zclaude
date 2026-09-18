@@ -89,7 +89,9 @@ describe("zclaude vscode", () => {
   it("reports which editors have it, and at which version", async () => {
     const home = await tempHome();
     try {
-      const editors = await fakeEditors(home, ["code"], { listing: "vipincr.zclaude@0.0.1\\nvscodevim.vim@1.0.0\\n" });
+      const editors = await fakeEditors(home, ["code"], {
+        listing: "gramini-labs.zclaude@0.0.1\\nvscodevim.vim@1.0.0\\n",
+      });
       const env = { PATH: editors.bin, HOME: home.dir, NO_COLOR: "1" };
       const result = await vscode(["status"], { env });
       assert.match(result.err, /VS Code\s+0\.0\.1\s+\(older than the packaged one\)/u);
@@ -106,7 +108,7 @@ describe("zclaude vscode", () => {
       const env = { PATH: editors.bin, HOME: home.dir, NO_COLOR: "1" };
       const result = await vscode(["status"], { env, options: { json: true } });
       const payload = JSON.parse(result.out);
-      assert.equal(payload.extension, "vipincr.zclaude");
+      assert.equal(payload.extension, "gramini-labs.zclaude");
       assert.match(payload.vsix, /zclaude\.vsix$/u);
       assert.deepEqual(payload.editors[0].id, "code");
       assert.equal(payload.editors[0].state, "absent");
@@ -121,8 +123,8 @@ describe("zclaude vscode", () => {
       const editors = await fakeEditors(home, ["code"]);
       const env = { PATH: editors.bin, HOME: home.dir, NO_COLOR: "1" };
       const result = await vscode(["uninstall"], { env });
-      assert.match(result.err, /Removed vipincr\.zclaude from VS Code/u);
-      assert.match(await editors.calls(), /code --uninstall-extension vipincr\.zclaude/u);
+      assert.match(result.err, /Removed gramini-labs\.zclaude from VS Code/u);
+      assert.match(await editors.calls(), /code --uninstall-extension gramini-labs\.zclaude/u);
     } finally {
       await home.cleanup();
     }

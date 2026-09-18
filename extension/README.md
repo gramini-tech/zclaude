@@ -22,12 +22,12 @@ The list also carries:
 
 ## What it needs
 
-[zclaude](https://github.com/vipincr/zclaude) on the machine:
+[zclaude](https://github.com/gramini-tech/zclaude) on the machine:
 
 ```sh
 npm install -g zclaude
 # or
-curl -fsSL https://raw.githubusercontent.com/vipincr/zclaude/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/gramini-tech/zclaude/main/install.sh | bash
 ```
 
 It needs zclaude 0.2.18 or newer, which is the version that has `switch`; the item says so and
@@ -57,5 +57,5 @@ cannot find zclaude, set `zclaude.path`.
 
 ## Licence
 
-MIT, © 2026 Gramini Labs. Part of [zclaude](https://github.com/vipincr/zclaude), built by
+MIT, © 2026 Gramini Labs. Part of [zclaude](https://github.com/gramini-tech/zclaude), built by
 [Gramini Labs](https://gramini.com).

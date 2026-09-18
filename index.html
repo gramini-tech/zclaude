@@ -9,14 +9,14 @@
       content="Run several Claude Code accounts at once, one per terminal. Work, personal and a Z.ai GLM Coding Plan, each with its own login, side by side."
     />
     <meta name="color-scheme" content="dark light" />
-    <link rel="canonical" href="https://vipincr.github.io/zclaude/" />
+    <link rel="canonical" href="https://gramini-tech.github.io/zclaude/" />
     <link rel="icon" href="site/favicon.svg" type="image/svg+xml" />
     <meta property="og:title" content="zclaude — an account manager for Claude Code" />
     <meta
       property="og:description"
       content="Run several Claude Code accounts at once, see how much of each plan is left, and move the login everything else uses. Open source, MIT licensed."
     />
-    <meta property="og:url" content="https://vipincr.github.io/zclaude/" />
+    <meta property="og:url" content="https://gramini-tech.github.io/zclaude/" />
     <meta property="og:type" content="website" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -41,7 +41,7 @@
           <a href="#switch">Switch</a>
           <a href="#zai">Z.ai</a>
           <a href="#faq">FAQ</a>
-          <a href="https://github.com/vipincr/zclaude">GitHub</a>
+          <a href="https://github.com/gramini-tech/zclaude">GitHub</a>
         </nav>
       </div>
     </header>
@@ -73,7 +73,7 @@
             <label for="tab-git" role="tab">git</label>
 
             <div class="panel" data-for="tab-curl">
-              <pre><code id="cmd-curl">curl -fsSL https://vipincr.github.io/zclaude/install | bash</code></pre>
+              <pre><code id="cmd-curl">curl -fsSL https://gramini-tech.github.io/zclaude/install | bash</code></pre>
               <button class="copy" type="button" data-copy="cmd-curl">Copy</button>
               <p class="hint">
                 For a new Mac or Linux machine. Uses your Node.js when it is 20.17 or newer and brings a private copy
@@ -81,20 +81,20 @@
               </p>
             </div>
             <div class="panel" data-for="tab-npx">
-              <pre><code id="cmd-npx">npx github:vipincr/zclaude self-install</code></pre>
+              <pre><code id="cmd-npx">npx github:gramini-tech/zclaude self-install</code></pre>
               <button class="copy" type="button" data-copy="cmd-npx">Copy</button>
               <p class="hint">
-                Node.js already installed. <code>npx github:vipincr/zclaude</code> on its own runs it once without
+                Node.js already installed. <code>npx github:gramini-tech/zclaude</code> on its own runs it once without
                 keeping anything.
               </p>
             </div>
             <div class="panel" data-for="tab-npm">
-              <pre><code id="cmd-npm">npm install -g github:vipincr/zclaude</code></pre>
+              <pre><code id="cmd-npm">npm install -g github:gramini-tech/zclaude</code></pre>
               <button class="copy" type="button" data-copy="cmd-npm">Copy</button>
               <p class="hint">A regular global npm install straight from GitHub.</p>
             </div>
             <div class="panel" data-for="tab-git">
-              <pre><code id="cmd-git">git clone https://github.com/vipincr/zclaude.git &amp;&amp; cd zclaude &amp;&amp; npm install &amp;&amp; ln -s "$PWD/zclaude" ~/.local/bin/zclaude</code></pre>
+              <pre><code id="cmd-git">git clone https://github.com/gramini-tech/zclaude.git &amp;&amp; cd zclaude &amp;&amp; npm install &amp;&amp; ln -s "$PWD/zclaude" ~/.local/bin/zclaude</code></pre>
               <button class="copy" type="button" data-copy="cmd-git">Copy</button>
               <p class="hint">Work from a clone. The bash runner finds a suitable Node on its own.</p>
             </div>
@@ -511,7 +511,7 @@ ZCLAUDE_PROFILE=work       # optional: pick a profile for this project</code></p
           A command-line flag beats the environment, which beats the project file, which beats your user default. A
           profile name your teammates do not have falls back to the menu with a warning, so the project file is safe to
           commit. Every option and variable is listed in the
-          <a href="https://github.com/vipincr/zclaude#readme">README</a>.
+          <a href="https://github.com/gramini-tech/zclaude#readme">README</a>.
         </p>
       </section>
 
@@ -753,8 +753,8 @@ ZCLAUDE_PROFILE=work       # optional: pick a profile for this project</code></p
             <code>zclaude self-uninstall</code> removes it: the files, the command, the profiles, settings and logs in
             <code>~/.zclaude</code>, your stored Z.ai keys and the Claude Code login each profile earned. Add
             <code>--keep-config</code> to keep <code>~/.zclaude</code>. The installer can do the same directly with
-            <code>curl -fsSL https://vipincr.github.io/zclaude/install | bash -s -- --uninstall</code>. Installing and
-            removing it repeatedly is fine.
+            <code>curl -fsSL https://gramini-tech.github.io/zclaude/install | bash -s -- --uninstall</code>. Installing
+            and removing it repeatedly is fine.
           </p>
         </details>
 
@@ -773,10 +773,10 @@ ZCLAUDE_PROFILE=work       # optional: pick a profile for this project</code></p
     <footer class="foot">
       <div class="wrap foot-inner">
         <p>
-          <strong>zclaude</strong> · MIT License · <a href="https://github.com/vipincr/zclaude">GitHub</a> ·
-          <a href="https://github.com/vipincr/zclaude#readme">README</a> ·
-          <a href="https://github.com/vipincr/zclaude/blob/main/CHANGELOG.md">Changelog</a> ·
-          <a href="https://github.com/vipincr/zclaude/issues">Report an issue</a>
+          <strong>zclaude</strong> · MIT License · <a href="https://github.com/gramini-tech/zclaude">GitHub</a> ·
+          <a href="https://github.com/gramini-tech/zclaude#readme">README</a> ·
+          <a href="https://github.com/gramini-tech/zclaude/blob/main/CHANGELOG.md">Changelog</a> ·
+          <a href="https://github.com/gramini-tech/zclaude/issues">Report an issue</a>
         </p>
         <p class="fine">
           Independent project, not affiliated with or endorsed by Anthropic or Z.ai. Claude Code is a product of

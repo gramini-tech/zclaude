@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+Moved to the Gramini Labs organisation: `gramini-tech/zclaude`, published at
+`gramini-tech.github.io/zclaude`, with the VS Code extension now
+`gramini-labs.zclaude`.
+
+**The install URL has changed.** GitHub redirects the git URLs after a transfer
+but not the Pages ones, so `https://vipincr.github.io/zclaude/install` stops
+answering and an already-installed copy cannot `self-update` its way across —
+the old URL is baked into it. Run the new one once on each machine:
+
+```sh
+curl -fsSL https://gramini-tech.github.io/zclaude/install | bash
+```
+
+`github.com/vipincr/zclaude` and `npx github:vipincr/zclaude` keep working
+through GitHub's own redirect.
+
+**The extension id has changed**, so an installed `vipincr.zclaude` is not
+replaced by the new one and would sit beside it as a second status bar item.
+Remove it first if you have it: `code --uninstall-extension vipincr.zclaude`,
+then `zclaude vscode install`.
+
+
 An expired login is now something you can act on where you find it, rather than
 a row that reports a problem and stops.
 
@@ -346,7 +368,7 @@ First release.
   5-hour and weekly windows and when a nearly used-up window resets.
 - A settings.json env block that would override the session is a prompt (quit to edit, or launch
   anyway), never a silent warning; zclaude never writes Claude Code files.
-- Website at https://vipincr.github.io/zclaude/ with install tabs, a first-run walkthrough, usage and
+- Website at https://gramini-tech.github.io/zclaude/ with install tabs, a first-run walkthrough, usage and
   FAQ. Higher-resolution wordmark (half-block pixels, gradient, shadow) shared by the terminal banner,
   the site logo and the favicon.
 - `install.sh` for bare machines (downloads Node if needed, installs Claude Code), `self-install`
