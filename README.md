@@ -500,7 +500,18 @@ zclaude auto status --json             # the same, for scripts
 zclaude auto config                    # the inventory, defaults included
 zclaude auto config path               # where it lives
 zclaude auto config init               # write the defaults out, with the explanations
+zclaude auto run                       # start the watcher in the background
+zclaude auto off                       # stop it; the login stays where it is
 ```
+
+`auto run` starts a detached watcher and holds a lease for the shell that
+started it. The watcher exits when the last lease lapses, and `auto run --daemon`
+is the form it runs as inside that process. Detaching is a safety requirement
+rather than a convenience: every output path here writes to stderr, and the
+launcher's stderr is Claude Code's own terminal, so a rotation warning would
+scribble over a full-screen TUI. A `^C` reaches the whole foreground process
+group too, and that signal landing between writing a credential and splicing an
+identity would leave the slot holding one account's token under another's name.
 
 ```
 rotating    no — not built yet. This is what it would do.
@@ -676,6 +687,7 @@ These matter only when they come **before** a profile name or without one:
 | ------------------------------------ | ------------------------------------------------ | ------------------------------- |
 | `--model <id>`                       | the primary model for a Z.ai profile             | after the profile name, or `--` |
 | `--class <c>`                        | which model class `auto status` reasons about    | n/a                             |
+| `--daemon`                           | be the watcher in this process, not a launcher   | n/a                             |
 | `--verbose`                          | show what zclaude is doing                       | after the profile name, or `--` |
 | `--json`                             | machine-readable output for `status` and friends | after the profile name, or `--` |
 | `-h`, `--help`                       | zclaude's help                                   | `zclaude -- --help`             |
@@ -870,6 +882,7 @@ MY_TEAM_MCP_TOKEN=...
 | `ZCLAUDE_NO_SESSIONS=1`                                                                                                                              | do not track running sessions, and do not report them                                                             |
 | `ZCLAUDE_ALLOW_SETTINGS_OVERRIDE=1`                                                                                                                  | launch even when a settings `env` block overrides this session                                                    |
 | `ZCLAUDE_NO_UPDATE_CHECK=1`                                                                                                                          | skip the daily check for a newer version                                                                          |
+| `ZCLAUDE_AUTO_DAEMON=1`                                                                                                                              | set on the watcher's own process; you never set this yourself                                                     |
 | `ZCLAUDE_INSTALL_NO_VSIX=1`                                                                                                                          | installer: do not offer or install the VS Code status bar item                                                    |
 | `ZCLAUDE_INSTALL_NO_RENEW=1`                                                                                                                         | installer: do not offer or install the background token renewal                                                   |
 | `ZCLAUDE_INSTALL_KIND`                                                                                                                               | force how `self-update` and `self-uninstall` work: `installer`, `npm` or `checkout`                               |

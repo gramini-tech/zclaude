@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+The watcher runs. `zclaude auto run` starts it in the background, `auto off`
+stops it, and `auto status` says what it is doing. It still only rotates when
+something holds a lease that grants it: an editor window watching is not consent
+to move the global login.
+
+```sh
+zclaude auto run     # start it; it exits when nothing holds a lease
+zclaude auto status  # what it is doing, and what it would do next
+zclaude auto off     # stop it, leaving the login where it is
+```
+
+- **The cycle is separate from the process that runs it.** Every call that
+  touches the world is injected, so the decisions are tested without a timer, a
+  signal or a Keychain anywhere near them.
+- **Detaching is a safety requirement.** Every output path here writes to
+  stderr, which for a launcher is Claude Code's own terminal, so a rotation
+  warning would scribble over a full-screen TUI. And a `^C` reaches the whole
+  process group: that signal landing between writing a credential and splicing
+  an identity would leave the slot holding one account's token under another's
+  name, because a signal is not an exception and nothing rolls back.
+- **A switch is verified after the fact.** `switchTo` rolls back a failed write
+  and swallows a failed rollback, so the slot is re-read afterwards; a mismatch
+  stops the watcher and points at `switch --restore` rather than attempting an
+  unattended repair on a state nobody understands.
+
+Three bugs a first live run found, none of which the tests could have:
+
+- **`decide` was the one dependency the cycle never awaited.** The live wiring
+  imports the policy lazily, so it returns a promise; unawaited, `.action` is
+  undefined, every branch falls through, and the watcher reports that it is
+  rotating while deciding nothing for ever.
+- **The lease died with the launcher.** `auto run` took a lease for the shell
+  that started the watcher, and that shell exits immediately, so the watcher
+  found nothing wanting it and began counting down. It holds its own now.
+- **A leaked file descriptor.** The log handle passed to the detached child was
+  never closed, and Node treats a garbage-collected `FileHandle` as an error.
+
+
 `zclaude auto status` shows which account rotation would use, and why. It reads
 only: the decision is built and tested, the daemon that would act on it is not,
 and the first line of the output says so.

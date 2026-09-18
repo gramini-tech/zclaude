@@ -16,6 +16,8 @@ import { autoConfigPath, initAutoConfig, loadAutoConfig } from "./auto/config.js
 import { duplicates, inventory } from "./auto/inventory.js";
 import { grantsOf, liveLeases } from "./auto/lease.js";
 import { ownerAlive, readDaemonOwner } from "./auto/lock.js";
+import { runDaemon, startDaemon, stopDaemon } from "./auto/daemon.js";
+import { autoStatePath, describeAutoState, forgetAutoState } from "./auto/state.js";
 import { binding, capacity, decide, eligibility, ladderStep, rank, rotatable } from "./auto/policy.js";
 import { countdown } from "./usage/when.js";
 import { info, paint, success, warn } from "./ui/log.js";
@@ -51,7 +53,8 @@ async function describeDaemon({ env, now }) {
   const owner = await readDaemonOwner(env);
   const alive = owner ? await ownerAlive(owner) : { live: false, reason: null };
   const { leases } = await liveLeases({ env, now });
-  return { owner, ...alive, leases, grants: grantsOf(leases) };
+  const recorded = await describeAutoState({ env, now });
+  return { owner, ...alive, leases, grants: grantsOf(leases), recorded, statePath: autoStatePath(env) };
 }
 
 /** One line per account: who it is, how full, and whether it could take work. */
@@ -164,12 +167,16 @@ async function cmdStatus(context) {
 function rotatingText(daemon) {
   if (!daemon.live) {
     const stale = daemon.owner ? grey(`  (a lock is left over: ${daemon.reason})`) : "";
-    return `no — the daemon is not built yet. This is what it would do.${stale}`;
+    return `no — nothing is watching. This is what it would do.${stale}  ${grey("Start it with `zclaude auto run`.")}${stale}`;
   }
   const holders = daemon.leases.map((lease) => lease.kind).join(", ");
+  // Heartbeat age is shown and never used to decide liveness: a machine that
+  // slept has an hours-old heartbeat and a perfectly healthy daemon.
+  const age = daemon.recorded.ageMs === null ? "" : grey(`  (checked ${Math.round(daemon.recorded.ageMs / 1000)}s ago`);
+  const stalled = daemon.recorded.stalled ? grey(", which is longer ago than expected)") : age ? grey(")") : "";
   return daemon.grants.rotate
-    ? `yes — pid ${daemon.owner.pid}, held by ${holders}`
-    : `watching only — pid ${daemon.owner.pid}, held by ${holders}, which cannot move the login`;
+    ? `yes — pid ${daemon.owner.pid}, held by ${holders}${age}${stalled}`
+    : `watching only — pid ${daemon.owner.pid}, held by ${holders}, which cannot move the login${age}${stalled}`;
 }
 
 function describeDecision(choice, now, accounts) {
@@ -222,7 +229,40 @@ async function cmdConfig(context) {
   return EXIT.OK;
 }
 
-const SUBCOMMANDS = { status: cmdStatus, config: cmdConfig };
+/**
+ * Run the watcher. `--daemon` means "this process is it"; without it the
+ * watcher is started detached and this returns immediately.
+ */
+async function cmdRun(context) {
+  const { options, env, interactive } = context;
+  if (!options.daemon) {
+    const { started, pid } = await startDaemon({ env });
+    if (!started) throw usageError("The watcher could not be started.");
+    success(`Watching in the background (pid ${pid}).`);
+    info("`zclaude auto off` stops it. `zclaude auto status` says what it is doing.");
+    return EXIT.OK;
+  }
+  if (interactive) info("Running the watcher here. Ctrl-C stops it.");
+  const result = await runDaemon({ env, selfLease: true });
+  if (!result.ran) {
+    info(`Not started: ${result.reason}`);
+    return EXIT.OK;
+  }
+  return EXIT.OK;
+}
+
+/** Stop the watcher and clear what it owns. The slot stays where it is. */
+async function cmdOff(context) {
+  const { env } = context;
+  const stopped = await stopDaemon({ env });
+  if (stopped.stopped) success(`Asked the watcher (pid ${stopped.pid}) to stop.`);
+  else info(`Nothing to stop: ${stopped.reason}.`);
+  await forgetAutoState(env);
+  info("The global login is wherever it was; `zclaude switch --status` says who holds it.");
+  return EXIT.OK;
+}
+
+const SUBCOMMANDS = { status: cmdStatus, config: cmdConfig, run: cmdRun, off: cmdOff };
 export const AUTO_SUBCOMMANDS = Object.freeze(Object.keys(SUBCOMMANDS));
 
 /**

@@ -31,7 +31,14 @@ const STALE_MULTIPLE = 3;
 /** How often a holder is expected to say it is still there. */
 const RENEW_MS = 60_000;
 /** What each kind of holder may ask for. */
-const GRANTS = Object.freeze({ session: ["watch", "rotate"], vscode: ["watch"] });
+const GRANTS = Object.freeze({
+  session: ["watch", "rotate"],
+  vscode: ["watch"],
+  // Somebody typed `zclaude auto run`. That is a person asking for a watcher
+  // rather than a session that happens to want one, so it holds itself and
+  // runs until `auto off`.
+  manual: ["watch", "rotate"],
+});
 
 export function leaseDir(env = process.env) {
   return join(autoDir(env), "leases");

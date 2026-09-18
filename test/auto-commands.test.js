@@ -140,8 +140,6 @@ describe("spotting one account under two names", () => {
 
 describe("the auto command", () => {
   it("offers only what is built", () => {
-    // No launch form and no daemon yet: a command that took a session and then
-    // rotated nothing would be worse than not having it.
-    assert.deepEqual(AUTO_SUBCOMMANDS, ["status", "config"]);
+    assert.deepEqual(AUTO_SUBCOMMANDS, ["status", "config", "run", "off"]);
   });
 });

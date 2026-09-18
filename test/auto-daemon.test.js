@@ -20,6 +20,8 @@ import {
   readDaemonOwner,
   sweepDead,
 } from "../src/auto/lock.js";
+import { runDaemon, selfScript, startDaemon, stopDaemon } from "../src/auto/daemon.js";
+import { readAutoState } from "../src/auto/state.js";
 import {
   decideLifecycle,
   dropLease,
@@ -255,5 +257,136 @@ describe("what the daemon does each tick", () => {
     // A session that comes back inside the linger keeps the same daemon.
     assert.equal(decideLifecycle({ leases: [lease("session")], emptySince: NOW, now: NOW + 1000 }).action, "rotate");
     assert.equal(decideLifecycle({ leases: [], emptySince: NOW, now: NOW + 91_000 }).action, "exit");
+  });
+});
+
+describe("the watcher, really running", () => {
+  /** A cycle with nothing to do, so the test is about the process, not the policy. */
+  const idleDeps = (over = {}) => ({
+    leases: async (options) => liveLeases(options),
+    owner: async (env) => readDaemonOwner(env),
+    ownerAlive: async (owner) => ({ ours: owner?.pid === process.pid, reason: "not ours" }),
+    captureBack: async () => ({ captured: false }),
+    inventory: async () => ({ accounts: [], active: null }),
+    decide: () => ({ action: "hold", target: null, reason: "nothing to do" }),
+    classInUse: async () => "opus",
+    newestActivity: async () => 0,
+    switchTo: async () => {
+      throw new Error("a watch-only lease must never switch");
+    },
+    swapStatus: async () => ({ owner: null }),
+    ...over,
+  });
+
+  it("claims the lock, ticks, writes its state and gives the lock back", async () => {
+    const home = await tempHome();
+    try {
+      const env = envFor(home);
+      await holdLease({ env, kind: "vscode" });
+      const seen = [];
+      const result = await runDaemon({
+        env,
+        tickMs: 1,
+        maxTicks: 3,
+        onTick: (r) => {
+          seen.push(r.action);
+        },
+        deps: idleDeps(),
+      });
+
+      assert.equal(result.ran, true);
+      assert.deepEqual(seen, ["watch", "watch", "watch"], "an editor lease alone never rotates");
+      const state = await readAutoState(env);
+      assert.equal(state.counters.cycles, 3);
+      assert.equal(state.counters.switches, 0);
+      assert.equal(state.mode, "stopped");
+      // Released on the way out, so the next start does not have to steal it.
+      await assert.rejects(readdir(lockDir(env)));
+    } finally {
+      await home.cleanup();
+    }
+  });
+
+  it("refuses to start a second watcher, and says which one is already there", async () => {
+    const home = await tempHome();
+    try {
+      const env = envFor(home);
+      await holdLease({ env, kind: "session" });
+      let inner = null;
+      await runDaemon({
+        env,
+        tickMs: 1,
+        maxTicks: 1,
+        deps: idleDeps(),
+        // Reentering while the first still holds the lock is the race a second
+        // `zclaude auto run` creates.
+        onTick: async () => {
+          inner = await runDaemon({ env, tickMs: 1, maxTicks: 1, deps: idleDeps() });
+        },
+      });
+      assert.equal(inner.ran, false);
+      assert.match(inner.reason, /already running/u);
+    } finally {
+      await home.cleanup();
+    }
+  });
+
+  it("spawns detached, away from the caller's directory, with its own marker", async () => {
+    const home = await tempHome();
+    try {
+      const env = envFor(home);
+      const seen = [];
+      const spawnImpl = (file, args, options) => {
+        seen.push({ file, args, options });
+        return { pid: 4242, unref() {} };
+      };
+      const { started, pid } = await startDaemon({ env, spawnImpl });
+      assert.equal(started, true);
+      assert.equal(pid, 4242);
+      const [call] = seen;
+      assert.equal(call.file, process.execPath, "node directly, never the shell wrapper and its Node search");
+      assert.deepEqual(call.args.slice(1), ["auto", "run", "--daemon"]);
+      assert.equal(call.options.detached, true, "a ^C to the launcher must not land mid-switch");
+      // A detached process holding the caller's cwd pins a worktree somebody is
+      // about to delete.
+      assert.equal(call.options.cwd, join(home.dir, ".zclaude"));
+      assert.equal(call.options.env.ZCLAUDE_AUTO_DAEMON, "1");
+      assert.match(selfScript(env), /bin\/zclaude\.js$/u);
+    } finally {
+      await home.cleanup();
+    }
+  });
+
+  it("asks a live watcher to stop, and reports honestly when there is none", async () => {
+    const home = await tempHome();
+    try {
+      const env = envFor(home);
+      assert.equal((await stopDaemon({ env })).stopped, false);
+
+      await writeFile(
+        join(lockDir(env), "owner.json"),
+        JSON.stringify({ pid: process.pid, startToken: null, bootAt: null, host: HERE }),
+      ).catch(async () => {
+        await mkdir(lockDir(env), { recursive: true });
+        await writeFile(
+          join(lockDir(env), "owner.json"),
+          JSON.stringify({ pid: process.pid, startToken: null, bootAt: null, host: HERE }),
+        );
+      });
+      const signals = [];
+      const stopped = await stopDaemon({
+        env,
+        kill: (pid, signal) => {
+          signals.push([pid, signal]);
+          return true;
+        },
+      });
+      assert.equal(stopped.stopped, true);
+      // SIGTERM, so it finishes the cycle it is in: killing it mid-switch is
+      // how the slot ends up inconsistent.
+      assert.deepEqual(signals, [[process.pid, "SIGTERM"]]);
+    } finally {
+      await home.cleanup();
+    }
   });
 });

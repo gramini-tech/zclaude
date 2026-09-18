@@ -142,6 +142,7 @@ const BOOL_FLAGS = Object.freeze({
   "--api-key": "apiKey",
   "--verbose": "verbose",
   "--json": "json",
+  "--daemon": "daemon",
   "--quiet": "quiet",
   "--no-log": "noLog",
   "--keep-config": "keepConfig",
@@ -233,6 +234,9 @@ Usage
   zclaude --switch <profile>                   the same as "zclaude switch <profile>"
   zclaude auto status [--json] [--class <c>]   which account rotation would use, and why
   zclaude auto config [show|path|init]         the inventory: what each plan is worth, and when work moves
+  zclaude auto run                             start the watcher in the background
+  zclaude auto run --daemon                    be the watcher in this process; auto run calls this
+  zclaude auto off                             stop the watcher and leave the login where it is
   zclaude renew status [--json]                is the token-renewal job scheduled, and what did it do
   zclaude renew install                        schedule it
   zclaude renew uninstall                      remove the schedule
