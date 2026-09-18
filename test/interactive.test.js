@@ -194,7 +194,8 @@ describe("interactive (pseudo-terminal)", { skip: !hasScript() && "needs macOS s
       args: ["--", "--after-signin"],
       env,
       keys: [
-        [1800, down], // off the built-in Claude row...
+        [1800, down], // off the Auto row...
+        [400, down], // ...past the built-in Claude row...
         [400, down], // ...past the built-in Z.ai row, onto "work"
         [600, "s"],
       ],
@@ -209,22 +210,17 @@ describe("interactive (pseudo-terminal)", { skip: !hasScript() && "needs macOS s
     assert.equal((await readFile(capture, "utf8")).trim(), "ran --after-signin");
   });
 
-  it("toggles auto with `a`, and launches the highlighted profile in that mode", async () => {
+  it("offers Auto as the first row, and launches whatever it resolves to", async () => {
+    // A row rather than a mode: picking Auto is the same kind of choice as
+    // picking a profile, and says "whichever has the most room" instead of
+    // naming one. Nothing is signed in in this scratch home, so it falls back
+    // to the global login rather than refusing.
     const log = join(home.dir, "auto-menu.log");
     await writeFile(capture, "");
-    const code = await runInPty({
-      args: ["--", "--auto-menu"],
-      env,
-      keys: [
-        [1800, "a"],
-        [600, "\r"],
-      ],
-      log,
-    });
+    const code = await runInPty({ args: ["--", "--auto-menu"], env, keys: [[1800, "\r"]], log });
     const out = clean(await readFile(log, "utf8"));
     assert.equal(code, 0, out.slice(-500));
-    assert.match(out, /a auto: on/u, "the footer says what the key did");
-    assert.match(out, /may be moved between accounts/u, "and the launch says what it means");
+    assert.match(out, /Auto/u, "it is on screen and highlighted first");
     assert.equal((await readFile(capture, "utf8")).trim(), "ran --auto-menu");
   });
 

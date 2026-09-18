@@ -21,6 +21,7 @@ import { warn } from "./ui/log.js";
  * @property {boolean} zai route through the Z.ai credential and model steps
  * @property {Record<string, string>} env extra variables for the child process
  * @property {boolean} builtin
+ * @property {boolean} [meta] stands for an account chosen at launch, not a fixed one
  * @property {string} [path]
  * @property {string} [configDir] CLAUDE_CONFIG_DIR for a named profile
  * @property {"anthropic" | "zai"} [provider]
@@ -29,6 +30,18 @@ import { warn } from "./ui/log.js";
 
 /** @type {readonly Profile[]} */
 export const BUILTIN_PROFILES = Object.freeze([
+  // A meta profile: it stands for "whichever account has the most room", and
+  // resolves to a real one at launch. It sits first because picking an account
+  // is a chore, and the whole point is not having to.
+  Object.freeze({
+    id: "auto",
+    label: "Auto",
+    description: "the least-used account, and moved as it fills up",
+    zai: false,
+    env: {},
+    builtin: true,
+    meta: true,
+  }),
   Object.freeze({
     id: "claude",
     label: "Claude Code",

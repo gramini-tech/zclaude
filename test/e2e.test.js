@@ -348,7 +348,7 @@ describe("end to end", () => {
     );
     assert.equal(report.inheritedConfigDir, null);
     const statusText = await run(["status"], env);
-    assert.match(statusText.stdout, /profiles\s+claude, zai, work/u);
+    assert.match(statusText.stdout, /profiles\s+auto, claude, zai, work/u);
     assert.match(statusText.stdout, /work anthropic · signed out · shares config \+ history/u);
     const pinned = await run(["status"], { ...env, CLAUDE_CONFIG_DIR: "/pinned/elsewhere" });
     assert.match(pinned.stdout, /config dir\s+\/pinned\/elsewhere .*inherited from this shell/u);
@@ -507,7 +507,7 @@ describe("end to end", () => {
     assert.equal(report.credential.key, "****STUV");
     assert.equal(report.quota.level, "pro");
     assert.equal(report.claude.version, "fake-claude 9.9.9");
-    assert.deepEqual(report.profiles.slice(0, 2), ["claude", "zai"]);
+    assert.deepEqual(report.profiles.slice(0, 3), ["auto", "claude", "zai"]);
 
     const models = await run(["models"], { ...env, ZAI_API_KEY: GOOD_KEY });
     assert.equal(models.code, 0, models.stderr);

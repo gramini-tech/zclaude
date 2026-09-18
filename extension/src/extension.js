@@ -71,6 +71,51 @@ async function readBusy() {
   return Array.isArray(data?.byProfile) ? Object.fromEntries(data.byProfile) : {};
 }
 
+/** One account in the click list, saying up front if it cannot be picked. */
+function profileRow(profile, { active, usage }) {
+  const can = rotatable(profile, usage[profile.name]);
+  return {
+    label: `${profile.name === active ? "$(check) " : "$(blank) "}${profile.name}`,
+    description: accountOf(profile),
+    // Said before it is picked rather than after. The list used to offer a
+    // switch that three layers below it would refuse.
+    detail: can.ok ? undefined : `$(circle-slash) ${can.reason}`,
+    name: profile.name,
+    provider: profile.provider,
+    reason: can.reason,
+  };
+}
+
+/** Which account auto would start on, and why. */
+async function readPick() {
+  if (!binary) return null;
+  const { data } = await runJson(binary, ["auto", "pick"]);
+  return data?.profile ? data : null;
+}
+
+/**
+ * Switch to whichever account has the most room.
+ *
+ * The same question the Auto row answers in the terminal, asked the same way:
+ * zclaude ranks the accounts and this moves the login to the winner. Ranked by
+ * work left rather than percentage, because 3% of a Max 20x seat is nine times
+ * the room in 55% of a 5x seat.
+ */
+async function switchAuto() {
+  if (!locate()) return;
+  const picked = await readPick();
+  if (!picked) {
+    tell("No account could be chosen. `zclaude auto status` says why.", "error");
+    return;
+  }
+  const profiles = await readProfiles();
+  if (picked.profile === (await readStatus()).status?.owner) {
+    tell(`Already on ${picked.profile}, which is ${picked.reason}.`);
+    return;
+  }
+  await switchTo(picked.profile, profiles);
+}
+
 /** What the watcher is doing, if one is running. */
 async function readAuto() {
   if (!binary) return null;
@@ -195,24 +240,26 @@ async function pick() {
     await reportTooOld(installed);
     return;
   }
-  const [{ status }, profiles, usage] = await Promise.all([readStatus(), readProfiles(), readUsage()]);
+  const [{ status }, profiles, usage, auto] = await Promise.all([
+    readStatus(),
+    readProfiles(),
+    readUsage(),
+    readAuto(),
+  ]);
   const active = status?.owner ?? null;
   /** @type {Array<{label: string, kind?: number, description?: string, detail?: string, name?: string, action?: string, reason?: string}>} */
   const items = [
-    ...profiles.map((profile) => {
-      const can = rotatable(profile, usage[profile.name]);
-      return {
-        label: `${profile.name === active ? "$(check) " : "$(blank) "}${profile.name}`,
-        description: accountOf(profile),
-        // Said before it is picked rather than after. The list used to offer a
-        // switch that three layers below it would refuse.
-        detail: can.ok ? undefined : `$(circle-slash) ${can.reason}`,
-        name: profile.name,
-        provider: profile.provider,
-        reason: can.reason,
-      };
-    }),
+    ...profiles.map((profile) => profileRow(profile, { active, usage })),
     { label: "", kind: -1 },
+    // A row rather than a setting, because this is the same kind of choice as
+    // picking a profile: it says "whichever has the most room" instead of
+    // naming one.
+    {
+      label: "$(sparkle) Auto",
+      description: auto?.decision?.target ? `would use ${auto.decision.target}` : "the least-used account",
+      detail: auto?.decision?.reason ?? "picks whichever account has the most room left",
+      action: "auto",
+    },
     { label: "$(sync) Refresh usage", action: "refresh" },
     { label: "$(add) Add a profile…", action: "add" },
     { label: "$(trash) Remove a profile…", action: "remove" },
@@ -223,7 +270,16 @@ async function pick() {
     placeHolder: "Hover the zc item in the status bar for usage",
   });
   if (!chosen) return;
+  await act(chosen, { active, profiles });
+}
+
+/** What a chosen row does. */
+async function act(chosen, { active, profiles }) {
   switch (chosen.action) {
+    case "auto": {
+      await switchAuto();
+      return;
+    }
     case "refresh": {
       await refreshStatusBar({ force: true });
       return;
@@ -371,6 +427,7 @@ function activate(context) {
     vscode.commands.registerCommand("zclaude.refresh", () => refreshStatusBar({ force: true })),
     vscode.commands.registerCommand("zclaude.switchTo", (name) => switchNamed(name)),
     vscode.commands.registerCommand("zclaude.signIn", (name) => signInNamed(name)),
+    vscode.commands.registerCommand("zclaude.auto", () => switchAuto()),
     vscode.commands.registerCommand("zclaude.add", () => addProfile()),
     vscode.commands.registerCommand("zclaude.remove", async () => removeProfile(await readProfiles())),
     vscode.commands.registerCommand("zclaude.restore", () => restore()),

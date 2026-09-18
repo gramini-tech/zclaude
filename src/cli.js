@@ -237,6 +237,7 @@ Usage
   zclaude --switch <profile>                   the same as "zclaude switch <profile>"
   zclaude --auto <profile> [args...]           launch a session that may be moved between accounts
   zclaude auto status [--json] [--class <c>]   which account rotation would use, and why
+  zclaude auto pick [--json] [--class <c>]     which account it would start new work on
   zclaude auto config [show|path|init]         the inventory: what each plan is worth, and when work moves
   zclaude auto edit                            open the inventory in $VISUAL or $EDITOR
   zclaude auto run                             start the watcher in the background
@@ -718,6 +719,34 @@ async function askWhichProfile({ profiles, store, usageEnabled, busy, state, env
   return picked;
 }
 
+/**
+ * Turn the Auto row into a real account.
+ *
+ * It stands for "whichever has the most room", which is a question only the
+ * usage numbers can answer, so it is answered here rather than being carried
+ * around as a special case. Choosing it also turns rotation on: picking Auto is
+ * saying you do not want to think about which account this runs on, and that
+ * includes later, when the one it picked fills up.
+ */
+async function resolveMeta({ profile, profiles, env, interactive, chose }) {
+  const { pickAccount } = await import("./auto-commands.js");
+  const picked = await pickAccount({ env }).catch((error) => {
+    debug(`auto could not pick an account: ${error.message}`);
+    return { profile: null, reason: error.message };
+  });
+  const real = picked.profile ? findProfile(profiles, picked.profile) : null;
+  if (!real) {
+    // No usable account is not a reason to refuse: fall back to the global
+    // login, which is what `zclaude` did before any of this existed.
+    warn(`Auto could not choose an account (${picked.reason}), so this runs on the global login.`);
+    return findProfile(profiles, "claude") ?? profile;
+  }
+  chose.auto = true;
+  if (interactive) info(`Auto chose ${real.id}: ${picked.reason}.`);
+  log.info("profile", "auto resolved the meta profile", { to: real.id, reason: picked.reason });
+  return real;
+}
+
 async function selectProfile({
   options,
   env,
@@ -766,8 +795,6 @@ async function selectProfile({
           });
     const picked = await askWhichProfile({ profiles, store, usageEnabled, busy, state, env, interactive });
     profileId = picked.id;
-    // `a` in the menu is the same thing as `--auto` on the command line.
-    if (picked.auto) chose.auto = true;
     await writeState({ lastProfile: profileId }, env).catch((error) => debug(`state not saved: ${error.message}`));
   }
   const profile = findProfile(profiles, profileId);
@@ -779,6 +806,7 @@ async function selectProfile({
   });
   if (!profile)
     throw usageError(`Unknown profile "${profileId}".`, `Available: ${profiles.map((item) => item.id).join(", ")}`);
+  if (profile.meta) return resolveMeta({ profile, profiles, env, interactive, chose });
   debug(`Profile: ${profile.id}`);
   return profile;
 }

@@ -150,7 +150,9 @@ const answers = (extra = {}) => ({
       return PROFILES.map((profile) => ({ ...profile, usage: { state: "ok", fiveHour: { pct: 5 }, weekly: null } }));
     if (args[0] === "profile") return PROFILES;
     if (args[0] === "auto" && args[1] === "attach") return { id: "lease-1", kind: "vscode", grants: ["watch"] };
-    if (args[0] === "auto") return { running: false };
+    if (args[0] === "auto" && args[1] === "pick")
+      return { profile: "home", reason: "starting on the emptiest account" };
+    if (args[0] === "auto") return { running: false, decision: { action: "switch", target: "home" } };
     return null;
   },
   ...extra,
@@ -177,7 +179,7 @@ describe("the extension in a window", () => {
     assert.match(loaded.vscode.window.statusBar.text, /^zc /u);
     assert.equal(loaded.vscode.window.statusBar.command, "zclaude.pick");
     assert.ok(loaded.vscode.window.statusBar.shown);
-    assert.equal(subscriptions.length, 9, "the item, seven commands and the focus listener");
+    assert.equal(subscriptions.length, 10, "the item, eight commands and the focus listener");
     loaded.extension.deactivate();
   });
 
@@ -201,10 +203,10 @@ describe("the extension in a window", () => {
     // The list is names and accounts. Usage in it either cannot render or is
     // clipped, which is what the hover exists to avoid. The one detail a row
     // may carry is why it cannot be picked, and that is not usage.
-    const details = picked.choices.filter((item) => item.detail).map((item) => item.detail);
+    const details = picked.choices.filter((item) => item.name && item.detail).map((item) => item.detail);
     assert.ok(
       details.every((detail) => detail.startsWith("$(circle-slash)")),
-      `the list carries no usage of its own, only refusals: ${details.join(" | ")}`,
+      `no account row carries usage of its own, only refusals: ${details.join(" | ")}`,
     );
   });
 
@@ -278,6 +280,20 @@ describe("the extension in a window", () => {
       loaded.ran.some((args) => args[1] === "detach"),
       "dropped politely, though the lease would expire on its own anyway",
     );
+  });
+
+  it("offers Auto as a row, and picking it switches to the account with the most room", async () => {
+    // The same choice as picking a profile, said differently: "whichever has
+    // the most room" instead of naming one. A setting somewhere else would have
+    // made it a mode, which is the shape this used to have and the reason
+    // nothing in the editor did anything.
+    const loaded = loadExtension(answers());
+    loaded.extension.activate({ subscriptions: [] });
+    const picked = await click(loaded, (items) => items.find((item) => item.action === "auto"));
+    const row = picked.choices.find((item) => item.action === "auto");
+    assert.match(row.label, /Auto/u);
+    assert.match(row.description, /would use home/u, "it says which account before you pick it");
+    assert.deepEqual(loaded.ran, [["switch", "home", "--yes"]]);
   });
 
   it("marks a Z.ai row as unpickable before it is picked, and refuses it if it is", async () => {

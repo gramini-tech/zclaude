@@ -107,16 +107,6 @@ describe("a row in the picker", () => {
     assert.equal(signInHint(null, "max"), null);
   });
 
-  it("offers auto as a toggle, because it is a mode rather than a profile", () => {
-    // A row labelled "Auto" meaning "any of the above" is the kind of thing
-    // nobody can explain afterwards. The highlighted profile is where the work
-    // starts; the toggle says whether it may then move.
-    const base = { loading: false, count: 2, total: 2, usageEnabled: true };
-    assert.match(renderFooter({ ...base, auto: false }), /a auto: off/u);
-    assert.match(renderFooter({ ...base, auto: true }), /a auto: on/u);
-    assert.doesNotMatch(renderFooter(base), /auto/u, "and nothing at all when usage is switched off");
-  });
-
   it("offers the sign-in key only on a row that needs it", () => {
     const base = { loading: false, count: 2, total: 2, usageEnabled: true };
     assert.doesNotMatch(renderFooter(base), /sign in/u, "a key that does nothing teaches people to stop reading");

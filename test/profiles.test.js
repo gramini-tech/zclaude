@@ -28,11 +28,11 @@ describe("profiles", () => {
   it("lists built-ins first, then valid user profiles", async () => {
     const profiles = await listProfiles(env);
     assert.deepEqual(
-      profiles.slice(0, 2).map((p) => p.id),
+      profiles.slice(0, BUILTIN_PROFILES.length).map((p) => p.id),
       BUILTIN_PROFILES.map((p) => p.id),
     );
     assert.deepEqual(
-      profiles.slice(2).map((p) => p.id),
+      profiles.slice(BUILTIN_PROFILES.length).map((p) => p.id),
       ["plain", "work"],
     );
     const work = profiles.find((p) => p.id === "work");
@@ -46,8 +46,11 @@ describe("profiles", () => {
   });
   it("returns built-ins when the directory is missing", async () => {
     const profiles = await listProfiles(isolatedEnv(join(home.dir, "nothing")));
-    assert.equal(profiles.length, 2);
-    assert.equal(profiles[1].zai, true);
+    assert.equal(profiles.length, BUILTIN_PROFILES.length);
+    assert.ok(profiles.some((profile) => profile.zai));
+    // Auto stands for an account chosen at launch rather than a fixed one, so
+    // it is always offered: there is nothing about it that can be missing.
+    assert.ok(profiles.some((profile) => profile.meta));
   });
   it("getProfile finds by id", async () => {
     assert.equal((await getProfile("zai", env)).builtin, true);

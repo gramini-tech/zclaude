@@ -84,16 +84,12 @@ export function renderUsageDetail(usage, now = Date.now(), columns = 80) {
 }
 
 /** The lines under the list: what is happening and which keys do what. */
-export function renderFooter({ loading, count, total, usageEnabled, canSignIn = false, auto = null }) {
+export function renderFooter({ loading, count, total, usageEnabled, canSignIn = false }) {
   if (!usageEnabled) return "↑↓ move · enter launch";
   // The key only appears on a row that needs it. A key listed on every row that
   // does nothing on most of them teaches people to stop reading the footer.
   const signIn = canSignIn ? " · s sign in" : "";
-  // A toggle rather than a row of its own: auto is a mode, and a row labelled
-  // "Auto" that means "any of the above" is the kind of thing nobody can
-  // explain afterwards. The highlighted profile is where the work starts.
-  const rotate = auto === null ? "" : ` · a auto: ${auto ? "on" : "off"}`;
-  const keys = `↑↓ move · enter launch · r refresh${signIn}${rotate}`;
+  const keys = `↑↓ move · enter launch · r refresh${signIn}`;
   if (loading) return `${keys}   (usage ${count}/${total})`;
   return count === total ? keys : `${keys} (some usage missing)`;
 }
@@ -115,7 +111,6 @@ const menuPrompt = createPrompt((config, done) => {
   );
   const [, setTick] = useState(0);
   const [frame, setFrame] = useState(0);
-  const [auto, setAuto] = useState(false);
   const [done_, setDone] = useState(false);
 
   useEffect(() => {
@@ -136,20 +131,19 @@ const menuPrompt = createPrompt((config, done) => {
   useKeypress((key) => {
     if (isEnterKey(key)) {
       setDone(true);
-      done({ id: profiles[cursor].id, action: "launch", auto });
+      done({ id: profiles[cursor].id, action: "launch" });
       return;
     }
     // Only on a row whose login is actually broken, so `s` never surprises
     // anyone by starting a browser flow they did not ask for.
     if (key.name === "s" && hintFor(cursor)?.here) {
       setDone(true);
-      done({ id: profiles[cursor].id, action: "signIn", auto });
+      done({ id: profiles[cursor].id, action: "signIn" });
       return;
     }
     if (isUpKey(key)) setCursor((cursor - 1 + profiles.length) % profiles.length);
     else if (isDownKey(key)) setCursor((cursor + 1) % profiles.length);
     else if (usageEnabled && key.name === "r") store?.load({ force: true });
-    else if (usageEnabled && key.name === "a") setAuto(!auto);
     else if (isNumberKey(key)) {
       const index = Number(key.name) - 1;
       if (index >= 0 && index < profiles.length) setCursor(index);
@@ -171,7 +165,10 @@ const menuPrompt = createPrompt((config, done) => {
     })),
     { columns, now },
   );
-  const known = profiles.filter((profile) => store?.get(profile.id)).length;
+  // The meta row has no account of its own to ask about, so counting it would
+  // leave the footer permanently one short of a total it can never reach.
+  const measurable = profiles.filter((profile) => !profile.meta);
+  const known = measurable.filter((profile) => store?.get(profile.id)).length;
   const rows = table.rows.map((line, index) => {
     const marked = `${index === cursor ? "❯" : " "} ${line}`;
     return index === cursor ? paint(marked, "cyan", process.stderr) : marked;
@@ -189,10 +186,9 @@ const menuPrompt = createPrompt((config, done) => {
     renderFooter({
       loading: Boolean(store?.loading),
       count: known,
-      total: profiles.length,
+      total: measurable.length,
       usageEnabled,
       canSignIn: Boolean(hint?.here),
-      auto: usageEnabled ? auto : null,
     }),
     "grey",
     process.stderr,
@@ -203,7 +199,7 @@ const menuPrompt = createPrompt((config, done) => {
 /**
  * @param {MenuProfile[]} profiles
  * @param {{defaultId?: string, store?: object, usageEnabled?: boolean, busy?: Map<string, object>}} [options]
- * @returns {Promise<{id: string, action: "launch" | "signIn", auto: boolean}>} what to do, and to which profile
+ * @returns {Promise<{id: string, action: "launch" | "signIn"}>} what to do, and to which profile
  */
 export function chooseProfileWithUsage(profiles, { defaultId, store, usageEnabled = true, busy } = {}) {
   return guard(menuPrompt({ profiles, defaultId, store, usageEnabled, busy }, { signal: withSignal() }));

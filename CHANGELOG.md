@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+**Auto is a profile you pick**, not a mode you switch on. It is the first row in
+the launch menu and an entry in the editor's list, and choosing it is the same
+kind of choice as choosing a profile: "whichever account has the most room"
+instead of naming one.
+
+The previous shape was a footer toggle in the terminal and nothing at all in the
+editor, which is why auto appeared not to work there. That was the wrong read of
+what it is. It resolves at launch, says which account it picked and why, and
+turns rotation on for that session — picking Auto is saying you do not want to
+think about which account this runs on, including later when the one it picked
+fills up.
+
+- `zclaude auto pick` prints the answer without launching anything. Both the
+  menu and the editor's list go through it, so they cannot disagree.
+- Least-used is measured in work rather than percentage: 3% of a Max 20x seat is
+  nine times the room left in 55% of a 5x seat.
+- It never refuses. With nothing free it still names the account that comes back
+  first, and if no account can be read at all it falls back to the global login
+  rather than standing between you and Claude Code.
+
+
 **`a` in the launch menu toggles auto**, and Enter launches the highlighted
 profile in that mode. A toggle rather than a row of its own, because auto is a
 mode: a row labelled "Auto" meaning "any of the above" is the kind of thing

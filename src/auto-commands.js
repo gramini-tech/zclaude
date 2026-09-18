@@ -351,8 +351,58 @@ async function cmdEdit(context) {
   return EXIT.OK;
 }
 
+/**
+ * Which account auto would start work on, and why.
+ *
+ * The meta profile resolves through here. "Least used" is the whole rule, and
+ * it is measured in work rather than percentage: 3% of a Max 20x seat is nine
+ * times the room left in 55% of a 5x seat, so a ranking by percentage would
+ * send new work to the smaller account roughly whenever the plans differ.
+ *
+ * It never refuses. When nothing has room it still names the account that comes
+ * back first, because the refusal belongs to the provider rather than to a
+ * launcher standing between you and your own account.
+ *
+ * @param {{env?: NodeJS.ProcessEnv, security?: object, fetchImpl?: typeof fetch, now?: number, klass?: string}} [options]
+ */
+export async function pickAccount(options = {}) {
+  const { env = process.env, security, fetchImpl, now = Date.now(), klass } = options;
+  const { config } = await loadAutoConfig({ env });
+  const { accounts, active } = await inventory({ env, security, fetchImpl, now, tiers: config.tiers });
+  const wanted = klass ?? DEFAULT_CLASS;
+  const choice = decide({
+    accounts,
+    active,
+    klass: wanted,
+    now,
+    starting: true,
+    ladder: config.ladder,
+    allowCrossOrg: config.allowCrossOrg,
+  });
+  const target = accounts.find((account) => account.name === choice.target) ?? null;
+  return { profile: choice.target, reason: choice.reason, action: choice.action, klass: wanted, account: target };
+}
+
+async function cmdPick(context) {
+  const { options, env, security, fetchImpl, now = Date.now() } = context;
+  const picked = await pickAccount({ env, security, fetchImpl, now, klass: options.class });
+  if (options.json) {
+    process.stdout.write(
+      `${JSON.stringify({ profile: picked.profile, reason: picked.reason, action: picked.action }, null, 2)}\n`,
+    );
+    return EXIT.OK;
+  }
+  if (!picked.profile) {
+    info(`Nothing can take the work: ${picked.reason}.`);
+    return EXIT.OK;
+  }
+  info(`${picked.profile} — ${picked.reason}.`);
+  return EXIT.OK;
+}
+
 const SUBCOMMANDS = {
   status: cmdStatus,
+  pick: cmdPick,
   edit: cmdEdit,
   config: cmdConfig,
   run: cmdRun,

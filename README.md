@@ -497,6 +497,7 @@ something whose job is to move your login while you are not watching.
 zclaude auto status                    # every account, and what rotation would do
 zclaude auto status --class fable      # ask about a different model class
 zclaude auto status --json             # the same, for scripts
+zclaude auto pick                      # which account it would start new work on
 zclaude auto config                    # the inventory, defaults included
 zclaude auto config path               # where it lives
 zclaude auto config init               # write the defaults out, with the explanations
@@ -526,12 +527,22 @@ own, renews every minute and on window focus, and drops it on the way out —
 though dropping it is only a courtesy, since a lease nobody renews expires by
 itself.
 
-In the launch menu, **`a` toggles auto** and the footer says which way it is
-set; Enter then launches the highlighted profile in that mode. A toggle rather
-than a row of its own, because auto is a mode: a row labelled "Auto" meaning
-"any of the above" is the kind of thing nobody can explain afterwards. The
-profile you highlight is where the work starts, and the toggle says whether it
-may then move.
+### Auto is a profile you can pick
+
+**Auto** is the first row in the launch menu and an entry in the editor's list.
+Choosing it is the same kind of choice as choosing a profile, said differently:
+"whichever account has the most room" instead of naming one. It resolves at
+launch, tells you which account it picked and why, and turns rotation on for
+that session — picking Auto is saying you do not want to think about which
+account this runs on, and that includes later, when the one it picked fills up.
+
+Least-used is measured in work rather than percentage, because 3% of a Max 20x
+seat is nine times the room left in 55% of a 5x seat. `zclaude auto pick` prints
+the answer without launching anything.
+
+It never refuses. When nothing has room it still names the account that comes
+back first, and if no account can be read at all it falls back to the global
+login rather than standing between you and Claude Code.
 
 **`zclaude --auto <profile>`** launches a session that has asked to be rotated.
 It holds a lease for as long as Claude Code runs, so nothing has to remember to

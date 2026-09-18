@@ -140,6 +140,6 @@ describe("spotting one account under two names", () => {
 
 describe("the auto command", () => {
   it("offers only what is built", () => {
-    assert.deepEqual(AUTO_SUBCOMMANDS, ["status", "edit", "config", "run", "off", "attach", "detach"]);
+    assert.deepEqual(AUTO_SUBCOMMANDS, ["status", "pick", "edit", "config", "run", "off", "attach", "detach"]);
   });
 });
