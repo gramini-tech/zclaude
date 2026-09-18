@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+**`a` in the launch menu toggles auto**, and Enter launches the highlighted
+profile in that mode. A toggle rather than a row of its own, because auto is a
+mode: a row labelled "Auto" meaning "any of the above" is the kind of thing
+nobody can explain afterwards.
+
+
 - **`zclaude auto edit`** opens the inventory in `$VISUAL` or `$EDITOR`, creating
   it first so you never get an empty buffer with no schema in it, and re-reading
   it afterwards so an edit that does not parse is said out loud rather than

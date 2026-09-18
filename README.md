@@ -526,6 +526,13 @@ own, renews every minute and on window focus, and drops it on the way out —
 though dropping it is only a courtesy, since a lease nobody renews expires by
 itself.
 
+In the launch menu, **`a` toggles auto** and the footer says which way it is
+set; Enter then launches the highlighted profile in that mode. A toggle rather
+than a row of its own, because auto is a mode: a row labelled "Auto" meaning
+"any of the above" is the kind of thing nobody can explain afterwards. The
+profile you highlight is where the work starts, and the toggle says whether it
+may then move.
+
 **`zclaude --auto <profile>`** launches a session that has asked to be rotated.
 It holds a lease for as long as Claude Code runs, so nothing has to remember to
 clean up: when the session ends the process goes and the lease with it. Auto mode

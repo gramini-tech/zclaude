@@ -704,20 +704,28 @@ const PROFILE_SOURCES = Object.freeze({
 async function askWhichProfile({ profiles, store, usageEnabled, busy, state, env, interactive }) {
   const picked = store
     ? await chooseProfileWithUsage(profiles, { defaultId: state.lastProfile, store, usageEnabled, busy })
-    : { id: await chooseProfile(profiles, { defaultId: state.lastProfile }), action: "launch" };
-  if (picked.action !== "signIn") return picked.id;
-  // The built-in Z.ai row is a key rather than an account, so it has its own
-  // flow and no profile to name.
-  const signIn =
-    picked.id === "zai"
-      ? zaiLoginFor({ env, options: {}, profile: null })
-      : signInProfile(picked.id, { env, zaiLogin: zaiLoginFor, interactive });
-  await signIn.catch((error) => warn(`Signing in to "${picked.id}" failed: ${error.message}`));
-  store?.load({ force: true }).catch((error) => debug(`usage not reloaded: ${error.message}`));
-  return picked.id;
+    : { id: await chooseProfile(profiles, { defaultId: state.lastProfile }), action: "launch", auto: false };
+  if (picked.action === "signIn") {
+    // The built-in Z.ai row is a key rather than an account, so it has its own
+    // flow and no profile to name.
+    const signIn =
+      picked.id === "zai"
+        ? zaiLoginFor({ env, options: {}, profile: null })
+        : signInProfile(picked.id, { env, zaiLogin: zaiLoginFor, interactive });
+    await signIn.catch((error) => warn(`Signing in to "${picked.id}" failed: ${error.message}`));
+    store?.load({ force: true }).catch((error) => debug(`usage not reloaded: ${error.message}`));
+  }
+  return picked;
 }
 
-async function selectProfile({ options, env, layered, interactive, profiles }) {
+async function selectProfile({
+  options,
+  env,
+  layered,
+  interactive,
+  profiles,
+  chose = /** @type {{auto?: boolean}} */ ({}),
+}) {
   const known = (id) => Boolean(findProfile(profiles, id));
   const configured = resolveProfileDefault({ env, layered });
   let via = options.profile ? "flag" : (configured?.source ?? "menu");
@@ -756,7 +764,10 @@ async function selectProfile({ options, env, layered, interactive, profiles }) {
             debug(`sessions not read: ${error.message}`);
             return new Map();
           });
-    profileId = await askWhichProfile({ profiles, store, usageEnabled, busy, state, env, interactive });
+    const picked = await askWhichProfile({ profiles, store, usageEnabled, busy, state, env, interactive });
+    profileId = picked.id;
+    // `a` in the menu is the same thing as `--auto` on the command line.
+    if (picked.auto) chose.auto = true;
     await writeState({ lastProfile: profileId }, env).catch((error) => debug(`state not saved: ${error.message}`));
   }
   const profile = findProfile(profiles, profileId);
@@ -789,7 +800,11 @@ async function cmdLaunch({ options, passthrough, env, cwd }) {
   const shortcut = options.profile ? { profile: null, args: passthrough } : takeProfileArgument(passthrough, profiles);
   const claudeInput = shortcut.args;
   if (shortcut.profile) log.info("profile", "profile named as the first argument", { id: shortcut.profile });
+  // What the menu decided that the flags did not: currently just auto mode.
+  /** @type {{auto?: boolean}} */
+  const chose = {};
   const profile = await selectProfile({
+    chose,
     options: shortcut.profile ? { ...options, profile: shortcut.profile } : options,
     env,
     layered,
@@ -803,7 +818,8 @@ async function cmdLaunch({ options, passthrough, env, cwd }) {
   const record = profile.configDir ? await getRegistered(profile.id, env) : null;
   const prepared = record ? await launchContext(record, env) : null;
   const claudeArgs = prepared?.claudeArgs ?? [];
-  const session = describeSession({ profile, prepared, env, cwd, auto: Boolean(options.auto) });
+  const auto = Boolean(options.auto || chose.auto);
+  const session = describeSession({ profile, prepared, env, cwd, auto });
 
   if (!profile.zai) {
     const args = [...claudeArgs, ...(options.model ? ["--model", options.model] : []), ...claudeInput];
@@ -813,7 +829,7 @@ async function cmdLaunch({ options, passthrough, env, cwd }) {
     if (prepared) await resolveSettingsConflict({ env, childEnv, cwd, interactive });
     reportInheritedAuth(childEnv, profile);
     await warnIfBusy(session, env, interactive);
-    return runWatched({ bin, args, childEnv, session, env, interactive, auto: Boolean(options.auto) });
+    return runWatched({ bin, args, childEnv, session, env, interactive, auto });
   }
 
   const config = zaiConfig(env);

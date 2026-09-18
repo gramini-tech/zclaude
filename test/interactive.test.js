@@ -209,6 +209,25 @@ describe("interactive (pseudo-terminal)", { skip: !hasScript() && "needs macOS s
     assert.equal((await readFile(capture, "utf8")).trim(), "ran --after-signin");
   });
 
+  it("toggles auto with `a`, and launches the highlighted profile in that mode", async () => {
+    const log = join(home.dir, "auto-menu.log");
+    await writeFile(capture, "");
+    const code = await runInPty({
+      args: ["--", "--auto-menu"],
+      env,
+      keys: [
+        [1800, "a"],
+        [600, "\r"],
+      ],
+      log,
+    });
+    const out = clean(await readFile(log, "utf8"));
+    assert.equal(code, 0, out.slice(-500));
+    assert.match(out, /a auto: on/u, "the footer says what the key did");
+    assert.match(out, /may be moved between accounts/u, "and the launch says what it means");
+    assert.equal((await readFile(capture, "utf8")).trim(), "ran --auto-menu");
+  });
+
   it("Ctrl-C part way through the wizard creates nothing", async () => {
     const log = join(home.dir, "profile-cancel.log");
     const code = await runInPty({
