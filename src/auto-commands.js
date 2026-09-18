@@ -14,6 +14,8 @@ import { log } from "./logger.js";
 import { autoConfigPath, initAutoConfig, loadAutoConfig } from "./auto/config.js";
 
 import { duplicates, inventory } from "./auto/inventory.js";
+import { grantsOf, liveLeases } from "./auto/lease.js";
+import { ownerAlive, readDaemonOwner } from "./auto/lock.js";
 import { binding, capacity, decide, eligibility, ladderStep, rank, rotatable } from "./auto/policy.js";
 import { countdown } from "./usage/when.js";
 import { info, paint, success, warn } from "./ui/log.js";
@@ -35,7 +37,21 @@ async function snapshot({ env, security, fetchImpl, now, options }) {
     force: Boolean(options?.force),
   });
   const klass = options?.class ?? DEFAULT_CLASS;
-  return { config, path, exists, warnings, accounts, active, slot, klass };
+  const daemon = await describeDaemon({ env, now });
+  return { config, path, exists, warnings, accounts, active, slot, klass, daemon };
+}
+
+/**
+ * Whether a daemon holds the lock, and what the live leases let it do.
+ *
+ * Liveness is re-derived rather than trusted, so a lock left behind by a
+ * SIGKILL or a power cut reads as what it is instead of as a running daemon.
+ */
+async function describeDaemon({ env, now }) {
+  const owner = await readDaemonOwner(env);
+  const alive = owner ? await ownerAlive(owner) : { live: false, reason: null };
+  const { leases } = await liveLeases({ env, now });
+  return { owner, ...alive, leases, grants: grantsOf(leases) };
 }
 
 /** One line per account: who it is, how full, and whether it could take work. */
@@ -95,8 +111,9 @@ async function cmdStatus(context) {
     process.stdout.write(
       `${JSON.stringify(
         {
-          running: false,
-          reason: "auto mode does not rotate yet; this is what it would do",
+          running: state.daemon.live,
+          rotating: state.daemon.live && state.daemon.grants.rotate,
+          daemon: { owner: state.daemon.owner, reason: state.daemon.reason, leases: state.daemon.leases },
           class: klass,
           active,
           ladderStep: step,
@@ -123,7 +140,7 @@ async function cmdStatus(context) {
 
   const width = Math.max(...accounts.map((account) => account.name.length), 7);
   const lines = [
-    `${label("rotating")}no — not built yet. This is what it would do.`,
+    `${label("rotating")}${rotatingText(state.daemon)}`,
     `${label("model")}${klass}${options.class ? "" : grey("  (the default; pass --class to ask about another)")}`,
     `${label("holding")}${active ?? grey("nobody zclaude knows about")}`,
     `${label("leave at")}${step}%${grey(step === config.ladder[0] ? "  (everyone still has room)" : "  (everyone has passed the first rung)")}`,
@@ -138,6 +155,21 @@ async function cmdStatus(context) {
   ];
   process.stdout.write(`${lines.join("\n")}\n`);
   return EXIT.OK;
+}
+
+/**
+ * The first line, and the one that has to be honest: a rotation daemon nobody
+ * asked for, quietly doing nothing, is worse than one that is plainly absent.
+ */
+function rotatingText(daemon) {
+  if (!daemon.live) {
+    const stale = daemon.owner ? grey(`  (a lock is left over: ${daemon.reason})`) : "";
+    return `no — the daemon is not built yet. This is what it would do.${stale}`;
+  }
+  const holders = daemon.leases.map((lease) => lease.kind).join(", ");
+  return daemon.grants.rotate
+    ? `yes — pid ${daemon.owner.pid}, held by ${holders}`
+    : `watching only — pid ${daemon.owner.pid}, held by ${holders}, which cannot move the login`;
 }
 
 function describeDecision(choice, now, accounts) {
