@@ -299,6 +299,25 @@ describe("the hover panel", () => {
   const panel = (extra = {}) =>
     hoverPanel({ status, profiles, usage, busy: {}, version: "9.9.9", now: PANEL_NOW, ...extra });
 
+  it("offers a sign-in on a broken login, ahead of a switch it could not honour", () => {
+    // Switching to an account whose token the server has rejected would put a
+    // login in the slot that cannot answer. And the row would otherwise read
+    // "login expired" with no way out of the editor at all.
+    const broken = { ...usage, max: { state: "dead", fiveHour: null, weekly: null, scoped: [] } };
+    const text = panel({ usage: broken });
+    assert.match(text, /login expired/u);
+    assert.match(text, /href="command:zclaude\.signIn\?%5B%22max%22%5D">sign in<\/a>/u);
+    assert.doesNotMatch(text, /zclaude\.switchTo\?%5B%22max%22%5D/u, "no switch offered to an account that is out");
+  });
+
+  it("still offers a switch to an account whose numbers merely failed to arrive", () => {
+    // "offline" is a lookup that did not answer, which a sign-in does not fix.
+    const offline = { ...usage, max: { state: "offline", fiveHour: null, weekly: null, scoped: [] } };
+    const text = panel({ usage: offline });
+    assert.match(text, /zclaude\.switchTo\?%5B%22max%22%5D/u);
+    assert.doesNotMatch(text, /zclaude\.signIn/u);
+  });
+
   it("lays the accounts out as a table, which is what a hover can render", () => {
     const text = panel();
     assert.match(text, /<table>/u);

@@ -182,6 +182,33 @@ describe("interactive (pseudo-terminal)", { skip: !hasScript() && "needs macOS s
     assert.deepEqual(registry.profiles.work.share, { config: true, history: true });
   });
 
+  it("signs a profile in from the picker with `s`, then launches it", async () => {
+    // The whole point of the key: a row reading "sign in to see usage" is
+    // fixable where you are looking at it, rather than by quitting and
+    // remembering a subcommand. "work" was created by the test above and has
+    // no login, so it is exactly that row.
+    const down = `${String.fromCodePoint(27)}[B`;
+    const log = join(home.dir, "signin-menu.log");
+    await writeFile(capture, "");
+    const code = await runInPty({
+      args: ["--", "--after-signin"],
+      env,
+      keys: [
+        [1800, down], // off the built-in Claude row...
+        [400, down], // ...past the built-in Z.ai row, onto "work"
+        [600, "s"],
+      ],
+      log,
+    });
+    const out = clean(await readFile(log, "utf8"));
+    assert.equal(code, 0, out.slice(-600));
+    assert.match(out, /s sign in/u, "the key is offered on the row that needs it");
+    assert.match(out, /Signing in to "work"/u, "and pressing it signs that profile in");
+    // Signing in is why the row was chosen, so the launch follows without
+    // asking again.
+    assert.equal((await readFile(capture, "utf8")).trim(), "ran --after-signin");
+  });
+
   it("Ctrl-C part way through the wizard creates nothing", async () => {
     const log = join(home.dir, "profile-cancel.log");
     const code = await runInPty({

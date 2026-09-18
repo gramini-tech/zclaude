@@ -20,7 +20,7 @@ import { getRegistered, listRegistered, PROVIDERS } from "./profiles/registry.js
 import { mcpServersWithSecrets, readDefaultConfig, trustedProjects } from "./profiles/seed.js";
 import { detachedShares } from "./profiles/share.js";
 import { deleteCredential, loadCredential } from "./store.js";
-import { credentialHealth, formatCredits, formatUsage, usageForAll, usageRows } from "./usage/index.js";
+import { credentialHealth, formatCredits, formatUsage, signInHint, usageForAll, usageRows } from "./usage/index.js";
 import { swapStatus } from "./swap/index.js";
 import { info, mask, paint, success, warn } from "./ui/log.js";
 import { askCopyMcp, askCopyTrust, askProfileName, askProvider, askSharing, askSignIn } from "./ui/profile-wizard.js";
@@ -224,6 +224,9 @@ async function cmdList({ env, options }) {
     if (windows.length === 0) {
       const numbers = formatUsage(usage[record.name]);
       if (numbers) process.stdout.write(`${indent}${grey(numbers)}\n`);
+      // "login expired" on its own leaves you to go and look up the cure.
+      const hint = signInHint(usage[record.name], record.name);
+      if (hint) process.stdout.write(`${indent}${grey(`fix it: ${hint.how}`)}\n`);
       continue;
     }
     for (const window of windows) {
@@ -299,6 +302,20 @@ function claudeOrNull(env) {
 async function cmdLoginProfile(context) {
   const record = await requireProfile(context.args[0], context.env);
   return signIn(record, context);
+}
+
+/**
+ * Sign one profile in, by name, from outside this module.
+ *
+ * The launch picker needs it: a row reading "login expired" should be fixable
+ * where you are looking at it, rather than by quitting and remembering a
+ * subcommand.
+ * @param {string} name
+ * @param {{env: NodeJS.ProcessEnv, zaiLogin: Function, interactive: boolean}} context
+ */
+export async function signInProfile(name, { env, zaiLogin, interactive }) {
+  const record = await requireProfile(name, env);
+  return signIn(record, { options: {}, env, zaiLogin, interactive });
 }
 
 async function cmdLogoutProfile({ args, env }) {

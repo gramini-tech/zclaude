@@ -169,7 +169,7 @@ describe("the extension in a window", () => {
     assert.match(loaded.vscode.window.statusBar.text, /^zc /u);
     assert.equal(loaded.vscode.window.statusBar.command, "zclaude.pick");
     assert.ok(loaded.vscode.window.statusBar.shown);
-    assert.equal(subscriptions.length, 8, "the item, six commands and the focus listener");
+    assert.equal(subscriptions.length, 9, "the item, seven commands and the focus listener");
     loaded.extension.deactivate();
   });
 

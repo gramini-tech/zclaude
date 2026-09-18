@@ -245,6 +245,24 @@ async function restore() {
   tell("Nothing to restore, or the restore failed. See the zclaude output.", "error");
 }
 
+/**
+ * Sign one profile in, for a row whose login has expired.
+ *
+ * The same terminal route as adding a profile, and for the same reason: the
+ * flow opens a browser and waits on a code coming back, which an extension has
+ * nowhere to host. Opening the terminal with the command already typed is the
+ * whole of what the editor can usefully do, and it is the difference between a
+ * row that reports a problem and one that fixes it.
+ * @param {string} name
+ */
+function signInNamed(name) {
+  if (!locate()) return Promise.resolve();
+  const terminal = vscode.window.createTerminal(`zclaude sign in: ${name}`);
+  terminal.show();
+  terminal.sendText(`${binary} profile login ${name}`);
+  return Promise.resolve();
+}
+
 /** Signing in needs a browser and a terminal, so this opens one. */
 function addProfile() {
   const terminal = vscode.window.createTerminal("zclaude profile add");
@@ -301,6 +319,7 @@ function activate(context) {
     vscode.commands.registerCommand("zclaude.pick", () => pick()),
     vscode.commands.registerCommand("zclaude.refresh", () => refreshStatusBar({ force: true })),
     vscode.commands.registerCommand("zclaude.switchTo", (name) => switchNamed(name)),
+    vscode.commands.registerCommand("zclaude.signIn", (name) => signInNamed(name)),
     vscode.commands.registerCommand("zclaude.add", () => addProfile()),
     vscode.commands.registerCommand("zclaude.remove", async () => removeProfile(await readProfiles())),
     vscode.commands.registerCommand("zclaude.restore", () => restore()),

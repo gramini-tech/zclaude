@@ -71,6 +71,9 @@ const STATES = {
   unknown: "",
 };
 
+/** The two states a sign-in fixes, and nothing else does. Mirrors `signInHint`. */
+const NEEDS_SIGN_IN = new Set(["unauthorized", "dead"]);
+
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
@@ -339,7 +342,7 @@ function profileRow({ profile, usage, busy, active, names, now }) {
     twoLines(`${tick}<b>${escapeHtml(profile.name)}</b>`, escapeHtml(organisationOf(profile))),
     cells,
     twoLines(sessions, ""),
-    twoLines(actionFor(profile, active), ""),
+    twoLines(actionFor(profile, active, own), ""),
     "</tr>",
   ].join("");
 }
@@ -358,7 +361,11 @@ function organisationOf(profile) {
   return parts.length > 1 ? parts.at(-1) : account;
 }
 
-function actionFor(profile, active) {
+function actionFor(profile, active, usage) {
+  // A broken login is the one thing worth offering ahead of a switch: switching
+  // to it would put an account in the slot that cannot answer, and the row
+  // would otherwise say "login expired" with no way out of the editor.
+  if (NEEDS_SIGN_IN.has(usage?.state)) return anchor("sign in", "zclaude.signIn", profile.name);
   if (profile.name === active) return "in use";
   // A Z.ai login reaches Claude Code through the environment, never through the
   // credential the switch moves.

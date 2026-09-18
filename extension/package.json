@@ -2,6 +2,10 @@
   "name": "zclaude",
   "displayName": "zclaude",
   "description": "Switch the Claude Code account from the status bar, with each plan's remaining usage.",
+  "author": {
+    "name": "Gramini Labs",
+    "url": "https://gramini.com"
+  },
   "version": "0.6.2",
   "publisher": "vipincr",
   "license": "MIT",
@@ -38,6 +42,10 @@
       {
         "command": "zclaude.switchTo",
         "title": "zclaude: Switch to a named profile"
+      },
+      {
+        "command": "zclaude.signIn",
+        "title": "zclaude: Sign a profile in again"
       },
       {
         "command": "zclaude.add",

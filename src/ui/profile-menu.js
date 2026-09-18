@@ -18,7 +18,7 @@ import {
 } from "@inquirer/core";
 
 import { busyMarker } from "../sessions/index.js";
-import { formatCredits, formatUsage, usageRows } from "../usage/index.js";
+import { formatCredits, formatUsage, signInHint, usageRows } from "../usage/index.js";
 import { layout } from "../usage/table.js";
 import { paint } from "./log.js";
 import { guard, withSignal } from "./prompt.js";
@@ -57,8 +57,11 @@ export function renderRow({ profile, active, usage, loading, width, frame, colum
  * The name comes back here when the table had to cut it, which is the only
  * place it can: the column is sized for the numbers.
  */
-export function renderDetail(profile, columns = 80, { cut = false } = {}) {
+export function renderDetail(profile, columns = 80, { cut = false, hint = null } = {}) {
   const parts = [cut ? profile?.label : null, profile?.description, profile?.sharing].filter(Boolean);
+  // A row that says "login expired" and nothing else is a dead end. The fix is
+  // one command, and this is the line with room for it.
+  if (hint) parts.push(`${hint.why} — ${hint.here ? `press s, or ${hint.how}` : hint.how}`);
   if (parts.length === 0) return "";
   const line = `  ${parts.join(", ")}`;
   return line.length < columns ? line : `${line.slice(0, columns - 2)}…`;
@@ -81,12 +84,15 @@ export function renderUsageDetail(usage, now = Date.now(), columns = 80) {
 }
 
 /** The lines under the list: what is happening and which keys do what. */
-export function renderFooter({ loading, count, total, usageEnabled }) {
+export function renderFooter({ loading, count, total, usageEnabled, canSignIn = false }) {
   if (!usageEnabled) return "↑↓ move · enter launch";
-  if (loading) return `↑↓ move · enter launch · r refresh   (usage ${count}/${total})`;
+  // The key only appears on a row that needs it. A key listed on every row that
+  // does nothing on most of them teaches people to stop reading the footer.
+  const signIn = canSignIn ? " · s sign in" : "";
+  if (loading) return `↑↓ move · enter launch · r refresh${signIn}   (usage ${count}/${total})`;
   return count === total
-    ? "↑↓ move · enter launch · r refresh"
-    : `↑↓ move · enter launch · r refresh (some usage missing)`;
+    ? `↑↓ move · enter launch · r refresh${signIn}`
+    : `↑↓ move · enter launch · r refresh${signIn} (some usage missing)`;
 }
 
 /**
@@ -121,10 +127,19 @@ const menuPrompt = createPrompt((config, done) => {
     return () => clearTimeout(timer);
   }, [frame, done_, store?.loading]);
 
+  const hintFor = (index) => signInHint(store?.get(profiles[index]?.id), profiles[index]);
+
   useKeypress((key) => {
     if (isEnterKey(key)) {
       setDone(true);
-      done(profiles[cursor].id);
+      done({ id: profiles[cursor].id, action: "launch" });
+      return;
+    }
+    // Only on a row whose login is actually broken, so `s` never surprises
+    // anyone by starting a browser flow they did not ask for.
+    if (key.name === "s" && hintFor(cursor)?.here) {
+      setDone(true);
+      done({ id: profiles[cursor].id, action: "signIn" });
       return;
     }
     if (isUpKey(key)) setCursor((cursor - 1 + profiles.length) % profiles.length);
@@ -159,13 +174,20 @@ const menuPrompt = createPrompt((config, done) => {
   const header = paint("?", "cyan", process.stderr);
   if (done_) return `${header} What do you want to launch? ${paint(profiles[cursor].label, "cyan", process.stderr)}`;
   const columnNames = paint(`  ${table.header}`, "grey", process.stderr);
+  const hint = hintFor(cursor);
   const detail = paint(
-    renderDetail(profiles[cursor], columns, { cut: profiles[cursor].label.length > table.width }),
+    renderDetail(profiles[cursor], columns, { cut: profiles[cursor].label.length > table.width, hint }),
     "grey",
     process.stderr,
   );
   const footer = paint(
-    renderFooter({ loading: Boolean(store?.loading), count: known, total: profiles.length, usageEnabled }),
+    renderFooter({
+      loading: Boolean(store?.loading),
+      count: known,
+      total: profiles.length,
+      usageEnabled,
+      canSignIn: Boolean(hint?.here),
+    }),
     "grey",
     process.stderr,
   );
@@ -175,7 +197,7 @@ const menuPrompt = createPrompt((config, done) => {
 /**
  * @param {MenuProfile[]} profiles
  * @param {{defaultId?: string, store?: object, usageEnabled?: boolean, busy?: Map<string, object>}} [options]
- * @returns {Promise<string>} the chosen profile id
+ * @returns {Promise<{id: string, action: "launch" | "signIn"}>} what to do, and to which profile
  */
 export function chooseProfileWithUsage(profiles, { defaultId, store, usageEnabled = true, busy } = {}) {
   return guard(menuPrompt({ profiles, defaultId, store, usageEnabled, busy }, { signal: withSignal() }));

@@ -38,7 +38,14 @@ import {
 import { registerSecret } from "./redact.js";
 import { buildAuthorizeUrl, exchangeCode, generateState, parseCallback } from "./oauth.js";
 import { configureLogger, formatEntry, listLogs, log, logFilePath, readLog } from "./logger.js";
-import { cmdProfile, describeShare, forgetAllProfiles, launchContext, profileSummaries } from "./profile-commands.js";
+import {
+  cmdProfile,
+  describeShare,
+  forgetAllProfiles,
+  launchContext,
+  profileSummaries,
+  signInProfile,
+} from "./profile-commands.js";
 import { cmdRenewGroup } from "./renew-commands.js";
 import { uninstall as unschedule } from "./renew/schedule.js";
 import {
@@ -668,6 +675,31 @@ const PROFILE_SOURCES = Object.freeze({
   user: "your ~/.zclaude/settings",
 });
 
+/**
+ * The picker, and the one thing it can do besides pick.
+ *
+ * A row whose login has expired offers `s`, and taking it signs that profile in
+ * and then carries on into it: signing in is why the row was chosen, so making
+ * it a separate errand would defeat offering it. A sign-in that fails has
+ * already said so and said how to retry, and the launch goes ahead anyway —
+ * Claude Code prompts for a login of its own, which is no worse than before.
+ */
+async function askWhichProfile({ profiles, store, usageEnabled, busy, state, env, interactive }) {
+  const picked = store
+    ? await chooseProfileWithUsage(profiles, { defaultId: state.lastProfile, store, usageEnabled, busy })
+    : { id: await chooseProfile(profiles, { defaultId: state.lastProfile }), action: "launch" };
+  if (picked.action !== "signIn") return picked.id;
+  // The built-in Z.ai row is a key rather than an account, so it has its own
+  // flow and no profile to name.
+  const signIn =
+    picked.id === "zai"
+      ? zaiLoginFor({ env, options: {}, profile: null })
+      : signInProfile(picked.id, { env, zaiLogin: zaiLoginFor, interactive });
+  await signIn.catch((error) => warn(`Signing in to "${picked.id}" failed: ${error.message}`));
+  store?.load({ force: true }).catch((error) => debug(`usage not reloaded: ${error.message}`));
+  return picked.id;
+}
+
 async function selectProfile({ options, env, layered, interactive, profiles }) {
   const known = (id) => Boolean(findProfile(profiles, id));
   const configured = resolveProfileDefault({ env, layered });
@@ -707,9 +739,7 @@ async function selectProfile({ options, env, layered, interactive, profiles }) {
             debug(`sessions not read: ${error.message}`);
             return new Map();
           });
-    profileId = store
-      ? await chooseProfileWithUsage(profiles, { defaultId: state.lastProfile, store, usageEnabled, busy })
-      : await chooseProfile(profiles, { defaultId: state.lastProfile });
+    profileId = await askWhichProfile({ profiles, store, usageEnabled, busy, state, env, interactive });
     await writeState({ lastProfile: profileId }, env).catch((error) => debug(`state not saved: ${error.message}`));
   }
   const profile = findProfile(profiles, profileId);

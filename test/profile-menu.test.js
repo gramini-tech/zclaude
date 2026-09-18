@@ -9,6 +9,7 @@ import { describe, it } from "node:test";
 import { usageRecords } from "../src/cli.js";
 import { DEFAULT_CREDENTIAL_SERVICE } from "../src/profiles/keychain-name.js";
 import { renderDetail, renderFooter, renderRow, renderUsageDetail } from "../src/ui/profile-menu.js";
+import { signInHint } from "../src/usage/index.js";
 
 const profile = { id: "work", label: "work", description: "me@x.y · Acme", sharing: "shares config and history" };
 const row = (overrides = {}) =>
@@ -66,6 +67,50 @@ describe("a row in the picker", () => {
   it("has no reset line before the numbers arrive, or when they never will", () => {
     assert.equal(renderUsageDetail(undefined), "");
     assert.equal(renderUsageDetail({ state: "unauthorized" }), "");
+  });
+
+  it("tells you how to fix a broken login, on the line under the cursor", () => {
+    // A row that says "login expired" and stops there is a dead end: the cure
+    // is one command and there is nowhere else in this screen to learn it.
+    const hint = signInHint({ state: "dead" }, "gramini");
+    assert.equal(hint.command, "zclaude profile login gramini");
+    assert.equal(hint.why, "login expired");
+    assert.equal(hint.here, true, "the picker can do this one itself");
+    const line = renderDetail({ label: "gramini", description: "vipinr@gramini.com" }, 200, { hint });
+    assert.match(line, /login expired — press s, or run `zclaude profile login gramini`/u);
+  });
+
+  it("knows the built-in rows are not profiles it can sign in by name", () => {
+    // `zclaude profile login zai` would fail: the built-in rows are not
+    // registered profiles, and offering a command that cannot work is worse
+    // than offering nothing.
+    const zai = signInHint({ state: "unauthorized" }, { id: "zai", builtin: true });
+    assert.equal(zai.command, "zclaude login");
+    assert.equal(zai.here, true);
+
+    // The default installation's login belongs to Claude Code, which asks for
+    // it the moment you launch. There is nothing for zclaude to run.
+    const claude = signInHint({ state: "dead" }, { id: "claude", builtin: true });
+    assert.equal(claude.command, null);
+    assert.equal(claude.here, false, "so no key is offered for it");
+    const line = renderDetail({ label: "Claude Code" }, 200, { hint: claude });
+    assert.match(line, /Claude Code asks for a login itself/u);
+    assert.doesNotMatch(line, /press s/u);
+  });
+
+  it("has no sign-in hint for a login that is fine, or one a sign-in would not fix", () => {
+    assert.equal(signInHint({ state: "ok" }, "max"), null);
+    // Rate limited and offline are both temporary; signing in again fixes
+    // neither, and offering it would send people off on a pointless errand.
+    assert.equal(signInHint({ state: "throttled" }, "max"), null);
+    assert.equal(signInHint({ state: "offline" }, "max"), null);
+    assert.equal(signInHint(null, "max"), null);
+  });
+
+  it("offers the sign-in key only on a row that needs it", () => {
+    const base = { loading: false, count: 2, total: 2, usageEnabled: true };
+    assert.doesNotMatch(renderFooter(base), /sign in/u, "a key that does nothing teaches people to stop reading");
+    assert.match(renderFooter({ ...base, canSignIn: true }), /s sign in/u);
   });
 
   it("marks a busy account before the numbers, because it changes the choice more", () => {
