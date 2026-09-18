@@ -232,8 +232,11 @@ export function rank(accounts, klass, options = {}) {
  * which is what absorbs the half-minute of overshoot after each switch.
  */
 export function ladderStep(accounts, klass, options = {}) {
-  const first = rank(accounts, klass, { ...options, step: LADDER[0] });
-  return first.length > 0 ? LADDER[0] : LADDER[1];
+  // The ladder comes from the inventory when there is one. It used to be read,
+  // validated and then ignored here, so editing it did nothing at all.
+  const ladder = options.ladder?.length ? options.ladder : LADDER;
+  const first = rank(accounts, klass, { ...options, step: ladder[0] });
+  return first.length > 0 ? ladder[0] : ladder.at(-1);
 }
 
 /** Whether this account may be moved into, over and above being eligible. */
@@ -277,12 +280,12 @@ export function parkTarget(accounts, klass, { now = Date.now() } = {}) {
  *
  * @param {{accounts: Account[], active: string|null, klass: string, now?: number, costs?: Map<string, number>,
  *          switches?: number[], starting?: boolean, org?: string|null, allowCrossOrg?: boolean,
- *          step?: number|null}} input
+ *          step?: number|null, ladder?: number[]}} input
  * @returns {{action: string, target: string|null, reason: string, urgent?: boolean, step?: number}}
  */
 export function decide({ accounts, active, klass, ...options }) {
   const { now = Date.now(), costs = new Map(), switches = [], starting = false } = options;
-  const step = ladderStep(accounts, klass, { ...options, now, costs });
+  const step = options.step ?? ladderStep(accounts, klass, { ...options, now, costs });
   const ordered = rank(accounts, klass, { ...options, now, costs, step });
   const current = accounts.find((account) => account.name === active) ?? null;
 

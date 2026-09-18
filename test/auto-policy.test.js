@@ -147,6 +147,21 @@ describe("choosing where work goes", () => {
     assert.match(moving.reason, /96% of its weekly/u);
   });
 
+  it("uses the ladder from the inventory, not its own idea of one", () => {
+    // Found on a live run: the inventory's `ladder` was read, validated,
+    // clamped — and then ignored, because the policy used its own constant. An
+    // edit to it did nothing at all, in both `auto status` and the watcher.
+    const accounts = [account("here", { weekly: 50 }), account("there", { weekly: 3 })];
+    assert.equal(ladderStep(accounts, "opus", { now: NOW }), 95, "the default, with nothing configured");
+    assert.equal(ladderStep(accounts, "opus", { now: NOW, ladder: [50, 100] }), 50);
+
+    const moved = decide({ accounts, active: "here", klass: "opus", now: NOW, ladder: [50, 100] });
+    assert.equal(moved.action, "switch");
+    assert.equal(moved.target, "there");
+    // And the same accounts stay put under the default ladder.
+    assert.equal(decide({ accounts, active: "here", klass: "opus", now: NOW }).action, "stay");
+  });
+
   it("raises the step to 100 only once nobody is left below 95", () => {
     const some = [account("a", { weekly: 96 }), account("b", { weekly: 40 })];
     assert.equal(ladderStep(some, "opus", { now: NOW }), LADDER[0]);

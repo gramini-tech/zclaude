@@ -32,6 +32,7 @@ const account = (name, over = {}) => ({
 function fakes(over = {}) {
   const calls = { switched: [], captured: 0 };
   const deps = {
+    config: async () => ({ ladder: [95, 100], allowCrossOrg: false }),
     leases: async () => ({ leases: [lease("session")] }),
     owner: async () => ({ pid: process.pid }),
     ownerAlive: async () => ({ ours: true, reason: null }),

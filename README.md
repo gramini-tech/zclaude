@@ -582,6 +582,28 @@ its last good numbers when a lookup fails, which is correct for a display and a
 trap for a scheduler. A row reading 0% is exactly how an exhausted account gets
 picked first. `dead` and `unauthorized` are states, not zeroes.
 
+### What a rotation actually looks like
+
+Run against three real accounts, with the ladder temporarily lowered so a
+rotation was due immediately:
+
+```
+before: gramini
+  tick: wait — gramini is at 50% of its weekly; something is mid-answer
+  … (90 seconds of that, because the session never stopped writing)
+  tick: switched — gramini → max
+  tick: stay — 3% of its weekly
+  tick: stay — 4% of its Fable
+after:  max
+```
+
+Three things in that trace are the design working. It waited rather than landing
+mid-answer, and gave up waiting after ninety seconds because a session that never
+goes quiet is one long turn. It settled once it arrived instead of hopping back.
+And the class it reasons about changed from Opus to Fable partway through,
+because that is what the transcripts said was in use — the ceiling that binds
+followed it.
+
 ### The inventory
 
 `~/.zclaude/auto.json`, optional, plain JSON, never written unless you ask. It

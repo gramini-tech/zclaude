@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+A real rotation, watched end to end: `gramini → max`, waiting ninety seconds for
+a quiet moment first, then settling on the new account instead of hopping back.
+The slot was put back afterwards with `zclaude switch`.
+
+**The inventory's `ladder` was read, validated, clamped and then ignored.** The
+policy used its own constant, so editing the file did nothing — in `auto status`
+and, separately, in the watcher, which never loaded the inventory at all and so
+disagreed with `auto status` about the same accounts. Both now take the ladder
+from the file, and the watcher re-reads it every cycle so an edit applies without
+a restart.
+
+
 `zclaude --auto <profile>` launches a session that has asked to be rotated, and
 `zclaude auto run --dry-run` proves the policy on real accounts without moving
 anything.

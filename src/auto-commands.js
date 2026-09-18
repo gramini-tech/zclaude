@@ -106,9 +106,10 @@ async function cmdStatus(context) {
   const { options, env, security, fetchImpl, now = Date.now() } = context;
   const state = await snapshot({ env, security, fetchImpl, now, options });
   const { accounts, active, klass, config } = state;
-  const step = ladderStep(accounts, klass, { now, allowCrossOrg: config.allowCrossOrg });
-  const order = rank(accounts, klass, { now, step, allowCrossOrg: config.allowCrossOrg });
-  const choice = decide({ accounts, active, klass, now, step, allowCrossOrg: config.allowCrossOrg });
+  const shared = { now, allowCrossOrg: config.allowCrossOrg, ladder: config.ladder };
+  const step = ladderStep(accounts, klass, shared);
+  const order = rank(accounts, klass, { ...shared, step });
+  const choice = decide({ accounts, active, klass, ...shared, step });
 
   if (options.json) {
     process.stdout.write(

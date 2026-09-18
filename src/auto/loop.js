@@ -124,7 +124,20 @@ export async function runOnce({ state, deps, env = process.env, now = Date.now()
   // promise. Without this the choice is a pending promise whose `.action` is
   // undefined, so every comparison falls through and the watcher runs for ever
   // deciding nothing — which is exactly what a first live run did.
-  const choice = await deps.decide({ accounts: snapshot.accounts, active: snapshot.active, klass, now });
+  // The inventory is re-read every cycle rather than held from startup, so an
+  // edit takes effect without restarting the watcher — and so the watcher and
+  // `auto status` cannot answer the same question differently, which they did
+  // for exactly as long as this was missing.
+  const config = await deps.config({ env });
+  const choice = await deps.decide({
+    accounts: snapshot.accounts,
+    active: snapshot.active,
+    klass,
+    now,
+    ladder: config.ladder,
+    allowCrossOrg: config.allowCrossOrg,
+    switches: (state.decisions ?? []).filter((one) => one.ok).map((one) => one.at),
+  });
   if (choice.action !== "switch") {
     return {
       state: { ...next, mode: "rotating", reason: choice.reason },
@@ -263,6 +276,7 @@ export function liveDeps({ security, fetchImpl, dryRun = false, configDirs = () 
 
   return {
     dryRun,
+    config: async ({ env }) => (await import("./config.js")).loadAutoConfig({ env }).then((read) => read.config),
     leases: (options) => liveLeases(options),
     owner: (env) => readDaemonOwner(env),
     ownerAlive: async (owner) => {
