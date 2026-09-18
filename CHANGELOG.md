@@ -2,6 +2,46 @@
 
 ## Unreleased
 
+`zclaude auto status` shows which account rotation would use, and why. It reads
+only: the decision is built and tested, the daemon that would act on it is not,
+and the first line of the output says so.
+
+```
+rotating    no — not built yet. This is what it would do.
+holding     gramini
+leave at    95%
+
+  profile   plan                     tightest       capacity
+  gramini   default_claude_max_5x    dead
+  hoomanely default_claude_max_5x     55% weekly    2.00 left
+  max       default_claude_max_20x     3% weekly    18.40 left
+
+would       switch to max — gramini cannot be used: its login expired
+```
+
+- **Capacity, not percentage.** The plan size comes off the credential, so 3% of
+  a Max 20x seat reads as nine times the work left in 55% of a 5x seat. An
+  unrecognised plan weighs 1, the smallest there is.
+- **`--class fable`** asks the same question for a different model class. An
+  account with Fable spent and Opus untouched reports no room for one and plenty
+  for the other.
+- **`zclaude auto config`** reads the inventory at `~/.zclaude/auto.json`, and
+  `auto config init` writes the defaults out with a `_readme` explaining each
+  key. Unknown keys are named rather than swallowed, clamped values say which
+  key changed, and a malformed file is one warning plus the built-in defaults.
+
+Two bugs that only showed up once it ran against real accounts:
+
+- **A dead login was reported as 0% and the answer was "stay".** Nothing checked
+  whether the account currently holding the slot could serve at all, so the
+  worst possible account looked like the emptiest. It is now left immediately,
+  with no wait for a quiet moment, since the session on it is about to fail.
+- **Two profiles sharing an account uuid were called the same account.** A
+  company seat and a personal subscription on one login share that uuid and
+  differ only by organisation, and they are metered entirely apart. The check
+  now keys on both, matching what `sameAccount` has always compared.
+
+
 Moved to the Gramini Labs organisation: `gramini-tech/zclaude`, published at
 `gramini-tech.github.io/zclaude`, with the VS Code extension now
 `gramini-labs.zclaude`.

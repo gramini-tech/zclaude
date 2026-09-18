@@ -1,0 +1,207 @@
+// `zclaude auto`: rotating the global login by usage.
+//
+// Reading only, for now. It shows every account the way the scheduler sees it
+// and says what it would do, and it switches nothing — the daemon that acts on
+// this is not built yet, and `auto status` says so rather than implying
+// otherwise. A rotation scheduler is exactly the kind of thing that has to earn
+// trust before it is allowed to move anything, and this is where that happens.
+//
+// Not to be confused with `zclaude auto-mode`, which is one of Claude Code's
+// own commands and is forwarded to it untouched.
+
+import { EXIT, usageError } from "./errors.js";
+import { log } from "./logger.js";
+import { autoConfigPath, initAutoConfig, loadAutoConfig } from "./auto/config.js";
+
+import { duplicates, inventory } from "./auto/inventory.js";
+import { binding, capacity, decide, eligibility, ladderStep, rank, rotatable } from "./auto/policy.js";
+import { countdown } from "./usage/when.js";
+import { info, paint, success, warn } from "./ui/log.js";
+
+const grey = (text) => paint(text, "grey", process.stdout);
+const label = (text) => grey(text.padEnd(12));
+
+/** What class to reason about when nothing is running to read one from. */
+const DEFAULT_CLASS = "opus";
+
+async function snapshot({ env, security, fetchImpl, now, options }) {
+  const { config, path, exists, warnings } = await loadAutoConfig({ env });
+  const { accounts, active, slot } = await inventory({
+    env,
+    security,
+    fetchImpl,
+    now,
+    tiers: config.tiers,
+    force: Boolean(options?.force),
+  });
+  const klass = options?.class ?? DEFAULT_CLASS;
+  return { config, path, exists, warnings, accounts, active, slot, klass };
+}
+
+/** One line per account: who it is, how full, and whether it could take work. */
+const PLAN_WIDTH = 24;
+const TIGHTEST_WIDTH = 14;
+const CAPACITY_WIDTH = 11;
+
+/** Padded to a width, or cut with an ellipsis that says it was cut. */
+function fit(text, width) {
+  return text.length > width ? `${text.slice(0, width - 1)}…` : text.padEnd(width);
+}
+
+function planText(account) {
+  if (!account.tier) return "unknown plan";
+  return account.tierKnown ? account.tier : `${account.tier} (unknown)`;
+}
+
+/**
+ * The tightest binding window, or why there is no number.
+ *
+ * A login that expired must never render as "0%" — the cache serves its last
+ * good numbers when a lookup fails, and a row reading zero is exactly how a
+ * naive scheduler decides an exhausted account is the emptiest one.
+ */
+function tightestText(account, { klass, now }) {
+  if (!account.windows || account.state === "dead" || account.state === "unauthorized") {
+    return account.state === "ok" ? "no usage" : account.state;
+  }
+  const full = binding(account, klass, { now });
+  return `${String(Math.round(full.pct)).padStart(3)}% ${full.window ?? ""}`.trimEnd();
+}
+
+function accountLine(account, { klass, now, step, width }) {
+  const usable = rotatable(account);
+  const left = usable.ok ? `${capacity(account, klass, { now, step }).toFixed(2)} left` : "";
+  const why = usable.ok ? eligibility(account, klass, { now, step }).reason : usable.reason;
+  return [
+    `  ${account.name.padEnd(width)}`,
+    grey(fit(planText(account), PLAN_WIDTH)),
+    fit(tightestText(account, { klass, now }), TIGHTEST_WIDTH),
+    grey(fit(left, CAPACITY_WIDTH)),
+    why ? grey(why) : "",
+  ]
+    .join(" ")
+    .trimEnd();
+}
+
+async function cmdStatus(context) {
+  const { options, env, security, fetchImpl, now = Date.now() } = context;
+  const state = await snapshot({ env, security, fetchImpl, now, options });
+  const { accounts, active, klass, config } = state;
+  const step = ladderStep(accounts, klass, { now, allowCrossOrg: config.allowCrossOrg });
+  const order = rank(accounts, klass, { now, step, allowCrossOrg: config.allowCrossOrg });
+  const choice = decide({ accounts, active, klass, now, step, allowCrossOrg: config.allowCrossOrg });
+
+  if (options.json) {
+    process.stdout.write(
+      `${JSON.stringify(
+        {
+          running: false,
+          reason: "auto mode does not rotate yet; this is what it would do",
+          class: klass,
+          active,
+          ladderStep: step,
+          decision: choice,
+          order: order.map((entry) => ({ profile: entry.account.name, capacity: entry.capacity })),
+          accounts,
+          config: { path: state.path, exists: state.exists, warnings: state.warnings },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    return EXIT.OK;
+  }
+
+  for (const warning of state.warnings) warn(warning);
+  for (const names of duplicates(accounts)) {
+    warn(`${names.join(" and ")} are the same account, so switching between them would move nothing.`);
+  }
+  if (accounts.length === 0) {
+    info("No profiles yet, so there is nothing to rotate between. Start with `zclaude profile add`.");
+    return EXIT.OK;
+  }
+
+  const width = Math.max(...accounts.map((account) => account.name.length), 7);
+  const lines = [
+    `${label("rotating")}no — not built yet. This is what it would do.`,
+    `${label("model")}${klass}${options.class ? "" : grey("  (the default; pass --class to ask about another)")}`,
+    `${label("holding")}${active ?? grey("nobody zclaude knows about")}`,
+    `${label("leave at")}${step}%${grey(step === config.ladder[0] ? "  (everyone still has room)" : "  (everyone has passed the first rung)")}`,
+    "",
+    grey(
+      `  ${"profile".padEnd(width)} ${"plan".padEnd(PLAN_WIDTH)} ${"tightest".padEnd(TIGHTEST_WIDTH)} ${"capacity".padEnd(CAPACITY_WIDTH)} why not`,
+    ),
+    ...accounts.map((account) => accountLine(account, { klass, now, step, width })),
+    "",
+    `${label("would")}${describeDecision(choice, now, accounts)}`,
+    `${label("inventory")}${state.exists ? state.path : grey(`${state.path} (not created; defaults in use)`)}`,
+  ];
+  process.stdout.write(`${lines.join("\n")}\n`);
+  return EXIT.OK;
+}
+
+function describeDecision(choice, now, accounts) {
+  const target = accounts.find((account) => account.name === choice.target);
+  switch (choice.action) {
+    case "switch": {
+      return `switch to ${choice.target} — ${choice.reason}`;
+    }
+    case "stay": {
+      return `stay on ${choice.target} — ${choice.reason}`;
+    }
+    case "park": {
+      const resets = target?.windows?.weekly?.resetsAt ?? target?.windows?.fiveHour?.resetsAt;
+      const when = resets ? ` (in ${countdown(resets, now)})` : "";
+      return `wait on ${choice.target}${when} — ${choice.reason}`;
+    }
+    default: {
+      return `nothing — ${choice.reason}`;
+    }
+  }
+}
+
+async function cmdConfig(context) {
+  const { options, env, args } = context;
+  const [what = "show"] = args;
+  if (what === "path") {
+    process.stdout.write(`${autoConfigPath(env)}\n`);
+    return EXIT.OK;
+  }
+  if (what === "init") {
+    const result = await initAutoConfig({ env, force: Boolean(options.force) });
+    if (result.written) success(`Wrote the defaults to ${result.path}. Every key is optional; delete any to undo it.`);
+    else info(`${result.path} was left alone because ${result.reason}. Pass --force to overwrite it.`);
+    return EXIT.OK;
+  }
+  if (what !== "show") {
+    throw usageError(`\`zclaude auto config ${what}\` is not a command.`, "One of: show, path, init.");
+  }
+  const { config, path, exists, warnings } = await loadAutoConfig({ env });
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify({ path, exists, warnings, config }, null, 2)}\n`);
+    return EXIT.OK;
+  }
+  for (const warning of warnings) warn(warning);
+  info(exists ? `From ${path}:` : `${path} does not exist, so these are the built-in defaults:`);
+  // The explanation is in the file itself; printing it back would bury the
+  // handful of numbers somebody ran this to see.
+  const settings = Object.fromEntries(Object.entries(config).filter(([key]) => !key.startsWith("_")));
+  process.stdout.write(`${JSON.stringify(settings, null, 2)}\n`);
+  return EXIT.OK;
+}
+
+const SUBCOMMANDS = { status: cmdStatus, config: cmdConfig };
+export const AUTO_SUBCOMMANDS = Object.freeze(Object.keys(SUBCOMMANDS));
+
+/**
+ * @param {{options: object, env: NodeJS.ProcessEnv}} context
+ * @param {{security?: object, fetchImpl?: typeof fetch, now?: number}} [deps]
+ */
+export function cmdAutoGroup(context, deps = {}) {
+  const [sub = "status", ...rest] = context.options.args ?? [];
+  if (!Object.hasOwn(SUBCOMMANDS, sub)) {
+    throw usageError(`\`zclaude auto ${sub}\` is not a command.`, `One of: ${AUTO_SUBCOMMANDS.join(", ")}.`);
+  }
+  log.debug("auto", "command", { sub });
+  return SUBCOMMANDS[sub]({ ...context, ...deps, args: rest });
+}

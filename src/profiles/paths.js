@@ -60,6 +60,7 @@ export const RESERVED_NAMES = Object.freeze([
   "switch",
   "vscode",
   "renew",
+  "auto",
   ...CLAUDE_COMMANDS,
 ]);
 

@@ -482,6 +482,77 @@ Removing the last Anthropic profile removes the schedule with it, and every unin
 (`zclaude self-uninstall`, `install.sh --uninstall`) takes the plist, timer or crontab line away.
 `--keep-config` keeps the profiles, so it keeps the schedule.
 
+## Auto: rotating the global login by usage
+
+Long work ends the same way every time: one account hits a wall while the others
+still have room. `zclaude auto` is the loop that closes. It reads every account the
+way a scheduler would, and says which one the work should be on.
+
+**It does not switch anything yet.** The reading and the decision are built and
+tested; the daemon that acts on them is not. `auto status` says so on its first
+line rather than letting you assume otherwise, which is the right way round for
+something whose job is to move your login while you are not watching.
+
+```sh
+zclaude auto status                    # every account, and what rotation would do
+zclaude auto status --class fable      # ask about a different model class
+zclaude auto status --json             # the same, for scripts
+zclaude auto config                    # the inventory, defaults included
+zclaude auto config path               # where it lives
+zclaude auto config init               # write the defaults out, with the explanations
+```
+
+```
+rotating    no — not built yet. This is what it would do.
+model       opus
+holding     gramini
+leave at    95%  (everyone still has room)
+
+  profile   plan                     tightest       capacity    why not
+  chinese   unknown plan              90% weekly                its login is an endpoint and a key…
+  gramini   default_claude_max_5x    dead                       its login expired
+  hoomanely default_claude_max_5x     55% weekly    2.00 left
+  max       default_claude_max_20x     3% weekly    18.40 left
+
+would       switch to max — gramini cannot be used: its login expired
+```
+
+Four things in that table are the whole design.
+
+**Capacity, not percentage.** 3% used on a Max 20x seat is 18.40 units of work
+left; 55% used on a 5x seat is 2.00. Percentages cannot be compared across plans
+at all, so they are multiplied by the plan's own size, which zclaude reads from
+the credential rather than asking you to configure. An unrecognised plan weighs
+1, the smallest there is: over-estimating a seat sends long work to a small
+account and forces a second rotation, while under-estimating only costs spread.
+
+**The tightest window decides.** Hitting either the five-hour limit or the weekly
+one blocks every prompt, whatever the model, so the constraint is always the
+worst window rather than the model's own.
+
+**The model class binds too.** Run the same command with `--class fable` and
+`hoomanely` drops to `0.00 left`, because its Fable window is at 100%, while its Opus
+headroom is untouched. Work never drops to a weaker model to keep going: a Fable
+task waits rather than landing on Opus.
+
+**A login that failed is never an empty account.** The usage cache keeps serving
+its last good numbers when a lookup fails, which is correct for a display and a
+trap for a scheduler. A row reading 0% is exactly how an exhausted account gets
+picked first. `dead` and `unauthorized` are states, not zeroes.
+
+### The inventory
+
+`~/.zclaude/auto.json`, optional, plain JSON, never written unless you ask. It
+carries what each plan is worth, the percentages work leaves an account at, and
+how often to look. `zclaude auto config init` writes the defaults out with a
+`_readme` explaining every key; delete any key to go back to the built-in, and
+delete the file to change nothing at all. A malformed file is one warning and
+the defaults, never an error: a half-parsed config with a zeroed threshold is
+more dangerous than no config.
+
+Unknown keys are reported rather than ignored, because silently swallowing a
+typo is how somebody believes they set 99 and gets 95.
+
 ## Z.ai GLM Coding Plan
 
 One of the two providers a profile can have, and the reason for the `z`. From the outside it behaves
@@ -604,6 +675,7 @@ These matter only when they come **before** a profile name or without one:
 | Flag                                 | zclaude's meaning                                | How to reach claude's           |
 | ------------------------------------ | ------------------------------------------------ | ------------------------------- |
 | `--model <id>`                       | the primary model for a Z.ai profile             | after the profile name, or `--` |
+| `--class <c>`                        | which model class `auto status` reasons about    | n/a                             |
 | `--verbose`                          | show what zclaude is doing                       | after the profile name, or `--` |
 | `--json`                             | machine-readable output for `status` and friends | after the profile name, or `--` |
 | `-h`, `--help`                       | zclaude's help                                   | `zclaude -- --help`             |

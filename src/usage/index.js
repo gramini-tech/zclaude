@@ -428,7 +428,7 @@ async function persistSettled(settled, { env, now }) {
  * Usage for several profiles at once, reported as each one lands so a caller
  * can paint a row at a time rather than waiting for the slowest.
  * @param {Array<object>} records
- * @param {{onResult?: (name: string, usage: object) => void, env?: NodeJS.ProcessEnv, fetchImpl?: typeof fetch, signal?: AbortSignal, now?: number, ttlMs?: number, force?: boolean, allowRefresh?: boolean}} [options]
+ * @param {{onResult?: (name: string, usage: object) => void, env?: NodeJS.ProcessEnv, fetchImpl?: typeof fetch, signal?: AbortSignal, now?: number, ttlMs?: number, force?: boolean, allowRefresh?: boolean, security?: object}} [options]
  */
 export async function usageForAll(records, options = {}) {
   const { onResult, env = process.env, now = Date.now(), ...rest } = options;

@@ -12,6 +12,7 @@ import { describe, it } from "node:test";
 import { buildPlainEnv, buildProfileEnv, buildZaiEnv } from "../src/claude.js";
 import { COMMAND_NAMES, HELP } from "../src/cli.js";
 import { PROFILE_SUBCOMMANDS } from "../src/profile-commands.js";
+import { AUTO_SUBCOMMANDS } from "../src/auto-commands.js";
 import { RENEW_SUBCOMMANDS, selfBinary } from "../src/renew-commands.js";
 import { SWITCH_SUBCOMMANDS } from "../src/swap-commands.js";
 import { VSCODE_SUBCOMMANDS } from "../src/vscode-commands.js";
@@ -195,6 +196,14 @@ describe("documentation contract", () => {
     for (const sub of RENEW_SUBCOMMANDS) {
       assert.ok(HELP.includes(`renew ${sub}`), `renew ${sub} missing from --help`);
       assert.ok(readme.includes(`renew ${sub}`), `renew ${sub} missing from README`);
+    }
+  });
+
+  it("every auto subcommand is listed in --help and the README", async () => {
+    const readme = await readFile(join(root, "README.md"), "utf8");
+    for (const sub of AUTO_SUBCOMMANDS) {
+      assert.ok(HELP.includes(`auto ${sub}`), `auto ${sub} missing from --help`);
+      assert.ok(readme.includes(`auto ${sub}`), `auto ${sub} missing from README`);
     }
   });
 

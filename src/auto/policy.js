@@ -276,7 +276,8 @@ export function parkTarget(accounts, klass, { now = Date.now() } = {}) {
  * The whole decision, for one cycle.
  *
  * @param {{accounts: Account[], active: string|null, klass: string, now?: number, costs?: Map<string, number>,
- *          switches?: number[], starting?: boolean, org?: string|null, allowCrossOrg?: boolean}} input
+ *          switches?: number[], starting?: boolean, org?: string|null, allowCrossOrg?: boolean,
+ *          step?: number|null}} input
  * @returns {{action: string, target: string|null, reason: string, urgent?: boolean, step?: number}}
  */
 export function decide({ accounts, active, klass, ...options }) {
@@ -288,6 +289,18 @@ export function decide({ accounts, active, klass, ...options }) {
   // Nothing running yet means no continuity to protect and no overshoot to
   // absorb, so this is the one place that simply takes the emptiest.
   if (starting || !current) return begin({ accounts, klass, ordered, now, step });
+
+  // An account that cannot serve at all — its login expired, it was signed out,
+  // its lineage was quarantined — has no usable numbers, so the ordinary "how
+  // full is it" question does not apply. Leave it now, with no waiting for a
+  // quiet moment: the session on it is about to start failing anyway.
+  const serving = rotatable(current, options);
+  if (!serving.ok) {
+    const away = nextTarget(ordered, klass, { now, step, costs, except: current.name });
+    const reason = `${current.name} cannot be used: ${serving.reason}`;
+    if (away) return { action: "switch", target: away.account.name, reason, urgent: true, step };
+    return { action: "hold", target: null, reason: `${reason}, and nowhere else can take the work`, step };
+  }
 
   const cost = costs.get(current.name) ?? 0;
   const full = binding(current, klass, { now, cost });

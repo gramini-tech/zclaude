@@ -46,6 +46,7 @@ import {
   profileSummaries,
   signInProfile,
 } from "./profile-commands.js";
+import { cmdAutoGroup } from "./auto-commands.js";
 import { cmdRenewGroup } from "./renew-commands.js";
 import { uninstall as unschedule } from "./renew/schedule.js";
 import {
@@ -101,6 +102,7 @@ export const COMMAND_NAMES = Object.freeze([
   "profile",
   "switch",
   "renew",
+  "auto",
   "vscode",
   "sessions",
   "login",
@@ -115,7 +117,7 @@ export const COMMAND_NAMES = Object.freeze([
 ]);
 const COMMANDS = new Set(COMMAND_NAMES);
 // Commands that take their own subcommand and names, collected into options.args.
-const COMMAND_GROUPS = new Set(["profile", "switch", "renew", "vscode"]);
+const COMMAND_GROUPS = new Set(["profile", "switch", "renew", "vscode", "auto"]);
 const VALUE_FLAGS = Object.freeze({
   "--profile": "profile",
   "--switch": "switch",
@@ -123,6 +125,7 @@ const VALUE_FLAGS = Object.freeze({
   "--share": "share",
   "--email": "email",
   "--log-level": "logLevel",
+  "--class": "class",
   "--log-file": "logFile",
   "--model": "model",
   "--subagent-model": "subagentModel",
@@ -228,6 +231,8 @@ Usage
   zclaude switch --restore                     put the previous global login back
   zclaude switch capture                       store the live login back into its profile
   zclaude --switch <profile>                   the same as "zclaude switch <profile>"
+  zclaude auto status [--json] [--class <c>]   which account rotation would use, and why
+  zclaude auto config [show|path|init]         the inventory: what each plan is worth, and when work moves
   zclaude renew status [--json]                is the token-renewal job scheduled, and what did it do
   zclaude renew install                        schedule it
   zclaude renew uninstall                      remove the schedule
@@ -1448,6 +1453,7 @@ const COMMAND_HANDLERS = {
   profile: cmdProfileGroup,
   switch: cmdSwitchGroup_,
   renew: cmdRenewGroup,
+  auto: cmdAutoGroup,
   vscode: cmdVscodeGroup,
   sessions: cmdSessions,
   launch: cmdLaunch,

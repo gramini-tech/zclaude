@@ -39,6 +39,7 @@
           <a href="#quota">Usage</a>
           <a href="#commands">Commands</a>
           <a href="#switch">Switch</a>
+          <a href="#auto">Auto</a>
           <a href="#zai">Z.ai</a>
           <a href="#faq">FAQ</a>
           <a href="https://github.com/gramini-tech/zclaude">GitHub</a>
@@ -314,6 +315,45 @@
           only what is within two hours of lapsing, one profile at a time, and stops at the first token the server
           rejects rather than hammering it on a timer. Removing the last Anthropic profile removes the schedule, and so
           does any uninstall.
+        </p>
+      </section>
+
+      <section class="wrap usage" id="auto" aria-labelledby="auto-title">
+        <h2 id="auto-title">Rotating by usage, when it is ready</h2>
+        <p>
+          Long work ends the same way every time: one account hits a wall while the others still have room.
+          <code>zclaude auto status</code> reads every account the way a scheduler would and says which one the work
+          should be on. <strong>It does not switch anything yet</strong> &mdash; the reading and the decision are built
+          and tested, the daemon that acts on them is not, and the first line of its output says so rather than letting
+          you assume otherwise.
+        </p>
+        <div class="terminal" role="img" aria-label="What rotation would do with four accounts">
+          <div class="terminal-bar"><span></span><span></span><span></span></div>
+          <pre><span class="prompt">$</span> zclaude auto status
+<span class="dim">rotating    no — not built yet. This is what it would do.</span>
+<span class="dim">holding     gramini</span>
+<span class="dim">leave at    95%</span>
+
+<span class="dim">  profile   plan                     tightest       capacity</span>
+<span class="sel">  gramini</span>   <span class="dim">default_claude_max_5x    dead</span>
+<span class="sel">  hoomanely</span> <span class="dim">default_claude_max_5x     55% weekly    2.00 left</span>
+<span class="sel">  max</span>       <span class="dim">default_claude_max_20x     3% weekly    18.40 left</span>
+
+<span class="dim">would       switch to max — gramini cannot be used: its login expired</span></pre>
+        </div>
+        <p>
+          Capacity rather than percentage, because 3% used on a Max 20x seat is nine times the work left in 55% used on
+          a 5x seat, and percentages cannot be compared across plans at all. The plan size comes off the credential, so
+          there is nothing to configure; an unrecognised plan is assumed to be the smallest there is, since
+          over-estimating a seat is the error that costs a second rotation. The tightest window decides, because hitting
+          either the five-hour limit or the weekly one blocks every prompt whatever the model. And work never drops to a
+          weaker model to keep going &mdash; ask with <code>--class fable</code> and an account with Fable spent but
+          Opus untouched reports no room.
+        </p>
+        <p>
+          A login that failed is never read as an empty account. The cache keeps serving its last good numbers when a
+          lookup fails, which is right for a display and a trap for a scheduler: a row showing 0% is exactly how an
+          exhausted account gets picked first.
         </p>
       </section>
 

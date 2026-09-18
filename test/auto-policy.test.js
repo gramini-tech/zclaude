@@ -198,6 +198,28 @@ describe("keeping a task on the model it is using", () => {
   });
 });
 
+describe("an account that cannot serve at all", () => {
+  it("is left immediately, without waiting for a quiet moment", () => {
+    // Found by running `auto status` against real accounts: a dead login has no
+    // usable numbers, so the ordinary "how full is it" question returned 0% and
+    // the answer was "stay" — on an account whose next prompt would fail.
+    const expired = account("gramini", { state: "dead" });
+    const fine = account("max", { weekly: 3 });
+    const chosen = decide({ accounts: [expired, fine], active: "gramini", klass: "opus", now: NOW });
+    assert.equal(chosen.action, "switch");
+    assert.equal(chosen.target, "max");
+    assert.equal(chosen.urgent, true, "the session on it is about to start failing anyway");
+    assert.match(chosen.reason, /cannot be used: its login expired/u);
+  });
+
+  it("holds and says why when there is nowhere else either", () => {
+    const expired = account("gramini", { state: "dead" });
+    const chosen = decide({ accounts: [expired], active: "gramini", klass: "opus", now: NOW });
+    assert.equal(chosen.action, "hold");
+    assert.match(chosen.reason, /nowhere else can take the work/u);
+  });
+});
+
 describe("when there is nowhere to go", () => {
   it("parks on whichever window comes back first, and moves the moment it does", () => {
     const soon = account("soon", { weekly: 100, fiveHour: 100, resetsAt: iso(NOW + HOUR) });

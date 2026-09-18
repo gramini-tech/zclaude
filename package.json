@@ -1,6 +1,6 @@
 {
   "name": "zclaude",
-  "version": "0.2.44",
+  "version": "0.2.45",
   "description": "An account manager for Claude Code: run several accounts at once, one per terminal, see how much of each plan is left, and move the global login everything else uses",
   "author": {
     "name": "Gramini Labs",
