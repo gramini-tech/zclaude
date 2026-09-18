@@ -322,8 +322,38 @@ async function cmdDetach(context) {
   return EXIT.OK;
 }
 
+/**
+ * Open the inventory in whatever editor this shell is set up for.
+ *
+ * The file is created first if it is missing, because an empty buffer with no
+ * schema in it is a worse experience than no command at all. Afterwards it is
+ * re-read: an edit that does not parse is said out loud rather than discovered
+ * three hours later by a watcher quietly falling back to its defaults.
+ */
+async function cmdEdit(context) {
+  const { env, interactive } = context;
+  const { resolveEditor, runEditor } = await import("./editor.js");
+  const path = autoConfigPath(env);
+  await initAutoConfig({ env });
+  if (!interactive) {
+    info(`The inventory is at ${path}.`);
+    return EXIT.OK;
+  }
+  const editor = resolveEditor({ env });
+  if (!editor) {
+    throw usageError("No editor could be found.", `Set $EDITOR, or open ${path} yourself.`);
+  }
+  await runEditor(editor.argv, path, { env });
+  const { ok, warnings } = await loadAutoConfig({ env });
+  for (const warning of warnings) warn(warning);
+  if (ok) success("Saved.");
+  else info("The parts zclaude could not read are using its built-in defaults.");
+  return EXIT.OK;
+}
+
 const SUBCOMMANDS = {
   status: cmdStatus,
+  edit: cmdEdit,
   config: cmdConfig,
   run: cmdRun,
   off: cmdOff,

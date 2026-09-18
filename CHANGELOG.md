@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **`zclaude auto edit`** opens the inventory in `$VISUAL` or `$EDITOR`, creating
+  it first so you never get an empty buffer with no schema in it, and re-reading
+  it afterwards so an edit that does not parse is said out loud rather than
+  discovered later by a watcher quietly falling back to its defaults. The editor
+  value is tokenized rather than handed to a shell: it comes from the
+  environment and can contain a semicolon.
+- **The status bar marks a rotation while one is happening** and at no other
+  time. A watcher that is only watching gets no extra glyph — a permanent one is
+  noise, and one that spins for ever is the most irritating thing an extension
+  can do.
+- **What this is, said plainly**, in the README. Holding several accounts is not
+  a ToS violation; zclaude's own process does call the usage endpoint with your
+  token, auto mode multiplies how often; and rotating to keep working past a cap
+  sits closer to "limit evasion" than switching by hand. That is a judgement you
+  are making, which is why nothing rotates without a session that asked for it.
+
+
 A real rotation, watched end to end: `gramini → max`, waiting ninety seconds for
 a quiet moment first, then settling on the new account instead of hopping back.
 The slot was put back afterwards with `zclaude switch`.

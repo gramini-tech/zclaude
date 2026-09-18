@@ -500,6 +500,7 @@ zclaude auto status --json             # the same, for scripts
 zclaude auto config                    # the inventory, defaults included
 zclaude auto config path               # where it lives
 zclaude auto config init               # write the defaults out, with the explanations
+zclaude auto edit                      # open it in $VISUAL or $EDITOR
 zclaude auto run                       # start the watcher in the background
 zclaude auto run --dry-run             # decide out loud, switch nothing
 zclaude auto off                       # stop it; the login stays where it is
@@ -603,6 +604,29 @@ goes quiet is one long turn. It settled once it arrived instead of hopping back.
 And the class it reasons about changed from Opus to Fable partway through,
 because that is what the transcripts said was in use — the ceiling that binds
 followed it.
+
+### What this is, said plainly
+
+Holding several Claude accounts is not a Terms of Service violation. What gets
+accounts actioned is putting subscription OAuth tokens into third-party
+harnesses, sharing or reselling accounts, and deliberate limit evasion. zclaude
+launches the official `claude` binary with the official credential in the
+location Claude Code reads, which is the right side of the harness line.
+
+Two things about auto mode deserve saying before you turn it on rather than
+after.
+
+zclaude's own process calls `api.anthropic.com/api/oauth/usage` with your
+account's token, and refreshes tokens against `platform.claude.com` using Claude
+Code's public client id. That is zclaude acting as the client, not Claude Code.
+It is read-only and budgeted, and auto mode multiplies how often it happens.
+
+And rotating accounts specifically to keep working past a cap sits closer to
+"limit evasion" than switching by hand does. That is a judgement you are making,
+not one the tool makes quietly on your behalf, which is why nothing rotates
+without a session that asked for it, why `--dry-run` shows the whole policy
+before it is allowed to act, and why every decision is recorded with the numbers
+behind it.
 
 ### The inventory
 
@@ -939,6 +963,7 @@ MY_TEAM_MCP_TOKEN=...
 | `ZCLAUDE_ALLOW_SETTINGS_OVERRIDE=1`                                                                                                                  | launch even when a settings `env` block overrides this session                                                    |
 | `ZCLAUDE_NO_UPDATE_CHECK=1`                                                                                                                          | skip the daily check for a newer version                                                                          |
 | `ZCLAUDE_AUTO_DAEMON=1`                                                                                                                              | set on the watcher's own process; you never set this yourself                                                     |
+| `ZCLAUDE_EDITOR`                                                                                                                                     | which editor `zclaude auto edit` opens; `$VISUAL` then `$EDITOR` otherwise                                        |
 | `ZCLAUDE_INSTALL_NO_VSIX=1`                                                                                                                          | installer: do not offer or install the VS Code status bar item                                                    |
 | `ZCLAUDE_INSTALL_NO_RENEW=1`                                                                                                                         | installer: do not offer or install the background token renewal                                                   |
 | `ZCLAUDE_INSTALL_KIND`                                                                                                                               | force how `self-update` and `self-uninstall` work: `installer`, `npm` or `checkout`                               |

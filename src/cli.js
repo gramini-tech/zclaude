@@ -238,6 +238,7 @@ Usage
   zclaude --auto <profile> [args...]           launch a session that may be moved between accounts
   zclaude auto status [--json] [--class <c>]   which account rotation would use, and why
   zclaude auto config [show|path|init]         the inventory: what each plan is worth, and when work moves
+  zclaude auto edit                            open the inventory in $VISUAL or $EDITOR
   zclaude auto run                             start the watcher in the background
   zclaude auto run --dry-run                   decide out loud and switch nothing
   zclaude auto run --daemon [--self-lease]     be the watcher in this process; auto run calls this

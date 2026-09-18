@@ -424,13 +424,18 @@ function actionFor(profile, active, usage) {
  * icons, and a generic person glyph with an address beside it identifies
  * nothing.
  */
-function statusBarText(status, version) {
+function statusBarText(status, version, auto = null) {
   if (version !== undefined && !isSupported(version)) return "zc $(warning)";
   if (!status) return "zc";
   if (status.unreadable) return "zc $(warning)";
   const email = status.account?.email;
   if (!email) return "zc $(circle-slash)";
-  return `zc $(account) ${email.split("@", 1)[0]}`;
+  // A marker only while the login is genuinely being moved for you, so the
+  // account name on screen can be expected to change. A watcher that is only
+  // watching gets nothing: a permanent extra glyph is noise, and one that spins
+  // for ever is the most irritating thing an extension can do.
+  const rotating = auto?.running && auto.rotating ? "$(sync) " : "";
+  return `zc ${rotating}$(account) ${email.split("@", 1)[0]}`;
 }
 
 /**

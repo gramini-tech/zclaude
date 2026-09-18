@@ -153,10 +153,13 @@ async function refreshStatusBar({ force = false } = {}) {
     const { status, error } = await readStatus();
     if (error) log(`zclaude switch --status: ${error}`);
     item.text = statusBarText(status, installed);
+    // Set again below once the watcher has been asked, so the first paint does
+    // not wait on it.
     // The hover carries the whole table, so it needs what the picker needs.
     // All of it is cached by zclaude for a minute, which is why this can run on
     // every window focus without becoming a network call each time.
     const [profiles, usage, busy, auto] = await Promise.all([readProfiles(), readUsage(force), readBusy(), readAuto()]);
+    item.text = statusBarText(status, installed, auto);
     item.tooltip = panel(hoverPanel({ status, profiles, usage, busy, auto, version: installed }));
   } catch (error) {
     // Whatever went wrong, the item stays, saying so.

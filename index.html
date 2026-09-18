@@ -319,41 +319,41 @@
       </section>
 
       <section class="wrap usage" id="auto" aria-labelledby="auto-title">
-        <h2 id="auto-title">Rotating by usage, when it is ready</h2>
+        <h2 id="auto-title">Rotating by usage</h2>
         <p>
           Long work ends the same way every time: one account hits a wall while the others still have room.
-          <code>zclaude auto status</code> reads every account the way a scheduler would and says which one the work
-          should be on. <strong>It does not switch anything yet</strong> &mdash; the reading and the decision are built
-          and tested, the daemon that acts on them is not, and the first line of its output says so rather than letting
-          you assume otherwise.
+          <code>zclaude --auto &lt;profile&gt;</code> starts a session that may be moved between accounts as they fill
+          up, and <code>zclaude auto status</code> says which one it would use and why. Rotation only ever happens for a
+          session that asked for it &mdash; an open editor window is not consent to move the login everything else on
+          the machine shares.
         </p>
-        <div class="terminal" role="img" aria-label="What rotation would do with four accounts">
+        <div class="terminal" role="img" aria-label="One real rotation between three accounts">
           <div class="terminal-bar"><span></span><span></span><span></span></div>
-          <pre><span class="prompt">$</span> zclaude auto status
-<span class="dim">rotating    no — not built yet. This is what it would do.</span>
-<span class="dim">holding     gramini</span>
-<span class="dim">leave at    95%</span>
-
-<span class="dim">  profile   plan                     tightest       capacity</span>
-<span class="sel">  gramini</span>   <span class="dim">default_claude_max_5x    dead</span>
-<span class="sel">  hoomanely</span> <span class="dim">default_claude_max_5x     55% weekly    2.00 left</span>
-<span class="sel">  max</span>       <span class="dim">default_claude_max_20x     3% weekly    18.40 left</span>
-
-<span class="dim">would       switch to max — gramini cannot be used: its login expired</span></pre>
+          <pre><span class="prompt">$</span> zclaude auto run --dry-run
+<span class="dim">  wait — gramini is at 50% of its weekly; something is mid-answer</span>
+<span class="dim">  …ninety seconds of that, because the session never stopped writing</span>
+<span class="ok">  switched</span> <span class="dim">— gramini → max</span>
+<span class="dim">  stay — 3% of its weekly</span>
+<span class="dim">  stay — 4% of its Fable</span></pre>
         </div>
         <p>
-          Capacity rather than percentage, because 3% used on a Max 20x seat is nine times the work left in 55% used on
-          a 5x seat, and percentages cannot be compared across plans at all. The plan size comes off the credential, so
-          there is nothing to configure; an unrecognised plan is assumed to be the smallest there is, since
-          over-estimating a seat is the error that costs a second rotation. The tightest window decides, because hitting
-          either the five-hour limit or the weekly one blocks every prompt whatever the model. And work never drops to a
-          weaker model to keep going &mdash; ask with <code>--class fable</code> and an account with Fable spent but
-          Opus untouched reports no room.
+          Four things in that trace are the whole design. It <strong>waited rather than landing mid-answer</strong>, and
+          gave up waiting after ninety seconds because a session that never goes quiet is one long turn. It
+          <strong>settled once it arrived</strong> instead of hopping back. And the class it reasons about changed from
+          Opus to Fable partway through, because that is what the transcripts said was in use &mdash; work never drops
+          to a weaker model to keep going, so the ceiling that binds followed it.
         </p>
         <p>
-          A login that failed is never read as an empty account. The cache keeps serving its last good numbers when a
-          lookup fails, which is right for a display and a trap for a scheduler: a row showing 0% is exactly how an
-          exhausted account gets picked first.
+          Accounts are compared in units of work rather than percentages, because 3% used on a Max 20x seat is nine
+          times the room left in 55% used on a 5x seat. The plan size comes off the credential, so there is nothing to
+          configure. A login that failed is never read as an empty account: the cache keeps serving its last good
+          numbers when a lookup fails, which is right for a display and a trap for a scheduler.
+        </p>
+        <p>
+          <code>zclaude auto run --dry-run</code> runs the entire loop and makes none of the decisions, which is how a
+          thing that moves your login while you are not watching earns the right to do it. Everything it owns says when
+          it is dead rather than relying on cleanup: a watcher killed outright, or a machine that loses power, leaves a
+          lock that reads as stale to whoever looks next.
         </p>
       </section>
 
