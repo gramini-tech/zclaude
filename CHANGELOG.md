@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+**The extension's minimum zclaude is 0.2.53**, the version that first had
+`auto pick`. It had been left at the one that first had `switch`, so an older
+install answered that one call with "`zclaude auto pick` is not a command" and
+the editor reported "No account could be chosen" — blaming the accounts for a
+version mismatch. The gate for that already existed and simply had not been
+moved. When a lookup does fail, the reason zclaude gave is now what you see.
+
+
 **Auto is a row in the hover's table**, alongside the accounts, saying which one
 it would use and why, with a `use` link. It was only in the click list before,
 which is the less-visited of the two surfaces and the reason it still looked

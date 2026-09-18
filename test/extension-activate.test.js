@@ -117,6 +117,11 @@ function loadExtension(answers) {
     },
     runJson: async (binary, args) => {
       asked.push(args);
+      // Mirrors the real one: a command that failed with nothing on stdout is
+      // an error rather than a null answer, which is the difference between
+      // "no account has room" and "your zclaude is too old".
+      const failed = answers.run?.(args);
+      if (failed && !failed.ok && !failed.stdout) return { data: null, error: failed.stderr };
       return { data: answers.json?.(args) ?? null, error: null };
     },
   };
@@ -296,6 +301,32 @@ describe("the extension in a window", () => {
     assert.deepEqual(loaded.ran, [["switch", "home", "--yes"]]);
   });
 
+  it("says what zclaude actually said when Auto cannot choose", async () => {
+    // The failure that sent me looking: an installed zclaude too old to have
+    // `auto pick` answered with an error, and the extension reported "no
+    // account could be chosen" — blaming the accounts for a version mismatch.
+    const loaded = loadExtension(
+      answers({
+        json: (args) => {
+          if (args[0] === "switch") return { owner: "work" };
+          if (args[0] === "profile") return PROFILES;
+          return null; // as an older zclaude answers a command it does not have
+        },
+        run: (args) =>
+          args[1] === "pick"
+            ? { ok: false, code: 2, stdout: "", stderr: "`zclaude auto pick` is not a command." }
+            : { ok: true, code: 0, stdout: "", stderr: "" },
+      }),
+    );
+    loaded.extension.activate({ subscriptions: [] });
+    await loaded.recorded.commands.get("zclaude.auto")();
+    assert.match(loaded.recorded.messages.at(-1), /is not a command/u);
+    assert.ok(
+      loaded.ran.every((args) => args[0] !== "switch"),
+      "and nothing is switched on the strength of a failed lookup",
+    );
+  });
+
   it("marks a Z.ai row as unpickable before it is picked, and refuses it if it is", async () => {
     // It used to accept the pick and explain afterwards, with three layers
     // below the list refusing the same thing again. Safe, and still wrong: a
@@ -335,7 +366,13 @@ describe("the extension in a window", () => {
 
   it("reports a failed switch instead of claiming it worked", async () => {
     const loaded = loadExtension(
-      answers({ run: () => ({ ok: false, code: 1, stdout: "", stderr: "the Keychain is locked" }) }),
+      // Only the switch fails; the reads that build the list still answer.
+      answers({
+        run: (args) =>
+          args[0] === "switch"
+            ? { ok: false, code: 1, stdout: "", stderr: "the Keychain is locked" }
+            : { ok: true, code: 0, stdout: "", stderr: "" },
+      }),
     );
     loaded.extension.activate({ subscriptions: [] });
     await click(loaded, (items) => items.find((item) => item.name === "home"));

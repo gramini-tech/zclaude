@@ -13,7 +13,14 @@
 "use strict";
 
 /** The first zclaude that has `switch`, `--json` status and usage. */
-const MINIMUM_ZCLAUDE = "0.2.18";
+/**
+ * Raised whenever this extension starts calling a command an older zclaude does
+ * not have. It was left at the version that first had `switch`, so an install
+ * that predated `auto pick` answered that one call with an error and the
+ * extension reported "no account could be chosen" — blaming the accounts for a
+ * version mismatch.
+ */
+const MINIMUM_ZCLAUDE = "0.2.53";
 
 const ACTIONS = Object.freeze({
   refresh: "zclaude.action.refresh",
@@ -47,7 +54,7 @@ function isSupported(version) {
 /** What to say about a zclaude that predates this extension. */
 function outdatedText(version) {
   return version
-    ? `zclaude ${version} is older than ${MINIMUM_ZCLAUDE}, which is what this needs to switch accounts.`
+    ? `zclaude ${version} is older than ${MINIMUM_ZCLAUDE}, which is what this build of the extension needs.`
     : `This needs zclaude ${MINIMUM_ZCLAUDE} or newer.`;
 }
 

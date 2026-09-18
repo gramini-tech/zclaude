@@ -88,9 +88,9 @@ function profileRow(profile, { active, usage }) {
 
 /** Which account auto would start on, and why. */
 async function readPick() {
-  if (!binary) return null;
-  const { data } = await runJson(binary, ["auto", "pick"]);
-  return data?.profile ? data : null;
+  if (!binary) return { pick: null, error: "zclaude was not found" };
+  const { data, error } = await runJson(binary, ["auto", "pick"]);
+  return { pick: data?.profile ? data : null, error };
 }
 
 /**
@@ -103,9 +103,13 @@ async function readPick() {
  */
 async function switchAuto() {
   if (!locate()) return;
-  const picked = await readPick();
+  const { pick: picked, error } = await readPick();
   if (!picked) {
-    tell("No account could be chosen. `zclaude auto status` says why.", "error");
+    // The reason zclaude gave, rather than a guess. "No account could be
+    // chosen" blamed the accounts for what was usually something else.
+    tell(
+      error ? `Auto could not choose an account: ${error}` : "No account has room. `zclaude auto status` says more.",
+    );
     return;
   }
   const profiles = await readProfiles();
@@ -127,7 +131,7 @@ async function readAuto() {
   if (!binary) return null;
   const [status, chosen] = await Promise.all([runJson(binary, ["auto", "status"]), readPick()]);
   if (!status.data) return null;
-  return { ...status.data, pick: chosen };
+  return { ...status.data, pick: chosen.pick };
 }
 
 /**
