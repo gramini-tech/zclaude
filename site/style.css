@@ -537,3 +537,24 @@ td:last-child {
     white-space: normal;
   }
 }
+
+/* The maker's mark in the footer. Sized by height so the wordmark keeps its
+   own proportions, and dimmed until hover: it is a credit, not a call to
+   action, and it sits under the fine print about who this is not affiliated
+   with. */
+.foot .built {
+  margin: 1.1rem 0 0.6rem;
+}
+
+.foot .built img {
+  height: 2.2rem;
+  width: auto;
+  vertical-align: -0.9rem;
+  opacity: 0.75;
+  transition: opacity 0.15s ease;
+}
+
+.foot .built a:hover img,
+.foot .built a:focus-visible img {
+  opacity: 1;
+}

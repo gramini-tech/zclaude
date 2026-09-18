@@ -1,10 +1,8 @@
 # zclaude
 
-Run several Claude Code accounts at once, one per terminal. `zclaude` launches
-[Claude Code](https://claude.com/claude-code) with a profile you pick: a work account, a personal
-account, or a [Z.ai GLM Coding Plan](https://z.ai/subscribe). Everything it configures travels in the
-environment of that one `claude` process, so the accounts never collide and your normal setup stays
-where it is.
+An account manager for [Claude Code](https://claude.com/claude-code). Run several accounts at the
+same time, see how much of each plan is left before you pick one, and move the login that everything
+else on the machine uses.
 
 <p align="center">
   <img src="site/logo.svg" alt="zclaude" width="560">
@@ -12,23 +10,54 @@ where it is.
 
 <p align="center"><a href="https://vipincr.github.io/zclaude/">vipincr.github.io/zclaude</a></p>
 
-## The problem
+## What it does
 
-Claude Code keeps one login per machine. Sign in with a second account and the first one is signed
-out, including in the VS Code extension. If you have a work account and a personal one, or two
-clients, you end up logging in and out all day.
+Claude Code keeps one login per machine. Sign in with a second account and the first is signed out,
+the VS Code extension included, so a work account and a personal one mean logging in and out all day.
+And when you are near a limit there is nothing that tells you which of your accounts still has room.
 
-Z.ai has the mirror-image problem. Every published recipe for running GLM models in Claude Code puts
-the API key in plaintext in `~/.claude/settings.json` or a shell rc file, and then Claude Code is
-stuck on Z.ai until you edit it back.
+zclaude answers both. Three things, in the order you will use them:
 
-zclaude solves both with **profiles**. Each profile has its own credentials and its own Claude Code
-configuration directory, scoped to the terminal you start it from. Three terminals can hold three
-different accounts at the same time, and the login you already had keeps working everywhere else.
+**Run several accounts at once.** Each account gets a profile with its own credentials and its own
+Claude Code configuration directory, scoped to the terminal you start it from. Three terminals, three
+accounts, at the same time, and the login you already had keeps working everywhere else.
 
-What a profile really holds is a billing context. A company seat and a personal Max subscription on
-the same email address are two accounts with separate usage, so each gets its own profile, and
-`profile list` prints the organization next to the address to keep them apart.
+```sh
+zclaude profile add work        # a second account, with its own login
+zclaude work                    # this terminal runs on it
+```
+
+**See what is left before you choose.** Every account's rolling 5-hour window, its week, each model
+window metered separately, when each comes back in your own time zone, and any pay-as-you-go credit.
+The menu shows it while you pick; `profile list --usage` spells it out.
+
+```
+gramini    anthropic vipinr@gramini.com · Hoomanely Inc    shares config + history
+           5 hours       80%  resets in 2h 30m (07:50 pm)
+           week          21%  resets in 6d 7h (Thu, 24 Sept, 12:30 am)
+           Fable week    33%  resets in 6d 7h (Thu, 24 Sept, 12:30 am)
+           credits spent
+```
+
+**Move the global login.** Profiles cover the terminals you start with zclaude. `switch` moves the
+one login that plain `claude`, the VS Code extension and anything else shelling out to Claude Code
+all share — credential and identity together, with the previous one captured back and backed up
+first, and everything else in `~/.claude.json` left exactly as it was.
+
+```sh
+zclaude switch work             # everything on this machine is now work's account
+zclaude switch --restore        # put the previous one back
+```
+
+Around those: a VS Code status bar item that shows the same table and switches from a hover, a count
+of what is already running on each account, a renewal job that keeps a rarely-used login from going
+stale, and a one-key repair when one has expired anyway.
+
+A profile really holds a billing context. A company seat and a personal Max subscription on the same
+email address are two accounts with separate usage, so each gets its own profile, and `profile list`
+prints the organization next to the address to keep them apart. A
+[Z.ai GLM Coding Plan](https://z.ai/subscribe) is one more provider a profile can have, and it works
+the same way from the outside.
 
 ## Install
 
@@ -110,7 +139,39 @@ That is the whole idea. `zclaude` on its own shows a menu; naming a profile skip
 you type is passed to `claude`, so `zclaude mcp list` and `zclaude -p "hi"` still work, and profile
 names can never be one of claude's own commands.
 
-## Profiles
+## Several accounts at once
+
+This is the thing zclaude exists for. Say you have a company account, a client account and a personal
+one:
+
+```sh
+zclaude profile add company --provider anthropic --share all
+zclaude profile add client  --provider anthropic --share config
+zclaude profile add personal --provider anthropic --share none
+```
+
+One of these can be the same email as another. What makes them separate accounts is the
+organization: a seat on a company plan and a personal subscription are billed and metered apart, and
+Claude Code treats them as different logins. Give each one a profile.
+
+Then, in three terminals:
+
+```sh
+zclaude company        # terminal 1
+zclaude client         # terminal 2
+zclaude personal       # terminal 3
+```
+
+All three run at once. Your original login is untouched, so a fourth terminal running plain `claude`,
+and the VS Code extension, stay on the account they were on. Each profile keeps its own transcripts,
+permissions, trust decisions and MCP servers.
+
+Claude Code keys its credential store by the config directory: the Keychain item is
+`Claude Code-credentials` for the default login and `Claude Code-credentials-<8 hex>` for a profile,
+where the suffix is a hash of the directory path. `zclaude profile show <name>` prints the exact item
+name, which is what you would look for in Keychain Access.
+
+### What a profile is
 
 A profile is a name plus four things:
 
@@ -195,7 +256,7 @@ personal subscription billed to the individual. They have separate usage, so the
 profiles, and the organization is what tells them apart at a glance. A personal organization, which
 Claude names after the account that owns it, is shown as `personal`.
 
-### How much of each plan is left
+## How much of each plan is left
 
 Picking a profile is usually a question about quota, so the menu and `profile list --usage` answer
 it. A row carries the rolling 5-hour window, the week, and each model window metered separately
@@ -225,12 +286,121 @@ row shows what is left (`credits $37.66 left`); when the account has spent it, `
 a spend limit stopped it, `credit limit reached`. An account that simply never turned it on says
 nothing, since that is a choice rather than news. A Z.ai coding plan has no equivalent tier.
 
+## When a login has expired
+
+A refresh token that the server has rejected reads as `login expired`, and a profile with no usable
+token at all reads as `sign in to see usage`. Neither is fixed by waiting, so every surface that
+shows the state also shows the way out of it.
+
+```
+gramini    anthropic vipinr@gramini.com · Hoomanely Inc    shares config + history
+           login expired
+           fix it: run `zclaude profile login gramini`
+```
+
+In the launch menu the same thing appears on the detail line under the highlighted row, and **`s`
+signs that profile in** without leaving the picker — the sign-in runs, then the launch carries on
+into the profile you chose, because signing in is why you chose it. The key is only offered on a row
+that needs it.
+
+The built-in rows are handled separately, because neither is a registered profile. The Z.ai row goes
+through `zclaude login`, which stores a key rather than an account. The plain `Claude Code` row is
+the default installation's own login: Claude Code asks for that itself the moment you launch, so
+there is nothing for zclaude to run and no key is offered.
+
+In the editor, the hover's action column becomes a **sign in** link on any row in this state, in
+place of `switch`. It opens a terminal with the command already typed, because the flow needs a
+browser and a code coming back, which an extension has nowhere to host. Switching is not offered:
+moving that account into the global slot would put a login there that cannot answer.
+
 Usage costs a network call per profile, so it never happens on the launch path, never without a
 terminal, and is off entirely with `--no-usage` or `ZCLAUDE_NO_USAGE=1`. Answers are cached for a
 minute and a `Retry-After` is obeyed across every surface, so the CLI and the extension cannot
 saturate the endpoint between them. Numbers served from that cache are marked `(cached)`.
 
-### What is already running
+## Switching the global login
+
+Profiles cover the terminals you start with zclaude. They do nothing for plain `claude`, for the VS
+Code extension, or for anything else that shells out to Claude Code: those use the machine's one
+global login. `switch` moves that login to a profile's account, in place.
+
+```sh
+zclaude switch work              # the global login is now work's account
+zclaude switch --status          # who holds it, and what is backed up
+zclaude switch --restore         # put the previous one back
+zclaude switch work --dry-run    # say what would change, change nothing
+zclaude --switch work            # the same as the first line
+```
+
+Your projects, history, sessions and MCP logins stay exactly where they are: an account is two
+things, and only those two move. The credential in the Keychain item Claude Code reads, and the
+`oauthAccount` block of `~/.claude.json`. Everything else in that file — the trust decisions, the
+tool permissions, your MCP servers, the machine id — is read, kept and written back untouched.
+
+What happens on a switch, in order:
+
+1. The locks Claude Code uses for its own token refresh are taken first, so a swap cannot land in
+   the middle of one.
+2. The login being replaced is **captured back** into the profile it belongs to. Claude Code
+   refreshes tokens as it works and the server rotates the refresh token when it does, so the live
+   copy can be a generation ahead of the profile's own. Without this step a round trip would strand
+   that account.
+3. It is backed up and the backup is read back. A backup that cannot be verified stops the switch
+   before anything is overwritten.
+4. The new credential is written, then the identity. A failure at either step puts back what was
+   there.
+
+`zclaude switch --status` shows the account in the slot, which profile it belongs to, and the
+backups it can restore (the last ten are kept). Two things it will refuse: a profile with no stored
+login or a dead refresh token, and a Z.ai profile — a GLM plan is an endpoint plus a key, which
+reach Claude Code through the environment rather than through its credential store, so the answer
+there stays `zclaude <profile>`.
+
+A Claude Code session that is already running keeps the credential it read at startup; on macOS that
+cache lasts about half a minute, so a switch reaches a live session shortly rather than instantly.
+
+## In VS Code
+
+`zc` in the status bar, with the account that is signed in beside it. **Hovering it opens the panel**:
+every account as a row, a coloured bar and a percentage for each window, when each one comes back,
+how many sessions are already on it, and `switch` as a link on any row that can take one. Clicking
+opens a plain list of accounts for picking, which is the one thing a QuickPick is good at.
+
+The popup is a hover because that is the only anchored surface an extension has. VS Code renders
+Copilot's version of this with an internal `DomWidget` that extensions cannot reach, and there is no
+API to open a hover on command — so the rich view lives in the hover and the click stays simple.
+
+```sh
+zclaude vscode install      # into every editor found on this machine
+zclaude vscode status       # which have it, at which version
+zclaude vscode uninstall    # take it out again
+```
+
+The installer offers this when it finds an editor, and installs it without asking when there is no
+terminal to ask on (a `curl | bash`). Set `ZCLAUDE_INSTALL_NO_VSIX=1` to skip it. "VS Code" means
+anything that speaks the `code` CLI: VS Code, Insiders, Cursor, Windsurf and VSCodium are each
+found and installed separately, on PATH and in the usual application directories. A new window, or
+Developer: Reload Window, picks it up.
+
+The list also adds a profile (in a terminal, since signing in needs a browser), removes one behind a
+confirmation, restores the previous global login, and re-fetches usage. That last one matters more
+than it sounds: percentages go stale while a list sits open, and it is the retry when the usage API
+was rate limited or unreachable.
+
+The extension needs zclaude 0.2.18 or newer, which is the version that has `switch`. An older one
+answers every `--json` call with nothing, so the item marks itself with a warning and offers to run
+`zclaude self-update` rather than showing an empty list.
+
+The extension holds no credential logic. It finds `zclaude`, shells out to it asking for `--json`,
+and renders the answer, so every Keychain read, every backup and every write to `~/.claude.json`
+happens in one place with one set of tests. If VS Code was started from the dock on macOS its PATH is
+not your shell's, so the extension also looks in `~/.local/bin`, `~/bin`, `~/.zclaude/app`, the npm
+global bin and Homebrew; the `zclaude.path` setting covers anywhere else.
+
+The packaged `extension/zclaude.vsix` is committed to this repository and ships inside the npm
+package, which is the whole distribution story for now. It is not on the Marketplace yet.
+
+## What is already running
 
 Two terminals on one account share its five-hour window. zclaude tracks what it
 starts so you can see that before adding a third, rather than after the limit arrives.
@@ -272,6 +442,128 @@ processes says when they last did anything, so they are listed as open rather th
 Two limits worth stating. This is one machine: a session on your laptop is invisible to your desktop
 and both spend the same account. And tracking is an aid rather than a gate, so a session that cannot
 be recorded still runs, it just does not appear. `ZCLAUDE_NO_SESSIONS=1` turns the whole thing off.
+
+## Keeping tokens alive
+
+A profile you launch often looks after itself: Claude Code refreshes its token as it works. A profile
+you have not opened for weeks does not. Its access token lapses in hours, and the refresh token
+behind it carries an expiry about a month out, so a personal account you use twice a term can quietly
+go dead between uses.
+
+```sh
+zclaude renew install      # schedule it
+zclaude renew status       # is it scheduled, and what did it do last time
+zclaude renew run          # do it now; this is what the scheduler calls
+zclaude renew uninstall    # remove the schedule
+```
+
+The job runs every six hours and refreshes **only** what is inside two hours of expiring, so a
+profile you use is left alone entirely. Where it lives depends on the system: a LaunchAgent at
+`~/Library/LaunchAgents/com.zclaude.renew.plist` on macOS, a systemd user timer under
+`~/.config/systemd/user/` on Linux, and a marked `crontab` line where systemd is not in charge. On
+Windows it prints the `schtasks` command rather than running it.
+
+Because it runs unattended it is deliberately timid. It works one profile at a time; the first
+refresh token the server rejects ends the run and that profile is quarantined rather than retried on
+a timer, until you sign it in again; it never touches the global login, which belongs to Claude Code
+and to `zclaude switch`; and a Keychain that will not answer stops the run with a message instead of
+being asked again every six hours. `zclaude renew status` shows the last run, anything quarantined,
+and whether your account rotates refresh tokens — which decides whether renewing extends the lineage
+or merely keeps the access token fresh.
+
+One thing it does before anything else: if a profile's account is also the global login, it takes the
+live credential back into that profile. Claude Code refreshes the token in the slot as it works and
+the server rotates the refresh token, so the profile's own copy falls behind and is rejected — which
+looks exactly like an expired login and is nothing of the sort. `zclaude switch capture` does the
+same by hand, and `profile doctor` says when it is needed. The capture only ever moves forwards: a
+profile holding the newer token keeps it.
+
+Removing the last Anthropic profile removes the schedule with it, and every uninstall path
+(`zclaude self-uninstall`, `install.sh --uninstall`) takes the plist, timer or crontab line away.
+`--keep-config` keeps the profiles, so it keeps the schedule.
+
+## Z.ai GLM Coding Plan
+
+One of the two providers a profile can have, and the reason for the `z`. From the outside it behaves
+like any other profile: it appears in the menu, it carries its own usage, and naming it runs
+a terminal on it. Underneath it is different in one way that matters, and the difference shows up in
+`switch` below: a GLM plan is an endpoint plus a key, reaching Claude Code through the environment
+rather than through its credential store, so it can hold a terminal but never the global login.
+
+The `zai` profile signs in through Z.ai's own browser flow, mints a coding-plan key on your account,
+stores it in the macOS Keychain (or a 0600 file elsewhere) and starts Claude Code on GLM models.
+
+```sh
+zclaude --profile zai            # or pick it from the menu
+zclaude login                    # sign in now, then pick models and launch
+zclaude login --api-key          # paste a key from the Z.ai console instead
+zclaude login --no-browser       # print the URL instead of opening a browser
+zclaude login --paste            # always paste the redirect URL back
+zclaude models                   # what your plan can use
+zclaude --reconfigure            # re-run the model wizard
+zclaude logout                   # forget the stored key
+```
+
+On the first Z.ai launch:
+
+1. Choosing Z.ai with no stored key opens `chat.z.ai` in your browser. Approve the request.
+2. On macOS the redirect is captured automatically (the browser asks once whether to open "zclaude
+   OAuth Callback"). On Linux and Windows, paste the `zcode://...` URL the browser lands on.
+3. zclaude exchanges the code, mints a key named `zclaude` on your account, checks it against the
+   models endpoint and stores it.
+4. The model wizard asks for a primary model, a subagent model and a fast helper model, listing what
+   your plan can actually use, and offers to save the answer per project or as your user default.
+5. `claude` starts on GLM. Quit it and you are back to a clean shell.
+
+**More than one Z.ai account** works the same way as Claude accounts: `zclaude profile add glm-work
+--provider zai` gives that plan its own key, stored under its own Keychain account, with its own
+quota reported at launch. `ZAI_API_KEY` in your shell applies to the built-in `zai` profile only; a
+named profile always uses its own stored key, because an environment variable cannot say which
+profile it belongs to.
+
+### What gets set in the child process
+
+| Variable                                                       | Value                               |
+| -------------------------------------------------------------- | ----------------------------------- |
+| `ANTHROPIC_AUTH_TOKEN`                                         | the stored key                      |
+| `ANTHROPIC_BASE_URL`                                           | `https://api.z.ai/api/anthropic`    |
+| `ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_OPUS_MODEL`              | primary model                       |
+| `ANTHROPIC_DEFAULT_SONNET_MODEL`, `CLAUDE_CODE_SUBAGENT_MODEL` | subagent model                      |
+| `ANTHROPIC_DEFAULT_HAIKU_MODEL`                                | fast model                          |
+| `CLAUDE_CODE_AUTO_COMPACT_WINDOW`                              | context window of the primary model |
+| `API_TIMEOUT_MS`                                               | `3000000`                           |
+| `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`                     | `1`                                 |
+
+A named profile also gets `CLAUDE_CONFIG_DIR`, set last so nothing in your config files can redirect
+it. `ANTHROPIC_API_KEY` is removed from the Z.ai child environment to avoid Claude Code's
+auth-conflict prompt. `CLAUDE_SECURESTORAGE_CONFIG_DIR`, `ANTHROPIC_CONFIG_DIR` and
+`ANTHROPIC_PROFILE` are removed from every child environment, because each of them would quietly
+repoint a profile's credentials. Models with a 1M context (`glm-5.3`, `glm-5.3-flash`, `glm-5.2`) get
+the `[1m]` suffix Claude Code expects.
+
+`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and `CLAUDE_CODE_OAUTH_TOKEN` inherited from your shell
+override an account login. zclaude reports them and carries on, because you may have set them
+deliberately. It never sets `CLAUDE_CODE_OAUTH_TOKEN` itself: Claude Code deletes the default
+Keychain item when that variable is present
+([claude-code#37512](https://github.com/anthropics/claude-code/issues/37512)).
+
+### How the sign-in works
+
+Z.ai does not document a CLI login. Its ZCode desktop app uses a standard OAuth authorization-code
+flow against `chat.z.ai` with a public client id, and the same flow is used by zcode-cli, oh-my-pi and
+CLIProxyAPI. zclaude does the same:
+
+1. `GET https://chat.z.ai/api/oauth/authorize` with `redirect_uri=zcode://zai-auth/callback` and a
+   random state.
+2. Z.ai only allows that custom scheme as redirect target. On macOS, zclaude compiles a tiny
+   background AppleScript app, registers it as the temporary `zcode://` handler, and restores the
+   previous handler when done (a recovery journal cleans up if the process dies). Elsewhere you paste
+   the URL.
+3. `POST https://zcode.z.ai/api/v1/oauth/token` exchanges the code for a short-lived token.
+4. Z.ai's business API turns that into a durable coding-plan key: login, default org and project,
+   find-or-create a key named `zclaude`, copy its secret.
+5. The key is checked against `GET https://api.z.ai/api/coding/paas/v4/models`, which also yields the
+   model list for the wizard.
 
 ## Passing arguments to Claude Code
 
@@ -337,212 +629,6 @@ With **shared history**, `projects/` is shared, so a session started under any p
 can be resumed from another, and `--continue` picks the most recent session in the directory whoever
 wrote it. With `--share config` or `--share none`, a profile sees only its own sessions and an id
 from elsewhere will not be found. `zclaude profile list` shows which profiles share history.
-
-## Multiple Claude accounts
-
-This is the case zclaude was extended for. Say you have a company account, a client account and a
-personal one:
-
-```sh
-zclaude profile add company --provider anthropic --share all
-zclaude profile add client  --provider anthropic --share config
-zclaude profile add personal --provider anthropic --share none
-```
-
-One of these can be the same email as another. What makes them separate accounts is the
-organization: a seat on a company plan and a personal subscription are billed and metered apart, and
-Claude Code treats them as different logins. Give each one a profile.
-
-Then, in three terminals:
-
-```sh
-zclaude company        # terminal 1
-zclaude client         # terminal 2
-zclaude personal       # terminal 3
-```
-
-All three run at once. Your original login is untouched, so a fourth terminal running plain `claude`,
-and the VS Code extension, stay on the account they were on. Each profile keeps its own transcripts,
-permissions, trust decisions and MCP servers.
-
-Claude Code keys its credential store by the config directory: the Keychain item is
-`Claude Code-credentials` for the default login and `Claude Code-credentials-<8 hex>` for a profile,
-where the suffix is a hash of the directory path. `zclaude profile show <name>` prints the exact item
-name, which is what you would look for in Keychain Access.
-
-## Switching the global login
-
-Profiles cover the terminals you start with zclaude. They do nothing for plain `claude`, for the VS
-Code extension, or for anything else that shells out to Claude Code: those use the machine's one
-global login. `switch` moves that login to a profile's account, in place.
-
-```sh
-zclaude switch work              # the global login is now work's account
-zclaude switch --status          # who holds it, and what is backed up
-zclaude switch --restore         # put the previous one back
-zclaude switch work --dry-run    # say what would change, change nothing
-zclaude --switch work            # the same as the first line
-```
-
-Your projects, history, sessions and MCP logins stay exactly where they are: an account is two
-things, and only those two move. The credential in the Keychain item Claude Code reads, and the
-`oauthAccount` block of `~/.claude.json`. Everything else in that file — the trust decisions, the
-tool permissions, your MCP servers, the machine id — is read, kept and written back untouched.
-
-What happens on a switch, in order:
-
-1. The locks Claude Code uses for its own token refresh are taken first, so a swap cannot land in
-   the middle of one.
-2. The login being replaced is **captured back** into the profile it belongs to. Claude Code
-   refreshes tokens as it works and the server rotates the refresh token when it does, so the live
-   copy can be a generation ahead of the profile's own. Without this step a round trip would strand
-   that account.
-3. It is backed up and the backup is read back. A backup that cannot be verified stops the switch
-   before anything is overwritten.
-4. The new credential is written, then the identity. A failure at either step puts back what was
-   there.
-
-`zclaude switch --status` shows the account in the slot, which profile it belongs to, and the
-backups it can restore (the last ten are kept). Two things it will refuse: a profile with no stored
-login or a dead refresh token, and a Z.ai profile — a GLM plan is an endpoint plus a key, which
-reach Claude Code through the environment rather than through its credential store, so the answer
-there stays `zclaude <profile>`.
-
-A Claude Code session that is already running keeps the credential it read at startup; on macOS that
-cache lasts about half a minute, so a switch reaches a live session shortly rather than instantly.
-
-## The VS Code status bar item
-
-`zc` in the status bar, with the account that is signed in beside it. Clicking it opens the same list
-of profiles the terminal shows, with each account's usage, and picking one runs the switch above.
-
-```sh
-zclaude vscode install      # into every editor found on this machine
-zclaude vscode status       # which have it, at which version
-zclaude vscode uninstall    # take it out again
-```
-
-The installer offers this when it finds an editor, and installs it without asking when there is no
-terminal to ask on (a `curl | bash`). Set `ZCLAUDE_INSTALL_NO_VSIX=1` to skip it. "VS Code" means
-anything that speaks the `code` CLI: VS Code, Insiders, Cursor, Windsurf and VSCodium are each
-found and installed separately, on PATH and in the usual application directories. A new window, or
-Developer: Reload Window, picks it up.
-
-The list also adds a profile (in a terminal, since signing in needs a browser), removes one behind a
-confirmation, restores the previous global login, and re-fetches usage. That last one matters more
-than it sounds: percentages go stale while a list sits open, and it is the retry when the usage API
-was rate limited or unreachable.
-
-The extension needs zclaude 0.2.18 or newer, which is the version that has `switch`. An older one
-answers every `--json` call with nothing, so the item marks itself with a warning and offers to run
-`zclaude self-update` rather than showing an empty list.
-
-The extension holds no credential logic. It finds `zclaude`, shells out to it asking for `--json`,
-and renders the answer, so every Keychain read, every backup and every write to `~/.claude.json`
-happens in one place with one set of tests. If VS Code was started from the dock on macOS its PATH is
-not your shell's, so the extension also looks in `~/.local/bin`, `~/bin`, `~/.zclaude/app`, the npm
-global bin and Homebrew; the `zclaude.path` setting covers anywhere else.
-
-The packaged `extension/zclaude.vsix` is committed to this repository and ships inside the npm
-package, which is the whole distribution story for now. It is not on the Marketplace yet.
-
-## Keeping tokens alive
-
-A profile you launch often looks after itself: Claude Code refreshes its token as it works. A profile
-you have not opened for weeks does not. Its access token lapses in hours, and the refresh token
-behind it carries an expiry about a month out, so a personal account you use twice a term can quietly
-go dead between uses.
-
-```sh
-zclaude renew install      # schedule it
-zclaude renew status       # is it scheduled, and what did it do last time
-zclaude renew run          # do it now; this is what the scheduler calls
-zclaude renew uninstall    # remove the schedule
-```
-
-The job runs every six hours and refreshes **only** what is inside two hours of expiring, so a
-profile you use is left alone entirely. Where it lives depends on the system: a LaunchAgent at
-`~/Library/LaunchAgents/com.zclaude.renew.plist` on macOS, a systemd user timer under
-`~/.config/systemd/user/` on Linux, and a marked `crontab` line where systemd is not in charge. On
-Windows it prints the `schtasks` command rather than running it.
-
-Because it runs unattended it is deliberately timid. It works one profile at a time; the first
-refresh token the server rejects ends the run and that profile is quarantined rather than retried on
-a timer, until you sign it in again; it never touches the global login, which belongs to Claude Code
-and to `zclaude switch`; and a Keychain that will not answer stops the run with a message instead of
-being asked again every six hours. `zclaude renew status` shows the last run, anything quarantined,
-and whether your account rotates refresh tokens — which decides whether renewing extends the lineage
-or merely keeps the access token fresh.
-
-One thing it does before anything else: if a profile's account is also the global login, it takes the
-live credential back into that profile. Claude Code refreshes the token in the slot as it works and
-the server rotates the refresh token, so the profile's own copy falls behind and is rejected — which
-looks exactly like an expired login and is nothing of the sort. `zclaude switch capture` does the
-same by hand, and `profile doctor` says when it is needed. The capture only ever moves forwards: a
-profile holding the newer token keeps it.
-
-Removing the last Anthropic profile removes the schedule with it, and every uninstall path
-(`zclaude self-uninstall`, `install.sh --uninstall`) takes the plist, timer or crontab line away.
-`--keep-config` keeps the profiles, so it keeps the schedule.
-
-## Z.ai GLM Coding Plan
-
-The `zai` profile signs in through Z.ai's own browser flow, mints a coding-plan key on your account,
-stores it in the macOS Keychain (or a 0600 file elsewhere) and starts Claude Code on GLM models.
-
-```sh
-zclaude --profile zai            # or pick it from the menu
-zclaude login                    # sign in now, then pick models and launch
-zclaude login --api-key          # paste a key from the Z.ai console instead
-zclaude login --no-browser       # print the URL instead of opening a browser
-zclaude login --paste            # always paste the redirect URL back
-zclaude models                   # what your plan can use
-zclaude --reconfigure            # re-run the model wizard
-zclaude logout                   # forget the stored key
-```
-
-On the first Z.ai launch:
-
-1. Choosing Z.ai with no stored key opens `chat.z.ai` in your browser. Approve the request.
-2. On macOS the redirect is captured automatically (the browser asks once whether to open "zclaude
-   OAuth Callback"). On Linux and Windows, paste the `zcode://...` URL the browser lands on.
-3. zclaude exchanges the code, mints a key named `zclaude` on your account, checks it against the
-   models endpoint and stores it.
-4. The model wizard asks for a primary model, a subagent model and a fast helper model, listing what
-   your plan can actually use, and offers to save the answer per project or as your user default.
-5. `claude` starts on GLM. Quit it and you are back to a clean shell.
-
-**More than one Z.ai account** works the same way as Claude accounts: `zclaude profile add glm-work
---provider zai` gives that plan its own key, stored under its own Keychain account, with its own
-quota reported at launch. `ZAI_API_KEY` in your shell applies to the built-in `zai` profile only; a
-named profile always uses its own stored key, because an environment variable cannot say which
-profile it belongs to.
-
-### What gets set in the child process
-
-| Variable                                                       | Value                               |
-| -------------------------------------------------------------- | ----------------------------------- |
-| `ANTHROPIC_AUTH_TOKEN`                                         | the stored key                      |
-| `ANTHROPIC_BASE_URL`                                           | `https://api.z.ai/api/anthropic`    |
-| `ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_OPUS_MODEL`              | primary model                       |
-| `ANTHROPIC_DEFAULT_SONNET_MODEL`, `CLAUDE_CODE_SUBAGENT_MODEL` | subagent model                      |
-| `ANTHROPIC_DEFAULT_HAIKU_MODEL`                                | fast model                          |
-| `CLAUDE_CODE_AUTO_COMPACT_WINDOW`                              | context window of the primary model |
-| `API_TIMEOUT_MS`                                               | `3000000`                           |
-| `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`                     | `1`                                 |
-
-A named profile also gets `CLAUDE_CONFIG_DIR`, set last so nothing in your config files can redirect
-it. `ANTHROPIC_API_KEY` is removed from the Z.ai child environment to avoid Claude Code's
-auth-conflict prompt. `CLAUDE_SECURESTORAGE_CONFIG_DIR`, `ANTHROPIC_CONFIG_DIR` and
-`ANTHROPIC_PROFILE` are removed from every child environment, because each of them would quietly
-repoint a profile's credentials. Models with a 1M context (`glm-5.3`, `glm-5.3-flash`, `glm-5.2`) get
-the `[1m]` suffix Claude Code expects.
-
-`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and `CLAUDE_CODE_OAUTH_TOKEN` inherited from your shell
-override an account login. zclaude reports them and carries on, because you may have set them
-deliberately. It never sets `CLAUDE_CODE_OAUTH_TOKEN` itself: Claude Code deletes the default
-Keychain item when that variable is present
-([claude-code#37512](https://github.com/anthropics/claude-code/issues/37512)).
 
 ## Sharing, and what profiles do not isolate
 
@@ -822,24 +908,6 @@ stored by an earlier interactive `zclaude login`, and models come from config or
 - The key travels only to `api.z.ai`, `zcode.z.ai` and `chat.z.ai`. No telemetry.
 - Secrets are masked in every log line and error message.
 
-## How the Z.ai sign-in works
-
-Z.ai does not document a CLI login. Its ZCode desktop app uses a standard OAuth authorization-code
-flow against `chat.z.ai` with a public client id, and the same flow is used by zcode-cli, oh-my-pi and
-CLIProxyAPI. zclaude does the same:
-
-1. `GET https://chat.z.ai/api/oauth/authorize` with `redirect_uri=zcode://zai-auth/callback` and a
-   random state.
-2. Z.ai only allows that custom scheme as redirect target. On macOS, zclaude compiles a tiny
-   background AppleScript app, registers it as the temporary `zcode://` handler, and restores the
-   previous handler when done (a recovery journal cleans up if the process dies). Elsewhere you paste
-   the URL.
-3. `POST https://zcode.z.ai/api/v1/oauth/token` exchanges the code for a short-lived token.
-4. Z.ai's business API turns that into a durable coding-plan key: login, default org and project,
-   find-or-create a key named `zclaude`, copy its secret.
-5. The key is checked against `GET https://api.z.ai/api/coding/paas/v4/models`, which also yields the
-   model list for the wizard.
-
 ## Development
 
 ```sh
@@ -864,6 +932,19 @@ a profile; `test/e2e.test.js` runs the real binary against a fake Z.ai server an
 
 Publishing to npm: `npm publish --access public` from a clean checkout.
 
+## Who makes this
+
+Built by [Gramini Labs](https://gramini.com) — AI products designed to work reliably and respect
+your privacy. More of what we put out is at [gramini.com/open-source](https://gramini.com/open-source),
+and [gramini.com/contact](https://gramini.com/contact) reaches us.
+
+[Privacy](https://gramini.com/privacy) ·
+[Terms](https://gramini.com/terms) ·
+[Cookies](https://gramini.com/cookies)
+
+zclaude is an independent project. It is not affiliated with or endorsed by Anthropic or Z.ai.
+Claude Code is a product of Anthropic; GLM and the GLM Coding Plan are products of Z.ai.
+
 ## License
 
-MIT
+MIT, © 2026 Gramini Labs. See [LICENSE](LICENSE).

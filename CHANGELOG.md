@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased
+
+An expired login is now something you can act on where you find it, rather than
+a row that reports a problem and stops.
+
+- **`s` in the launch menu signs the highlighted profile in**, then carries on
+  into it. The key appears only on a row that needs it, and the detail line
+  under the cursor names the command either way.
+- **The editor hover shows `sign in` in place of `switch`** on a row whose
+  login has expired, and it opens a terminal with the command typed. Switching
+  is deliberately not offered: it would put a login in the global slot that
+  cannot answer.
+- `profile list --usage` prints the fix under the state.
+- The two built-in rows are treated as what they are. `zai` goes through
+  `zclaude login`; the plain `Claude Code` row is the default installation's own
+  login, which Claude Code asks for itself, so nothing is offered for it.
+
+Underneath, work towards rotating accounts by usage, all of it invisible so far:
+
+- **`captureBack` takes the locks it always needed.** The renewal job called it
+  unlocked, so a switch landing between its identity read and its credential
+  read could file one account's token under another profile. It now also
+  re-reads the identity and refuses if the slot changed hands.
+- **The usage cache is written once per lookup round, under a lock.** It was one
+  unsynchronised read-modify-write per profile, so the slowest to finish
+  reverted the others — including a `Retry-After` another had just recorded.
+- **A 429 now holds back the account that earned it**, not the whole machine.
+  The machine-wide backoff is kept for a limit that catches two accounts at
+  once, which is the case that says it is not per-account.
+- **Backups can be pinned and are never pruned.** The ring keeps ten, so
+  anything switching on a timer would push the login you started with out of
+  reach of `switch --restore`.
+- `rateLimitTier` is read off the credential and the plan tier off the identity,
+  which is the only machine-readable statement of how large a plan is:
+  `subscriptionType` says `team` for a 5x seat and a 20x seat alike.
+
 ## 0.2.37
 
 The popup is a hover, because that is the only anchored surface an extension

@@ -57,4 +57,5 @@ cannot find zclaude, set `zclaude.path`.
 
 ## Licence
 
-MIT. Part of [zclaude](https://github.com/vipincr/zclaude).
+MIT, © 2026 Gramini Labs. Part of [zclaude](https://github.com/vipincr/zclaude), built by
+[Gramini Labs](https://gramini.com).

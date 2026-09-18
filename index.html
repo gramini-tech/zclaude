@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>zclaude</title>
+    <title>zclaude — an account manager for Claude Code</title>
     <meta
       name="description"
       content="Run several Claude Code accounts at once, one per terminal. Work, personal and a Z.ai GLM Coding Plan, each with its own login, side by side."
@@ -11,10 +11,10 @@
     <meta name="color-scheme" content="dark light" />
     <link rel="canonical" href="https://vipincr.github.io/zclaude/" />
     <link rel="icon" href="site/favicon.svg" type="image/svg+xml" />
-    <meta property="og:title" content="zclaude" />
+    <meta property="og:title" content="zclaude — an account manager for Claude Code" />
     <meta
       property="og:description"
-      content="Several Claude Code accounts at once, one per terminal. Open source, MIT licensed."
+      content="Run several Claude Code accounts at once, see how much of each plan is left, and move the login everything else uses. Open source, MIT licensed."
     />
     <meta property="og:url" content="https://vipincr.github.io/zclaude/" />
     <meta property="og:type" content="website" />
@@ -35,10 +35,11 @@
         </a>
         <nav aria-label="Sections">
           <a href="#install">Install</a>
-          <a href="#profiles">Profiles</a>
+          <a href="#profiles">Accounts</a>
+          <a href="#quota">Usage</a>
+          <a href="#commands">Commands</a>
           <a href="#switch">Switch</a>
           <a href="#zai">Z.ai</a>
-          <a href="#usage">Usage</a>
           <a href="#faq">FAQ</a>
           <a href="https://github.com/vipincr/zclaude">GitHub</a>
         </nav>
@@ -48,13 +49,16 @@
     <main id="top">
       <section class="hero wrap">
         <img class="logo" src="site/logo.svg" alt="zclaude" width="670" height="130" />
-        <h1>Several Claude Code accounts, one per terminal</h1>
+        <h1>An account manager for Claude Code</h1>
         <p class="lede">
           Claude Code keeps one login per machine, so signing in to a second account signs you out of the first, VS Code
-          included. zclaude gives each account a profile with its own credentials and its own config directory, scoped
-          to the terminal you start it from. Work, client and personal run side by side, a company seat and a personal
-          subscription on one email count as two, and a
-          <a href="https://z.ai/subscribe">Z.ai GLM Coding Plan</a> is just another profile.
+          included. And when you are near a limit, nothing tells you which of your accounts still has room. zclaude
+          answers both: <strong>run several accounts at once</strong>, one per terminal, each with its own credentials
+          and config directory; <strong>see what is left on each</strong> before you pick, down to the five-hour window,
+          the week and every model metered separately; and <strong>move the global login</strong> that plain
+          <code>claude</code> and the VS Code extension share. A company seat and a personal subscription on one email
+          count as two accounts, and a <a href="https://z.ai/subscribe">Z.ai GLM Coding Plan</a> is one more provider a
+          profile can have.
         </p>
 
         <div class="install" id="install">
@@ -136,7 +140,7 @@
       </section>
 
       <section class="wrap usage" id="profiles" aria-labelledby="profiles-title">
-        <h2 id="profiles-title">Profiles</h2>
+        <h2 id="profiles-title">Several accounts, side by side</h2>
         <p>
           A profile is a name, a provider (an Anthropic account or a Z.ai coding plan), its own Claude Code config
           directory, and a choice about what it borrows from your main setup. Credentials are keyed by that directory,
@@ -199,6 +203,36 @@
         <p>
           Credentials, <code>.claude.json</code>, installed plugins, caches and telemetry are never shared. Nor is
           anything about your identity copied into a new profile: it starts signed out and earns its own login.
+        </p>
+      </section>
+
+      <section class="wrap usage" id="quota" aria-labelledby="quota-title">
+        <h2 id="quota-title">How much of each plan is left</h2>
+        <p>
+          Picking an account is usually a question about quota, so every surface answers it: the launch menu while you
+          choose, <code>profile list --usage</code> spelled out, and the editor&rsquo;s status bar. A row carries the
+          rolling five-hour window, the week, and each model window metered separately &mdash; Fable has its own ceiling
+          &mdash; plus any pay-as-you-go credit.
+        </p>
+        <div class="terminal" role="img" aria-label="Usage for one account, window by window">
+          <div class="terminal-bar"><span></span><span></span><span></span></div>
+          <pre><span class="prompt">$</span> zclaude profile list --usage
+<span class="sel">work</span>      anthropic  you@company.com &middot; Acme Inc  <span class="dim">shares config + history</span>
+          <span class="dim">5 hours       80%  resets in 2h 30m (07:50 pm)</span>
+          <span class="dim">week          21%  resets in 6d 7h (Thu, 24 Sept, 12:30 am)</span>
+          <span class="dim">Fable week    33%  resets in 6d 7h (Thu, 24 Sept, 12:30 am)</span>
+          <span class="dim">credits $37.66 left</span></pre>
+        </div>
+        <p>
+          Reset times arrive in UTC and are shown in your own zone and clock format, because nobody plans their
+          afternoon in UTC. Both forms are there on purpose: &ldquo;in 2h 30m&rdquo; answers how long, &ldquo;07:50
+          pm&rdquo; answers when. A window under half full carries no clock, since nobody is waiting for it.
+        </p>
+        <p>
+          A lookup costs a network call per account, so it never happens on the launch path and never without a
+          terminal. Answers are cached for a minute and a <code>Retry-After</code> is obeyed across every surface, so
+          the CLI and the editor cannot saturate the endpoint between them. A login that has expired says so, and says
+          what to run &mdash; or, in the menu, offers <code>s</code> to sign it in where you are looking at it.
         </p>
       </section>
 
@@ -291,6 +325,13 @@
             <p>
               Each profile gets its own config directory, so Claude Code stores its credentials under a separate
               Keychain item. No switching, no signing out.
+            </p>
+          </li>
+          <li>
+            <h3>What is left, before you pick</h3>
+            <p>
+              The five-hour window, the week and every model metered separately, with the time each comes back in your
+              own zone. Shown while you choose, not after the limit arrives.
             </p>
           </li>
           <li>
@@ -395,8 +436,8 @@
         </p>
       </section>
 
-      <section class="wrap usage" id="usage" aria-labelledby="usage-title">
-        <h2 id="usage-title">Usage</h2>
+      <section class="wrap usage" id="commands" aria-labelledby="commands-title">
+        <h2 id="commands-title">Commands</h2>
         <div class="table-scroll">
           <table>
             <tbody>
@@ -740,6 +781,20 @@ ZCLAUDE_PROFILE=work       # optional: pick a profile for this project</code></p
         <p class="fine">
           Independent project, not affiliated with or endorsed by Anthropic or Z.ai. Claude Code is a product of
           Anthropic. GLM and the GLM Coding Plan are products of Z.ai.
+        </p>
+        <p class="built">
+          Built by
+          <a href="https://gramini.com">
+            <img src="site/gramini-labs.svg" alt="Gramini Labs" width="110" height="62" />
+          </a>
+        </p>
+        <p class="fine">
+          &copy; 2026 Gramini Labs. Released under the MIT License. &middot;
+          <a href="https://gramini.com/privacy">Privacy</a> &middot;
+          <a href="https://gramini.com/terms">Terms</a> &middot;
+          <a href="https://gramini.com/cookies">Cookies</a> &middot;
+          <a href="https://gramini.com/open-source">Open source</a> &middot;
+          <a href="https://gramini.com/contact">Contact</a>
         </p>
       </div>
     </footer>
