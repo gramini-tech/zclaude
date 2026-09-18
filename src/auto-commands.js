@@ -235,6 +235,19 @@ async function cmdConfig(context) {
  */
 async function cmdRun(context) {
   const { options, env, interactive } = context;
+  if (options.dryRun && !options.daemon) {
+    // In the foreground on purpose: a dry run is something you sit and read.
+    info("Deciding out loud, switching nothing. Ctrl-C stops it.");
+    await runDaemon({
+      env,
+      selfLease: true,
+      dryRun: true,
+      onTick: (tick) => {
+        info(`${tick.action}: ${tick.detail ?? ""}`.trimEnd());
+      },
+    });
+    return EXIT.OK;
+  }
   if (!options.daemon) {
     const { started, pid } = await startDaemon({ env, selfLease: true });
     if (!started) throw usageError("The watcher could not be started.");
@@ -243,7 +256,16 @@ async function cmdRun(context) {
     return EXIT.OK;
   }
   if (interactive) info("Running the watcher here. Ctrl-C stops it.");
-  const result = await runDaemon({ env, selfLease: Boolean(options.selfLease) });
+  const result = await runDaemon({
+    env,
+    selfLease: Boolean(options.selfLease),
+    dryRun: Boolean(options.dryRun),
+    onTick: options.dryRun
+      ? (tick) => {
+          info(`${tick.action}: ${tick.detail ?? ""}`.trimEnd());
+        }
+      : undefined,
+  });
   if (!result.ran) {
     info(`Not started: ${result.reason}`);
     return EXIT.OK;

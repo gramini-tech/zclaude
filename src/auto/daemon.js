@@ -95,11 +95,12 @@ export async function startDaemon({ env = process.env, spawnImpl = spawn, logPat
 /**
  * Run the watcher in this process until nothing wants it.
  *
- * @param {{env?: NodeJS.ProcessEnv, deps?: object, tickMs?: number, maxTicks?: number, now?: () => number, onTick?: Function, selfLease?: boolean}} [options]
+ * @param {{env?: NodeJS.ProcessEnv, deps?: object, tickMs?: number, maxTicks?: number, now?: () => number, onTick?: Function, selfLease?: boolean, dryRun?: boolean}} [options]
  */
 export async function runDaemon({
   env = process.env,
-  deps = liveDeps({ configDirs: /** @type {any} */ ((forEnv) => configDirsFor(forEnv)) }),
+  dryRun = false,
+  deps = liveDeps({ dryRun, configDirs: /** @type {any} */ ((forEnv) => configDirsFor(forEnv)) }),
   tickMs = TICK_MS,
   maxTicks = Infinity,
   now = Date.now,

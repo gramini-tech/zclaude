@@ -501,6 +501,7 @@ zclaude auto config                    # the inventory, defaults included
 zclaude auto config path               # where it lives
 zclaude auto config init               # write the defaults out, with the explanations
 zclaude auto run                       # start the watcher in the background
+zclaude auto run --dry-run             # decide out loud, switch nothing
 zclaude auto off                       # stop it; the login stays where it is
 zclaude auto attach vscode --pid 42    # hold a lease for that process
 zclaude auto detach <id>               # give it up
@@ -523,6 +524,17 @@ The lease belongs to the process that wants the watcher, not to the short-lived
 own, renews every minute and on window focus, and drops it on the way out —
 though dropping it is only a courtesy, since a lease nobody renews expires by
 itself.
+
+**`zclaude --auto <profile>`** launches a session that has asked to be rotated.
+It holds a lease for as long as Claude Code runs, so nothing has to remember to
+clean up: when the session ends the process goes and the lease with it. Auto mode
+never blocks a launch — a watcher that cannot start is a reason to say so and
+carry on, not a reason to refuse to run Claude Code.
+
+**`zclaude auto run --dry-run`** runs the whole loop in the foreground and
+prints every decision without making any of them. It spends no quota and moves
+no login, and it is how the policy earns trust on real accounts before it is
+allowed to act on them.
 
 `auto run` starts a detached watcher that holds its own lease. The watcher exits when the last lease lapses, and `auto run --daemon`
 is the form it runs as inside that process. Detaching is a safety requirement
@@ -708,6 +720,7 @@ These matter only when they come **before** a profile name or without one:
 | `--class <c>`                        | which model class `auto status` reasons about    | n/a                             |
 | `--daemon`                           | be the watcher in this process, not a launcher   | n/a                             |
 | `--self-lease`                       | the watcher holds its own lease and stays up     | n/a                             |
+| `--auto`                             | this session may be moved between accounts       | n/a                             |
 | `--pid <n>`                          | whose process a lease belongs to                 | n/a                             |
 | `--verbose`                          | show what zclaude is doing                       | after the profile name, or `--` |
 | `--json`                             | machine-readable output for `status` and friends | after the profile name, or `--` |

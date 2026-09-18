@@ -55,6 +55,18 @@ describe("parseArgs", () => {
       assert.deepEqual(parseArgs(argv), expected);
     });
   }
+  it("takes --auto before a profile, and hands it to claude after one", () => {
+    // The reason `--auto` is a flag rather than a subcommand: after a command
+    // group the parser rejects any unknown `-` argument, so `zclaude auto
+    // --resume <id>` would die on the flag somebody starting a long session is
+    // most likely to type. As a flag it composes with everything already there.
+    assert.equal(parseArgs(["--auto", "work"]).options.auto, true);
+    assert.equal(parseArgs(["--auto", "work"]).options.profile ?? "work", "work");
+    const after = parseArgs(["work", "--auto"]);
+    assert.equal(after.options.auto, undefined, "after a profile name it is claude's");
+    assert.ok(after.passthrough.includes("--auto"));
+  });
+
   it("rejects a value flag without a value", () => {
     assert.throws(() => parseArgs(["--profile"]), /needs a value/u);
     assert.throws(() => parseArgs(["--model", "--verbose"]), /needs a value/u);

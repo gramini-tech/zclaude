@@ -145,6 +145,23 @@ describe("one cycle", () => {
     assert.equal(result.action, "switched");
   });
 
+  it("decides out loud and moves nothing on a dry run", async () => {
+    // How the policy earns trust on real accounts: everything up to the write,
+    // and then nothing. No quota spent, no login moved, and a log of decisions
+    // you can check against the ones you would have made.
+    const result = await cycle({
+      dryRun: true,
+      inventory: async () => ({ accounts: [account("here", { weekly: 96 }), account("there")], active: "here" }),
+      decide: () => ({ action: "switch", target: "there", reason: "here is at 96% of its weekly" }),
+    });
+    assert.equal(result.action, "would-switch");
+    assert.deepEqual(result.calls.switched, [], "nothing was moved");
+    assert.equal(result.state.counters.switches ?? 0, 0);
+    const [decision] = result.state.decisions;
+    assert.equal(decision.ok, null, "neither a success nor a failure: it did not happen");
+    assert.match(decision.detail, /dry run/u);
+  });
+
   it("keeps the slot and counts the refusal when a switch throws", async () => {
     const result = await cycle({
       decide: () => ({ action: "switch", target: "there", reason: "full" }),

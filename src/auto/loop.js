@@ -146,6 +146,30 @@ export async function runOnce({ state, deps, env = process.env, now = Date.now()
   }
   next.waitingSince = null;
 
+  if (deps.dryRun) {
+    // Everything up to the write, and then nothing. This is how the policy
+    // earns trust on real accounts: it spends no quota and moves no login, and
+    // the log is a list of the decisions you can check against your own.
+    log.info("auto", "would switch", { to: choice.target, reason: choice.reason });
+    return {
+      state: withDecision(
+        { ...next, mode: "rotating", reason: choice.reason },
+        {
+          at: now,
+          from: next.active,
+          to: choice.target,
+          klass,
+          reason: choice.reason,
+          why: timing.reason,
+          ok: null,
+          detail: "dry run: nothing was moved",
+        },
+      ),
+      action: "would-switch",
+      detail: `${next.active ?? "nobody"} → ${choice.target} (${choice.reason})`,
+      exit: false,
+    };
+  }
   return performSwitch({ next, choice, timing, deps, env, now, klass });
 }
 
@@ -215,14 +239,14 @@ async function performSwitch({ next, choice, timing, deps, env, now, klass }) {
 /**
  * The default deps: the real thing, wired up. Tests pass their own.
  *
- * @param {{security?: object, fetchImpl?: typeof fetch, configDirs?: (env: NodeJS.ProcessEnv) => Promise<string[]>}} [options]
+ * @param {{security?: object, fetchImpl?: typeof fetch, dryRun?: boolean, configDirs?: (env: NodeJS.ProcessEnv) => Promise<string[]>}} [options]
  *
  * The transcript read carries its own byte offsets across cycles in a closure,
  * which is what makes the second pass cheap and what makes the duplicate guard
  * mean anything: without somewhere to remember where it stopped, every cycle
  * would re-read from the same place.
  */
-export function liveDeps({ security, fetchImpl, configDirs = () => Promise.resolve([]) } = {}) {
+export function liveDeps({ security, fetchImpl, dryRun = false, configDirs = () => Promise.resolve([]) } = {}) {
   /** @type {Record<string, {offset: number, lastAt: number}>} */
   let offsets = {};
   let seen = [];
@@ -238,6 +262,7 @@ export function liveDeps({ security, fetchImpl, configDirs = () => Promise.resol
   };
 
   return {
+    dryRun,
     leases: (options) => liveLeases(options),
     owner: (env) => readDaemonOwner(env),
     ownerAlive: async (owner) => {

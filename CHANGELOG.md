@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+`zclaude --auto <profile>` launches a session that has asked to be rotated, and
+`zclaude auto run --dry-run` proves the policy on real accounts without moving
+anything.
+
+- **The session's lease is the session's process.** It lives exactly as long as
+  Claude Code does, so nothing has to remember to clean up: when the session
+  ends the pid goes and the lease with it. Auto mode never blocks a launch
+  either — a watcher that cannot start is a reason to say so and carry on.
+- **`--auto` is a flag, not a subcommand.** After a command group the parser
+  rejects any unknown `-` argument, so `zclaude auto --resume <id>` would die on
+  the flag somebody starting a long session is most likely to type.
+- **The dry run does everything up to the write, and then nothing.** It spends
+  no quota and moves no login, and its decisions are recorded as neither a
+  success nor a failure, because they did not happen.
+
+Run against real accounts, the watcher repaired a login on its first cycle.
+`gramini` had been reading `login expired` for two days: Claude Code had rotated
+the token in the slot and the profile's own copy was a generation behind. One
+`captureBack` took the live credential back, and the account went from `dead` to
+5h 27% / week 50% / Fable 73%. That is the rot the plan put a capture in *every*
+cycle for, rather than trusting a six-hourly job that was never installed.
+
+
 The editor holds a lease, so the watcher stays up while a window is open, and
 the hover says what it is doing. A window can only ever ask it to **watch**: an
 open editor is not consent to move the global login.

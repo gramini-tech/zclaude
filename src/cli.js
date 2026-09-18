@@ -143,6 +143,7 @@ const BOOL_FLAGS = Object.freeze({
   "--api-key": "apiKey",
   "--verbose": "verbose",
   "--json": "json",
+  "--auto": "auto",
   "--daemon": "daemon",
   "--self-lease": "selfLease",
   "--quiet": "quiet",
@@ -234,9 +235,11 @@ Usage
   zclaude switch --restore                     put the previous global login back
   zclaude switch capture                       store the live login back into its profile
   zclaude --switch <profile>                   the same as "zclaude switch <profile>"
+  zclaude --auto <profile> [args...]           launch a session that may be moved between accounts
   zclaude auto status [--json] [--class <c>]   which account rotation would use, and why
   zclaude auto config [show|path|init]         the inventory: what each plan is worth, and when work moves
   zclaude auto run                             start the watcher in the background
+  zclaude auto run --dry-run                   decide out loud and switch nothing
   zclaude auto run --daemon [--self-lease]     be the watcher in this process; auto run calls this
   zclaude auto off                             stop the watcher and leave the login where it is
   zclaude auto attach [kind] [id] [--pid n]    hold or renew a lease; the editor uses this
@@ -799,7 +802,7 @@ async function cmdLaunch({ options, passthrough, env, cwd }) {
   const record = profile.configDir ? await getRegistered(profile.id, env) : null;
   const prepared = record ? await launchContext(record, env) : null;
   const claudeArgs = prepared?.claudeArgs ?? [];
-  const session = describeSession({ profile, prepared, env, cwd });
+  const session = describeSession({ profile, prepared, env, cwd, auto: Boolean(options.auto) });
 
   if (!profile.zai) {
     const args = [...claudeArgs, ...(options.model ? ["--model", options.model] : []), ...claudeInput];
@@ -809,7 +812,7 @@ async function cmdLaunch({ options, passthrough, env, cwd }) {
     if (prepared) await resolveSettingsConflict({ env, childEnv, cwd, interactive });
     reportInheritedAuth(childEnv, profile);
     await warnIfBusy(session, env, interactive);
-    return runClaude(bin, args, childEnv, { session, trackerEnv: env });
+    return runWatched({ bin, args, childEnv, session, env, interactive, auto: Boolean(options.auto) });
   }
 
   const config = zaiConfig(env);
@@ -899,13 +902,54 @@ async function launchZai({
  * directory of its own, so it is recorded against the default one — which is
  * exactly the account it spends.
  */
-function describeSession({ profile, prepared, env, cwd }) {
+function describeSession({ profile, prepared, env, cwd, auto = false }) {
   return {
     profile: profile.id,
     account: profile.description ?? null,
     configDir: prepared?.configDir ?? defaultConfigDir(env),
     cwd,
+    // The marker that says this session asked to be rotated. Everything that
+    // decides whether the global login may move reads it, which is why it is
+    // recorded here rather than inferred from anything later.
+    auto,
   };
+}
+
+/** Claude Code, with a lease held for as long as it runs when auto was asked for. */
+async function runWatched({ bin, args, childEnv, session, env, interactive, auto }) {
+  const rotation = auto ? await beginAuto({ env, interactive }) : null;
+  try {
+    return await runClaude(bin, args, childEnv, { session, trackerEnv: env });
+  } finally {
+    await rotation?.end();
+  }
+}
+
+/**
+ * Hold a lease for this session, and make sure a watcher exists.
+ *
+ * The lease is this process, which lives exactly as long as Claude Code does,
+ * so nothing has to remember to clean up: when the session ends the pid goes
+ * and the lease with it. Dropping it explicitly is a courtesy that saves the
+ * watcher one tick of waiting.
+ *
+ * It never blocks the launch. A watcher that cannot start is a reason to say so
+ * and carry on, not a reason to refuse to run Claude Code.
+ */
+async function beginAuto({ env, interactive }) {
+  const [{ holdLease, dropLease }, { startDaemon }] = await Promise.all([
+    import("./auto/lease.js"),
+    import("./auto/daemon.js"),
+  ]);
+  try {
+    const lease = await holdLease({ env, kind: "session", pid: process.pid });
+    await startDaemon({ env });
+    if (interactive) info("Auto: this session may be moved between accounts as they fill up.");
+    return { end: () => dropLease(lease.id, env).catch(() => {}) };
+  } catch (error) {
+    warn(`Auto mode could not start, so this session stays on one account: ${error.message}`);
+    return { end: () => Promise.resolve() };
+  }
 }
 
 /**
