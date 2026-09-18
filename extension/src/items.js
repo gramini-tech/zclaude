@@ -351,7 +351,9 @@ function hoverPanel({ status, profiles = [], usage = {}, busy = {}, auto = null,
   } else {
     lines.push("Nobody is signed in.", "");
   }
-  if (profiles.length > 0) lines.push(accountTable({ profiles, usage, busy, active: status?.owner ?? null, now }), "");
+  if (profiles.length > 0) {
+    lines.push(accountTable({ profiles, usage, busy, auto, active: status?.owner ?? null, now }), "");
+  }
   const credit = profiles.map((profile) => creditsText(usage[profile.name]?.credits)).find(Boolean);
   if (credit) lines.push(escapeHtml(credit), "");
   const rotation = autoLine(auto);
@@ -368,11 +370,38 @@ function hoverPanel({ status, profiles = [], usage = {}, busy = {}, auto = null,
 }
 
 /** The table itself, as HTML, because a hover renders one and nothing else does. */
-function accountTable({ profiles, usage, busy, active, now }) {
+function accountTable({ profiles, usage, busy, active, auto, now }) {
   const names = windowNames(profiles, usage);
   const head = ["", ...names, "", ""].map((name) => `<th>${escapeHtml(name)}${GUTTER}</th>`).join("");
   const rows = profiles.map((profile) => profileRow({ profile, usage, busy, active, names, now }));
-  return `<table><tr>${head}</tr>${rows.join("")}</table>`;
+  return `<table><tr>${head}</tr>${autoRow({ auto, names, active })}${rows.join("")}</table>`;
+}
+
+/**
+ * Auto, as a row in the same table as the accounts.
+ *
+ * It is a profile you pick, so it belongs among the profiles rather than in a
+ * setting somewhere else. It has no windows of its own — it stands for
+ * whichever account has the most room — so its cells say which one that is and
+ * why, which is the only thing about it worth a column.
+ */
+function autoRow({ auto, names, active }) {
+  if (!auto) return "";
+  const target = auto.pick?.profile ?? null;
+  const said = target
+    ? `would use <b>${escapeHtml(target)}</b>${auto.pick?.reason ? ` · ${escapeHtml(auto.pick.reason)}` : ""}`
+    : "no account can take new work right now";
+  // Already there: nothing to offer, and saying "use" would be a link that
+  // changes nothing.
+  const action = target && target !== active ? anchor("use", "zclaude.auto") : "in use";
+  return [
+    "<tr>",
+    twoLines('<span class="codicon codicon-sparkle"></span>&nbsp;<b>Auto</b>', "least used"),
+    `<td colspan="${names.length}">${said}<br><small>&nbsp;</small>${GUTTER}</td>`,
+    twoLines("", ""),
+    twoLines(action, ""),
+    "</tr>",
+  ].join("");
 }
 
 function profileRow({ profile, usage, busy, active, names, now }) {

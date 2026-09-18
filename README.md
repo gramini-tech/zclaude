@@ -529,7 +529,8 @@ itself.
 
 ### Auto is a profile you can pick
 
-**Auto** is the first row in the launch menu and an entry in the editor's list.
+**Auto** is the first row in the launch menu, a row in the editor's hover beside
+the accounts, and an entry in its click list.
 Choosing it is the same kind of choice as choosing a profile, said differently:
 "whichever account has the most room" instead of naming one. It resolves at
 launch, tells you which account it picked and why, and turns rotation on for

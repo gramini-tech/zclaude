@@ -322,6 +322,28 @@ describe("the hover panel", () => {
   const panel = (extra = {}) =>
     hoverPanel({ status, profiles, usage, busy: {}, version: "9.9.9", now: PANEL_NOW, ...extra });
 
+  it("puts Auto in the table with the accounts, saying which one it would use", () => {
+    // It is a profile you pick, so it belongs among the profiles rather than in
+    // a setting somewhere else. Having it only in the click list is what made
+    // it look absent: the hover is where the accounts are.
+    const text = panel({ auto: { pick: { profile: "max", reason: "starting on the emptiest account" } } });
+    assert.match(text, /<b>Auto<\/b>/u);
+    assert.match(text, /would use <b>max<\/b> · starting on the emptiest account/u);
+    assert.match(text, /href="command:zclaude\.auto">use<\/a>/u);
+  });
+
+  it("does not offer Auto as an action when it would pick the account already in use", () => {
+    // A link that changes nothing is worse than no link.
+    const text = panel({ auto: { pick: { profile: "gramini", reason: "starting on the emptiest account" } } });
+    assert.match(text, /would use <b>gramini<\/b>/u);
+    assert.doesNotMatch(text, /command:zclaude\.auto/u);
+  });
+
+  it("says so plainly when nothing can take new work", () => {
+    const text = panel({ auto: { pick: null } });
+    assert.match(text, /no account can take new work right now/u);
+  });
+
   it("says what the watcher is doing, and never offers to start it", () => {
     // Starting it for real means starting a session, which needs a terminal. A
     // button that cannot do what it says is worse than no button.

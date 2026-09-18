@@ -116,11 +116,18 @@ async function switchAuto() {
   await switchTo(picked.profile, profiles);
 }
 
-/** What the watcher is doing, if one is running. */
+/**
+ * What the watcher is doing, and which account Auto would start new work on.
+ *
+ * Two different questions, and they have different answers: `status` says
+ * whether to move the session that is running, `pick` says where a new one
+ * would begin. The Auto row is about starting, so it needs the second.
+ */
 async function readAuto() {
   if (!binary) return null;
-  const { data } = await runJson(binary, ["auto", "status"]);
-  return data ?? null;
+  const [status, chosen] = await Promise.all([runJson(binary, ["auto", "status"]), readPick()]);
+  if (!status.data) return null;
+  return { ...status.data, pick: chosen };
 }
 
 /**
@@ -256,8 +263,8 @@ async function pick() {
     // naming one.
     {
       label: "$(sparkle) Auto",
-      description: auto?.decision?.target ? `would use ${auto.decision.target}` : "the least-used account",
-      detail: auto?.decision?.reason ?? "picks whichever account has the most room left",
+      description: auto?.pick?.profile ? `would use ${auto.pick.profile}` : "the least-used account",
+      detail: auto?.pick?.reason ?? "picks whichever account has the most room left",
       action: "auto",
     },
     { label: "$(sync) Refresh usage", action: "refresh" },

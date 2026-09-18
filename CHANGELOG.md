@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+**Auto is a row in the hover's table**, alongside the accounts, saying which one
+it would use and why, with a `use` link. It was only in the click list before,
+which is the less-visited of the two surfaces and the reason it still looked
+absent: the hover is where the accounts are, so that is where a profile you can
+pick belongs.
+
+The row asks a different question from the watcher status line below it.
+`auto status` says whether to move the session that is running; `auto pick` says
+where a new one would begin. The row is about starting, so it shows the second.
+When the answer is the account already in use it says so and offers no link, and
+a link that changes nothing is worse than no link.
+
+
 **Auto is a profile you pick**, not a mode you switch on. It is the first row in
 the launch menu and an entry in the editor's list, and choosing it is the same
 kind of choice as choosing a profile: "whichever account has the most room"
