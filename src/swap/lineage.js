@@ -35,11 +35,11 @@ import { chmod, readFile, rename, writeFile } from "node:fs/promises";
 
 import { log } from "../logger.js";
 import { claudeCredentialService, credentialFilePath, DEFAULT_CREDENTIAL_SERVICE } from "../profiles/keychain-name.js";
-import { defaultConfigDir } from "../profiles/launch.js";
 import { listRegistered } from "../profiles/registry.js";
 import { tokenFingerprint } from "../renew/state.js";
 import { byProfile, liveSessions } from "../sessions/index.js";
 import { refreshCredential } from "../usage/anthropic.js";
+import { configFilePath } from "./identity.js";
 import { parseCredential, readCredential, writeCredential } from "./keychain.js";
 import { withCredentialsLock } from "./locks.js";
 
@@ -88,7 +88,8 @@ export async function credentialStores({ env = process.env, security, records = 
       kind: "slot",
       name: "the global login",
       service: DEFAULT_CREDENTIAL_SERVICE,
-      file: credentialFilePath(defaultConfigDir(env)),
+      // The slot's own directory, which CLAUDE_CONFIG_DIR does not move.
+      file: credentialFilePath(configFilePath(env).replace(/\.json$/u, "")),
     },
     ...registered
       .filter((record) => record.provider === "anthropic")

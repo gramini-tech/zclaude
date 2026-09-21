@@ -21,13 +21,22 @@ import { log } from "../logger.js";
 const CONFIG_BASENAME = ".claude.json";
 
 /**
- * Claude Code's global config file. It lives beside the config directory, not
- * inside it: `~/.claude.json` for the default login.
+ * Claude Code's global config file, at `~/.claude.json`. It lives beside the
+ * default config directory rather than inside it.
+ *
+ * CLAUDE_CONFIG_DIR is deliberately ignored. The global slot is the default
+ * installation's login: the Keychain item with no directory hash, which that
+ * variable does not move either. Reading the config file through it and the
+ * credential from the fixed item pairs one account's identity with another
+ * account's token, and everything that pairs the two then acts on the wrong
+ * account. `switch capture` run from inside a `zclaude <profile>` session did
+ * exactly that: it decided the pinned profile owned the global login and wrote
+ * the global account's credential over that profile's own, which is a login
+ * destroyed on every run, not a race.
  * @param {NodeJS.ProcessEnv} [env]
  */
 export function configFilePath(env = process.env) {
-  const configured = typeof env.CLAUDE_CONFIG_DIR === "string" ? env.CLAUDE_CONFIG_DIR.trim() : "";
-  return join(configured || env.HOME || homedir(), CONFIG_BASENAME);
+  return join(env.HOME || homedir(), CONFIG_BASENAME);
 }
 
 /**

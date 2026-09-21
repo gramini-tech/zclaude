@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+**`CLAUDE_CONFIG_DIR` no longer moves the global slot's config file while
+leaving its Keychain item behind.** Found by running `zclaude renew run` inside
+a `zclaude gramini` session, which is a shell where that variable is set: the
+capture step read the identity out of `$CLAUDE_CONFIG_DIR/.claude.json` and the
+credential out of `Claude Code-credentials`, decided the pinned profile owned
+the global login, and wrote the global account's credential over that profile's
+own. One command, one login destroyed, no race involved. It has been that way
+since `switch capture` existed, and it is the likelier cause of a profile that
+reads as signed out for no reason.
+
+The global slot is the default installation's login by definition. Its Keychain
+item carries no directory hash and that variable does not move it, so
+`configFilePath()` now always answers `~/.claude.json` and never follows the
+variable either. `swapStatus`, `captureBack`, `switchTo` and `restore` all go
+through it, and the built-in `claude` row is labelled from it, so all five now
+name the account whose credential they are actually holding. `zclaude switch`
+from inside a pinned shell moves the default login, which is what it always
+claimed to do.
+
+A profile this already overwrote holds another account's token and reads as
+that account. Launch it: Claude Code refreshes its own login and writes the
+right credential back. If its refresh token was spent in the meantime,
+`zclaude profile login <name>` is the repair.
+
 **zclaude no longer refreshes a login that something else is holding.** A
 profile whose account also holds the global login is one refresh token living in
 two Keychain items. Usage polling and the renewal job refreshed the profile's

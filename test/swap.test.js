@@ -11,6 +11,7 @@ import { describe, it } from "node:test";
 import { claudeCredentialService, DEFAULT_CREDENTIAL_SERVICE } from "../src/profiles/keychain-name.js";
 import { putRegistered } from "../src/profiles/registry.js";
 import { backupId, clearBackups, listBackups } from "../src/swap/backup.js";
+import { configFilePath } from "../src/swap/identity.js";
 import { captureBack, planSwitch, restore, switchTo, swapStatus } from "../src/swap/index.js";
 import { tempHome } from "./helpers.js";
 
@@ -166,6 +167,32 @@ describe("switching the global login", () => {
   // second, and filing it under the first would write one account's login into
   // another's profile. Silent, permanent, and only visible weeks later as a
   // profile that mysteriously stops working.
+  // Found on a real machine, and by running `zclaude renew run` inside a
+  // `zclaude <profile>` session, which is where CLAUDE_CONFIG_DIR is set. The
+  // config file followed the variable, the Keychain item did not, so the slot
+  // read as "this profile's account" while holding someone else's credential
+  // and the capture wrote that credential over the profile's own login.
+  it("ignores CLAUDE_CONFIG_DIR, so a pinned shell cannot file the wrong account", async () => {
+    const { home, env, security, profileDir } = await setup({ globalWho: "alice", profileWho: "bob" });
+    try {
+      const pinned = { ...env, CLAUDE_CONFIG_DIR: profileDir };
+      const mine = security.items.get(claudeCredentialService(profileDir));
+
+      assert.equal(configFilePath(pinned), join(home.dir, ".claude.json"));
+      const status = await swapStatus({ env: pinned, security });
+      assert.equal(status.account.email, "alice@example.com", "the slot is the default login, not the pinned one");
+      assert.equal(status.owner, null);
+
+      assert.deepEqual(await captureBack({ env: pinned, security }), {
+        captured: false,
+        reason: "the account in the slot does not belong to a profile",
+      });
+      assert.equal(security.items.get(claudeCredentialService(profileDir)), mine, "bob's login is untouched");
+    } finally {
+      await home.cleanup();
+    }
+  });
+
   it("refuses to capture when the slot changes hands mid-read", async () => {
     const { home, env, security, profileDir } = await setup({ globalWho: "bob", profileWho: "bob" });
     try {

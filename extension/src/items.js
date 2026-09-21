@@ -20,7 +20,7 @@
  * extension reported "no account could be chosen" — blaming the accounts for a
  * version mismatch.
  */
-const MINIMUM_ZCLAUDE = "0.2.56";
+const MINIMUM_ZCLAUDE = "0.2.57";
 
 const ACTIONS = Object.freeze({
   refresh: "zclaude.action.refresh",
