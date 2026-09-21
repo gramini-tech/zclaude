@@ -79,13 +79,17 @@ function profileRow(profile, { active, usage }) {
   // the other one moves nothing.
   const twin = profile.sameAccountAs ?? [];
   const shared = twin.length > 0 ? `$(warning) the same account as ${twin.join(", ")}` : null;
+  const drifted =
+    profile.binding?.state === "drifted"
+      ? `$(warning) signed in as ${profile.binding.signedInAs}, not ${profile.binding.boundTo}`
+      : null;
   const blocked = can.ok ? null : `$(circle-slash) ${can.reason}`;
   return {
     label: `${profile.name === active ? "$(check) " : "$(blank) "}${profile.name}`,
     description: accountOf(profile),
     // Said before it is picked rather than after. The list used to offer a
     // switch that three layers below it would refuse.
-    detail: [blocked, shared].filter(Boolean).join("  ") || undefined,
+    detail: [blocked, drifted, shared].filter(Boolean).join("  ") || undefined,
     name: profile.name,
     provider: profile.provider,
     reason: can.reason,

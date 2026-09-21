@@ -351,6 +351,20 @@ describe("the hover panel", () => {
     assert.match(text, /same as hoomanely/u);
   });
 
+  it("says when a profile is holding an account it is not for", () => {
+    const text = panel({
+      profiles: [
+        {
+          name: "max",
+          provider: "anthropic",
+          binding: { state: "drifted", boundTo: "me@x.y · personal", signedInAs: "me@x.y · Acme" },
+        },
+      ],
+    });
+    assert.match(text, /max is for me@x\.y · personal but is signed in as me@x\.y · Acme/u);
+    assert.match(text, /wrong account/u, "the cell that normally carries the organisation says so too");
+  });
+
   it("keeps the organisation under the name when the accounts are genuinely different", () => {
     const text = panel({
       profiles: [{ name: "max", provider: "anthropic", account: "a@b.com · Acme", sameAccountAs: [] }],

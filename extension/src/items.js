@@ -20,7 +20,7 @@
  * extension reported "no account could be chosen" — blaming the accounts for a
  * version mismatch.
  */
-const MINIMUM_ZCLAUDE = "0.2.58";
+const MINIMUM_ZCLAUDE = "0.2.59";
 
 const ACTIONS = Object.freeze({
   refresh: "zclaude.action.refresh",
@@ -442,6 +442,9 @@ function profileRow({ profile, usage, busy, active, names, now }) {
  * which other profile this one is, which is the only thing left that differs.
  */
 function organisationOf(profile) {
+  // A profile signed in to an account it is not for is the one state where the
+  // organisation on screen is actively misleading: it is the wrong account's.
+  if (profile.binding?.state === "drifted") return "wrong account";
   const twin = profile.sameAccountAs ?? [];
   if (twin.length > 0) return `same as ${twin.join(", ")}`;
   const account = accountOf(profile);
@@ -456,13 +459,21 @@ function organisationOf(profile) {
  * every number matches to the percentage point, and matching numbers with no
  * explanation read as a fault in the numbers rather than as the truth about
  * the accounts. One line per group, whichever row is met first.
- * @param {Array<{name: string, sameAccountAs?: string[]}>} profiles
+ * @param {Array<{name: string, sameAccountAs?: string[], binding?: {state?: string, boundTo?: string, signedInAs?: string}}>} profiles
  * @returns {string[]}
  */
 function sharedAccountLines(profiles) {
   const seen = new Set();
   const lines = [];
   for (const profile of profiles) {
+    // A profile is an account. One signed in to a different one still answers
+    // with numbers, so nothing about the row looks wrong; the numbers are
+    // simply another plan's.
+    if (profile.binding?.state === "drifted") {
+      lines.push(
+        `$(warning) ${profile.name} is for ${profile.binding.boundTo} but is signed in as ${profile.binding.signedInAs}. Its numbers are the wrong account's.`,
+      );
+    }
     const twin = profile.sameAccountAs ?? [];
     if (twin.length === 0) continue;
     // Not `toSorted`: the editor's Node can be 18, where it does not exist.

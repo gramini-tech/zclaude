@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+**A profile is an account now, and a sign-in that lands on a different one is
+undone.** One email holds two accounts: a company seat and a personal
+subscription share an address and an `accountUuid`, sit in different
+organisations, and are metered apart. Claude Code's consent screen offers both,
+one click apart. Pick the wrong one and nothing afterwards looks wrong — the
+address matches, only the organisation name differs, and the usage numbers are
+simply the other plan's. On this machine it turned two profiles into two names
+for one quota, and the only symptom was two rows of identical percentages.
+
+The first sign-in records which account the profile is for, by both uuids, in
+`~/.zclaude/profiles.json`. Every later one is checked against it:
+
+- A sign-in onto a different account is refused and **rolled back**. The
+  snapshot is taken before the browser opens, and the previous credential,
+  the plaintext fallback and the identity block all go back. `--rebind` accepts
+  the new account on purpose.
+- A sign-in onto an account another profile already means is refused too, by
+  binding or by the login that profile is holding. That is the pair that
+  reports one quota under two names.
+- A rollback is only promised when the snapshot could read the old login. A
+  Keychain that would not answer says so and leaves the new account in place
+  rather than half-restoring.
+- An identity with no uuids cannot be judged, so the login stands and the
+  profile stays unbound, with a line saying why. Refusing there would be a dead
+  end over a file nobody can edit.
+
+The account can still change from outside zclaude, through `/logout` in a
+session or a plain `claude` run in that config directory. `zclaude <profile>`
+warns and starts anyway; refusing would leave you mid-task with nothing to run,
+and what is wrong is the reporting rather than the session. `profile list`,
+`profile show`, `profile doctor`, the editor's hover and its click list all say
+which account the profile is for and which one it is holding.
+
+- `zclaude profile rebind <name>` ties a profile to the account it holds now.
+  It is also how a profile made before this existed gets a binding, though a
+  first launch does that on its own when the account is not already spoken for.
+- `profile list --json` and `profile show --json` carry `binding`:
+  `state` (`unbound`, `matches`, `drifted`, `unknown`), `boundTo`, `signedInAs`.
+
 **Two profiles signed in to one account now say so, in the editor and in the
 terminal.** One address can hold two accounts: a company seat and a personal
 subscription are separate organisations with separate quotas, and zclaude has

@@ -12,16 +12,25 @@ import { MANAGED_SETTINGS_PATHS } from "./claude-settings.js";
 import { CONSOLE_KEYS_URL } from "./config.js";
 import { EXIT, InterruptedError, usageError } from "./errors.js";
 import { log } from "./logger.js";
+import {
+  accountState,
+  bindingFrom,
+  boundElsewhere,
+  describeBinding,
+  restoreLogin,
+  sameBinding,
+  snapshotLogin,
+} from "./profiles/binding.js";
 import { claudeCredentialService } from "./profiles/keychain-name.js";
 import { createProfile, defaultConfigDir, deleteProfile, prepareLaunch } from "./profiles/launch.js";
 import { canonicalConfigDir, CLAUDE_COMMANDS } from "./profiles/paths.js";
-import { accountLabel, authStatus, forgetCredential, probeProfile } from "./profiles/probe.js";
-import { getRegistered, listRegistered, PROVIDERS } from "./profiles/registry.js";
+import { accountLabel, authStatus, forgetCredential, probeProfile, readIdentity } from "./profiles/probe.js";
+import { getRegistered, listRegistered, patchRegistered, PROVIDERS } from "./profiles/registry.js";
 import { mcpServersWithSecrets, readDefaultConfig, trustedProjects } from "./profiles/seed.js";
 import { detachedShares } from "./profiles/share.js";
 import { deleteCredential, loadCredential } from "./store.js";
 import { credentialHealth, formatCredits, formatUsage, signInHint, usageForAll, usageRows } from "./usage/index.js";
-import { sameAccountGroups } from "./swap/identity.js";
+import { configFileIn, sameAccountGroups } from "./swap/identity.js";
 import { swapStatus } from "./swap/index.js";
 import { info, mask, paint, success, warn } from "./ui/log.js";
 import { askCopyMcp, askCopyTrust, askProfileName, askProvider, askSharing, askSignIn } from "./ui/profile-wizard.js";
@@ -85,10 +94,77 @@ function authFlags(options) {
   ];
 }
 
+/** Every other profile's binding and the login it is holding, for a collision check. */
+async function otherAccounts(name, env) {
+  const records = (await listRegistered(env)).filter((other) => other.name !== name && other.provider === "anthropic");
+  return Promise.all(
+    records.map(async (other) => ({
+      name: other.name,
+      account: other.account ?? null,
+      identity: await readIdentity(other.dir),
+    })),
+  );
+}
+
+/** Record which account this profile is for, from the login it now holds. */
+async function bindAccount(record, binding, env) {
+  await patchRegistered(record.name, { account: { ...binding, boundAt: new Date().toISOString() } }, env);
+  log.info("profile", "bound to an account", {
+    name: record.name,
+    accountUuid: binding.accountUuid,
+    organizationUuid: binding.organizationUuid,
+  });
+}
+
+/**
+ * Whether the account a sign-in landed on is the one this profile is for.
+ *
+ * Three ways it is not, and all three end the same way: the sign-in is undone.
+ * The binding names a different account; the account is already another
+ * profile's; or nothing identifies the account at all, which means the next
+ * comparison cannot be made either.
+ */
+function judgeSignIn({ record, found, taken, rebind }) {
+  const bound = record.account ?? null;
+  if (!found) {
+    // Nothing identifies the account, so nothing can be said about whether it
+    // is the right one. Refusing here would be a dead end over a file the
+    // person cannot edit, so the login stands and the profile stays unbound.
+    return {
+      ok: true,
+      why: null,
+      fix: null,
+      warning: `${configFileIn(record.dir)} names no account, so "${record.name}" cannot be tied to one. Its usage row may describe a different plan than its name does.`,
+    };
+  }
+  if (taken) {
+    return {
+      ok: false,
+      why: `${describeBinding(found)} is already "${taken}"`,
+      fix: `Two profiles on one account share one quota and report the same usage. Sign in as the other account, or remove "${taken}" first.`,
+      warning: null,
+    };
+  }
+  if (bound && !rebind && !sameBinding(bound, found)) {
+    return {
+      ok: false,
+      why: `"${record.name}" is for ${describeBinding(bound)}, and that sign-in landed on ${describeBinding(found)}`,
+      fix: `One address can hold two accounts. Pick the other organisation on the consent screen, or run \`zclaude profile login ${record.name} --rebind\` to move "${record.name}" to this account.`,
+      warning: null,
+    };
+  }
+  return { ok: true, why: null, fix: null, warning: null };
+}
+
 /**
  * Sign a profile in. Anthropic profiles go through Claude Code's own login
  * with CLAUDE_CONFIG_DIR pointed at the profile, which is what keeps the
  * credential out of the default Keychain item.
+ *
+ * A profile is an account, so the sign-in is checked against the one it is for
+ * and undone when it landed somewhere else. The snapshot comes first: a
+ * rollback can only be offered when the login it would restore has actually
+ * been read.
  */
 async function signIn(record, { options, env, zaiLogin, interactive }) {
   if (record.provider === "zai") {
@@ -101,20 +177,57 @@ async function signIn(record, { options, env, zaiLogin, interactive }) {
   const inherited = overridingAuthVars(childEnv);
   if (inherited.length > 0)
     warn(`${inherited.join(", ")} is set in this shell and overrides an account login. Unset it before signing in.`);
+  if (record.account && !options.rebind) info(`"${record.name}" is for ${describeBinding(record.account)}.`);
   info(`Signing in to "${record.name}". Claude Code will open your browser.`);
   log.info("profile", "anthropic sign-in", { name: record.name, dir: record.dir });
+
+  const snapshot = await snapshotLogin(record, { env });
   const code = await runClaude(bin, ["auth", "login", ...authFlags(options)], childEnv);
   if (code !== 0) {
     warn(`\`claude auth login\` exited with ${code}. Run \`zclaude profile login ${record.name}\` to try again.`);
     return code;
   }
-  const identity = await probeProfile(record);
-  success(
-    identity.identity?.email
-      ? `"${record.name}" is signed in as ${identity.identity.email}.`
-      : `"${record.name}" is signed in.`,
-  );
+
+  const probe = await probeProfile(record);
+  const found = bindingFrom(probe.identity);
+  const taken = boundElsewhere(await otherAccounts(record.name, env), found);
+  const verdict = judgeSignIn({ record, found, taken, rebind: Boolean(options.rebind) });
+  if (!verdict.ok) return await refuseSignIn(record, { snapshot, env, ...verdict });
+
+  if (verdict.warning) {
+    warn(verdict.warning);
+    success(`"${record.name}" is signed in${probe.identity?.email ? ` as ${probe.identity.email}` : ""}.`);
+    return EXIT.OK;
+  }
+  if (!sameBinding(record.account ?? null, found)) await bindAccount(record, found, env);
+  success(`"${record.name}" is signed in as ${describeBinding(found)}.`);
   return EXIT.OK;
+}
+
+/**
+ * Undo a sign-in that landed on the wrong account, and say so.
+ *
+ * Exit code rather than a thrown error: the browser flow succeeded and the
+ * message is already the whole story, so a stack-shaped failure on top of it
+ * would add nothing.
+ */
+async function refuseSignIn(record, { snapshot, env, why, fix = null }) {
+  const restored = await restoreLogin(record, snapshot, { env });
+  warn(`Refused: ${why}.`);
+  if (fix) info(`  ${fix}`);
+  if (restored) {
+    info(
+      snapshot.credential || snapshot.identity
+        ? `  Nothing was changed; "${record.name}" still holds the login it had.`
+        : `  Nothing was changed; "${record.name}" is signed out, as it was.`,
+    );
+  } else {
+    warn(
+      `  The previous login could not be put back, so "${record.name}" now holds that account. Run \`zclaude profile login ${record.name}\` again, or \`zclaude profile rebind ${record.name}\` to accept it.`,
+    );
+  }
+  log.warn("profile", "sign-in refused", { name: record.name, why, restored });
+  return EXIT.AUTH;
 }
 
 // ---------------------------------------------------------------------- add
@@ -212,7 +325,24 @@ export async function profileSummaries(env) {
     credential: probe.credential,
     account: signedInText(probe),
     sameAccountAs: shared.get(record.name) ?? [],
+    binding: bindingSummary(record, probe.identity),
   }));
+}
+
+/**
+ * Which account this profile is for, and whether it is holding it.
+ *
+ * On every row because the answer is invisible otherwise: a drifted profile is
+ * signed in, reports numbers and looks entirely healthy, and the numbers belong
+ * to somebody else's plan.
+ */
+function bindingSummary(record, identity) {
+  const { state, bound, found } = accountState(record, identity);
+  return {
+    state,
+    boundTo: bound ? describeBinding(bound) : null,
+    signedInAs: found ? describeBinding(found) : null,
+  };
 }
 
 /** What the usage layer needs to look each of these profiles up. */
@@ -243,6 +373,7 @@ async function cmdList({ env, options }) {
   const accountWidth = Math.max(...printed.map(({ account }) => account.length), 12);
   const grey = (text) => paint(text, "grey", process.stdout);
   const shared = sharedAccounts(rows);
+  const probeOf = new Map(rows.map(({ record, probe }) => [record.name, probe.identity]));
   for (const { record, account } of printed) {
     process.stdout.write(
       `${record.name.padEnd(width)}  ${record.provider.padEnd(9)} ${account.padEnd(accountWidth)}  ${grey(`shares ${describeShare(record.share)}`)}\n`,
@@ -253,6 +384,12 @@ async function cmdList({ env, options }) {
     if (twin.length > 0) {
       process.stdout.write(
         `${" ".repeat(width + 2)}${grey(`the same account as ${twin.join(", ")}, so both rows report one quota`)}\n`,
+      );
+    }
+    const binding = bindingSummary(record, probeOf.get(record.name));
+    if (binding.state === "drifted") {
+      process.stdout.write(
+        `${" ".repeat(width + 2)}${grey(`signed in to the wrong account: this profile is for ${binding.boundTo}`)}\n`,
       );
     }
     // Lines of their own rather than a wider row: an account plus an
@@ -297,6 +434,7 @@ async function cmdShow({ args, env, options }) {
     credentialService: claudeCredentialService(record.dir),
     credential: probe.credential,
     identity: probe.identity,
+    binding: bindingSummary(record, probe.identity),
     detachedShares: detached,
     zaiKey: zai ? { source: zai.source, key: mask(zai.apiKey), email: zai.email || null } : null,
     authStatus: auth,
@@ -317,6 +455,10 @@ async function cmdShow({ args, env, options }) {
       ? `${label("signed in as")}${probe.identity.email}`
       : `${label("signed in")}${signedInText(probe)}`,
     probe.identity?.organization ? `${label("organization")}${probe.identity.organization}` : null,
+    payload.binding.boundTo ? `${label("is for")}${payload.binding.boundTo}` : null,
+    payload.binding.state === "drifted"
+      ? `${label("")}${grey(`signed in to the wrong account; \`zclaude profile login ${record.name}\` or \`… rebind ${record.name}\``)}`
+      : null,
     zai ? `${label("z.ai key")}${zai.source} ${mask(zai.apiKey)}${zai.email ? ` · ${zai.email}` : ""}` : null,
     detached.length > 0
       ? `${label("detached")}${detached.join(", ")} ${grey("(no longer shared; run `zclaude profile doctor --fix`)")}`
@@ -356,6 +498,46 @@ async function cmdLoginProfile(context) {
 export async function signInProfile(name, { env, zaiLogin, interactive }) {
   const record = await requireProfile(name, env);
   return signIn(record, { options: {}, env, zaiLogin, interactive });
+}
+
+/**
+ * Accept the account a profile is holding now as the one it is for.
+ *
+ * The escape hatch the refusal points at, and the way an older profile that
+ * predates bindings acquires one. Deliberate by design: it is the one place
+ * that changes what a profile means, so it is a command you type rather than
+ * something that happens to you.
+ */
+async function cmdRebind({ args, env }) {
+  const record = await requireProfile(args[0], env);
+  if (record.provider !== "anthropic") {
+    throw usageError(
+      `"${record.name}" is a Z.ai profile. Its login is an endpoint and a key, which name no account to bind to.`,
+    );
+  }
+  const identity = await readIdentity(record.dir);
+  const found = bindingFrom(identity);
+  if (!found) {
+    throw usageError(
+      `"${record.name}" is not signed in to an account that names itself, so there is nothing to bind to.`,
+      `Run \`zclaude profile login ${record.name}\` first.`,
+    );
+  }
+  if (sameBinding(record.account ?? null, found)) {
+    info(`"${record.name}" is already for ${describeBinding(found)}.`);
+    return EXIT.OK;
+  }
+  const taken = boundElsewhere(await otherAccounts(record.name, env), found);
+  if (taken) {
+    throw usageError(
+      `${describeBinding(found)} is already "${taken}".`,
+      `Two profiles on one account share one quota and report the same usage. Rebind or remove "${taken}" first.`,
+    );
+  }
+  const was = record.account ? describeBinding(record.account) : null;
+  await bindAccount(record, found, env);
+  success(`"${record.name}" is now for ${describeBinding(found)}${was ? `, and no longer for ${was}` : ""}.`);
+  return EXIT.OK;
 }
 
 async function cmdLogoutProfile({ args, env }) {
@@ -596,6 +778,29 @@ async function checkSharedAccounts(env) {
   }));
 }
 
+/**
+ * A profile signed in to an account it is not for.
+ *
+ * It cannot happen through `zclaude profile login` any more, which undoes such
+ * a sign-in. It can still happen from outside: `/logout` inside a session, or
+ * a plain `claude` run with that config directory. Everything zclaude says
+ * about the profile afterwards — its usage, its plan size, whether rotation
+ * should send work to it — describes the wrong account.
+ */
+async function checkDrift(records) {
+  const problems = [];
+  for (const record of records) {
+    if (record.provider !== "anthropic" || !record.account) continue;
+    const { state, bound, found } = accountState(record, await readIdentity(record.dir));
+    if (state !== "drifted") continue;
+    problems.push({
+      what: `${record.name} is for ${describeBinding(bound)} but is signed in as ${describeBinding(found)}`,
+      fix: `\`zclaude profile login ${record.name}\` to sign back in as the right one, or \`zclaude profile rebind ${record.name}\` to accept the change.`,
+    });
+  }
+  return problems;
+}
+
 async function cmdDoctor({ env, options }) {
   const records = await listRegistered(env);
   /** @type {{what: string, fix?: string}[]} */
@@ -603,6 +808,7 @@ async function cmdDoctor({ env, options }) {
     ...(await environmentChecks(env)),
     ...(await checkSharedZaiKey(records, env)),
     ...(await checkSharedAccounts(env)),
+    ...(await checkDrift(records)),
     ...(await checkOvertakenByTheSlot(env)),
   ];
   for (const record of records) found.push(...(await checkProfile(record, env)));
@@ -681,6 +887,7 @@ const SUBCOMMANDS = {
   shell: cmdShell,
   env: cmdEnv,
   doctor: cmdDoctor,
+  rebind: cmdRebind,
 };
 
 export const PROFILE_SUBCOMMANDS = Object.freeze(Object.keys(SUBCOMMANDS));
@@ -698,9 +905,45 @@ export function cmdProfile(context, { zaiLogin, interactive }) {
   return handler({ ...context, args: rest, interactive, zaiLogin });
 }
 
+/**
+ * Check which account a profile is about to run as, and say so when it is not
+ * the one the profile means.
+ *
+ * Warned rather than refused. A profile's account can change from outside
+ * zclaude — `/logout` in a session, a plain `claude` in that directory — and
+ * refusing to start would leave somebody mid-task with no way to run anything
+ * while they sorted it out. What is at stake is the reporting, not the session:
+ * the usage row, the plan size and every rotation decision would describe the
+ * wrong account.
+ *
+ * A profile with no binding acquires one here. That is the migration path for
+ * everything created before bindings existed, and the first launch is the
+ * earliest honest moment: it is when the profile is being used as that account.
+ */
+async function reportAccount(record, env) {
+  if (record.provider !== "anthropic") return;
+  const { state, bound, found } = accountState(record, await readIdentity(record.dir));
+  if (state === "drifted") {
+    warn(`"${record.name}" is for ${describeBinding(bound)}, but its login is now ${describeBinding(found)}.`);
+    info(`  Usage and rotation for "${record.name}" describe the wrong account.`);
+    info(`  \`zclaude profile login ${record.name}\` to sign back in as the right one,`);
+    info(`  \`zclaude profile rebind ${record.name}\` to accept the change.`);
+    return;
+  }
+  if (state !== "unbound" || !found) return;
+  const taken = boundElsewhere(await otherAccounts(record.name, env), found);
+  if (taken) {
+    warn(`"${record.name}" and "${taken}" are signed in to the same account, so they share one quota.`);
+    info(`  \`zclaude profile login ${record.name}\` and pick the other organisation, or remove one of them.`);
+    return;
+  }
+  await bindAccount(record, found, env);
+}
+
 /** Resolve a profile's launch environment. Used by the launcher. */
 export async function launchContext(record, env) {
   const prepared = await prepareLaunch(record, env);
   reportPreparation(prepared, record);
+  await reportAccount(record, env);
   return { ...prepared, dir: canonicalConfigDir(record.dir) };
 }

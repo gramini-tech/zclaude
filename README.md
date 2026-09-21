@@ -205,6 +205,41 @@ Signing in to an Anthropic profile runs Claude Code's own browser login with the
 in place, which is what keeps the credential out of your default account's Keychain item. Pass
 `--sso`, `--console` or `--email you@example.com` and they go straight through to `claude auth login`.
 
+### A profile is an account, not an address
+
+One email can hold two accounts. A company seat and a personal subscription share an address and an
+`accountUuid`, sit in different organisations, and are metered entirely apart. Claude Code's consent
+screen offers both, one click apart.
+
+So the first sign-in records which account the profile is for, by both uuids, and every later sign-in
+is checked against it. One that lands somewhere else is **undone**: the previous credential and
+identity go back, and nothing is left changed.
+
+```console
+$ zclaude profile login max
+· "max" is for vipinr@hoomanely.com · personal.
+· Signing in to "max". Claude Code will open your browser.
+! Refused: "max" is for vipinr@hoomanely.com · personal, and that sign-in landed on
+  vipinr@hoomanely.com · Hoomanely Inc.
+·   One address can hold two accounts. Pick the other organisation on the consent screen,
+    or run `zclaude profile login max --rebind` to move "max" to this account.
+·   Nothing was changed; "max" still holds the login it had.
+```
+
+A sign-in onto an account another profile already means is refused the same way, because two profiles
+on one account share one quota and report identical usage under two names.
+
+The account can still change from outside zclaude: `/logout` inside a session, or a plain `claude`
+run with that config directory. That is caught rather than prevented. `zclaude <profile>` warns and
+starts anyway, because refusing there would leave you mid-task with nothing to run, and `profile
+list`, `profile show`, `profile doctor` and the editor's hover all say which account the profile is
+for and which one it is holding.
+
+Two escape hatches, both deliberate: `zclaude profile login <name> --rebind` accepts the account a
+sign-in lands on, and `zclaude profile rebind <name>` accepts the one a profile is already holding.
+Profiles made before this existed have no binding and acquire one the first time they are launched,
+unless that account is already another profile's, which is reported instead.
+
 ### Using one
 
 ```sh
@@ -892,6 +927,7 @@ zclaude profile login <name>               sign in to that profile
 zclaude profile logout <name>              sign out of that profile
 zclaude profile shell <name>               a subshell pinned to that profile
 zclaude profile env <name>                 print the exports, with a warning
+zclaude profile rebind <name>              tie a profile to the account it holds now
 zclaude profile remove <name>              delete it, its login and its directory
 zclaude profile doctor                     check every profile and this shell
 zclaude switch <profile>                   move the global claude login to that profile
@@ -922,6 +958,7 @@ All zclaude options go before any argument meant for `claude`.
 | `--provider <anthropic\|zai>`           | `profile add`: what the profile signs in to                                                  |
 | `--share <all\|config\|history\|none>`  | `profile add`: what it borrows from your main setup                                          |
 | `--sso`, `--console`, `--email <addr>`  | passed to `claude auth login` for an Anthropic profile                                       |
+| `--rebind`                              | `profile login`: accept an account other than the one the profile is for                     |
 | `--yes`                                 | `profile remove`: do not ask                                                                 |
 | `--fix`                                 | `profile doctor`: relink what it can                                                         |
 | `--force`                               | `self-update`: install anyway; `profile list --usage`: skip the cache                        |

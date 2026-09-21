@@ -28,7 +28,26 @@ export function registryPath(env = process.env) {
  * @property {string} [credentialService] derived at creation, for diagnostics
  * @property {string} [createdAt]
  * @property {string} [label]
+ * @property {import("./binding.js").Binding | null} [account] which account this profile is for
  */
+
+/**
+ * The account a profile is for. Both uuids or nothing: one of them alone
+ * cannot tell a company seat from a personal plan on the same address, which
+ * is the pair this binding exists to keep apart.
+ */
+function sanitizeBinding(account) {
+  const accountUuid = typeof account?.accountUuid === "string" ? account.accountUuid : "";
+  const organizationUuid = typeof account?.organizationUuid === "string" ? account.organizationUuid : "";
+  if (!accountUuid || !organizationUuid) return null;
+  return {
+    accountUuid,
+    organizationUuid,
+    email: typeof account.email === "string" ? account.email : null,
+    organization: typeof account.organization === "string" ? account.organization : null,
+    boundAt: typeof account.boundAt === "string" ? account.boundAt : undefined,
+  };
+}
 
 function sanitize(entry, name) {
   if (!entry || typeof entry !== "object") return null;
@@ -44,6 +63,7 @@ function sanitize(entry, name) {
     credentialService: typeof entry.credentialService === "string" ? entry.credentialService : undefined,
     createdAt: typeof entry.createdAt === "string" ? entry.createdAt : undefined,
     label: typeof entry.label === "string" ? entry.label : undefined,
+    account: sanitizeBinding(entry.account),
   };
 }
 
@@ -99,7 +119,7 @@ export async function getRegistered(name, env = process.env) {
 /**
  * Add or replace a profile. The directory defaults to the standard layout but
  * is stored explicitly so it stays put.
- * @param {{name: string, provider: string, share?: {config?: boolean, history?: boolean}, dir?: string, credentialService?: string, label?: string}} entry
+ * @param {{name: string, provider: string, share?: {config?: boolean, history?: boolean}, dir?: string, credentialService?: string, label?: string, account?: object | null}} entry
  */
 export async function putRegistered(entry, env = process.env) {
   const registry = await readRegistry(env);
@@ -112,6 +132,9 @@ export async function putRegistered(entry, env = process.env) {
     credentialService: entry.credentialService,
     createdAt: registry.profiles[entry.name]?.createdAt ?? new Date().toISOString(),
     label: entry.label,
+    // Kept across a re-register: which account a profile is for outlives any
+    // change to how it is shared or where it was created from.
+    account: sanitizeBinding(entry.account ?? registry.profiles[entry.name]?.account),
   };
   registry.profiles[entry.name] = record;
   await writeRegistry(registry, env);

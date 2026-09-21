@@ -74,7 +74,11 @@ describe("profile commands", () => {
         '  if [ -n "$ZC_LOGIN_FAILS" ]; then exit 4; fi',
         '  ORG="${ZC_ORG:-Acme}"',
         '  if [ "$ORG" = "personal" ]; then ORG="me@x.y\'s Organization"; fi',
-        `  printf '{"oauthAccount":{"emailAddress":"me@x.y","organizationName":"%s"}}' "$ORG" > "$CLAUDE_CONFIG_DIR/.claude.json"`,
+        // Claude Code records both uuids, and they are what says which account
+        // this is: one address can hold a seat and a personal plan, and only
+        // the organization uuid tells those apart.
+        '  ACCT="${ZC_ACCOUNT_UUID:-uuid-1}"',
+        `  printf '{"oauthAccount":{"emailAddress":"me@x.y","organizationName":"%s","accountUuid":"%s","organizationUuid":"org-%s"}}' "$ORG" "$ACCT" "$ORG" > "$CLAUDE_CONFIG_DIR/.claude.json"`,
         `  printf '{"token":"t"}' > "$CLAUDE_CONFIG_DIR/.credentials.json"`,
         "fi",
         'if [ "$1" = "auth" ] && [ "$2" = "status" ]; then',
@@ -231,6 +235,124 @@ describe("profile commands", () => {
     const printed = await profile(["list"]);
     assert.match(printed.out, /work\s+anthropic me@x\.y · Acme\s+shares/u);
     assert.match(printed.out, /personal\s+anthropic me@x\.y · personal\s+shares/u);
+  });
+
+  // The invariant: a profile is an account, and an address is not an account.
+  // One email holds a company seat and a personal subscription, one click apart
+  // on the consent screen, and picking the wrong one is invisible afterwards.
+  describe("a profile is tied to one account", () => {
+    const bindingOf = async (name) => (await getRegistered(name, env)).account;
+    const liveOrg = async (name) => {
+      const record = await getRegistered(name, env);
+      const parsed = JSON.parse(await readFile(join(record.dir, ".claude.json"), "utf8"));
+      return parsed.oauthAccount.organizationUuid;
+    };
+
+    it("records the account on the first sign-in", async () => {
+      await addWork();
+      assert.equal(await bindingOf("work"), null, "nothing is assumed before a sign-in");
+      await profile(["login", "work"]);
+      assert.deepEqual(await bindingOf("work"), {
+        accountUuid: "uuid-1",
+        organizationUuid: "org-Acme",
+        email: "me@x.y",
+        organization: "Acme",
+        boundAt: (await bindingOf("work")).boundAt,
+      });
+    });
+
+    it("undoes a sign-in that lands on a different organisation on the same address", async () => {
+      await addWork();
+      await profile(["login", "work"]);
+
+      env.ZC_ORG = "Other";
+      const refused = await profile(["login", "work"]);
+      assert.equal(refused.value, 4, "the browser flow succeeded; the account it reached did not");
+      assert.match(refused.err, /is for me@x\.y · Acme, and that sign-in landed on me@x\.y · Other/u);
+      assert.match(refused.err, /--rebind/u, "it names the way to do this on purpose");
+      assert.match(refused.err, /Nothing was changed/u);
+
+      assert.equal(await liveOrg("work"), "org-Acme", "the previous login is back in place");
+      assert.equal((await bindingOf("work")).organizationUuid, "org-Acme");
+    });
+
+    it("accepts the new account with --rebind, and says what it was", async () => {
+      await addWork();
+      await profile(["login", "work"]);
+      env.ZC_ORG = "Other";
+      const moved = await profile(["login", "work"], { rebind: true });
+      assert.equal(moved.value, 0);
+      assert.match(moved.err, /signed in as me@x\.y · Other/u);
+      assert.equal(await liveOrg("work"), "org-Other");
+      assert.equal((await bindingOf("work")).organizationUuid, "org-Other");
+    });
+
+    it("refuses a sign-in onto an account another profile already means", async () => {
+      await addWork();
+      await profile(["add", "twin"], { provider: "anthropic", share: "none" });
+      await profile(["login", "work"]);
+
+      const refused = await profile(["login", "twin"]);
+      assert.equal(refused.value, 4);
+      assert.match(refused.err, /me@x\.y · Acme is already "work"/u);
+      assert.match(refused.err, /share one quota/u);
+      assert.equal(await bindingOf("twin"), null, "the second profile stays unbound rather than colliding");
+    });
+
+    it("keeps two real accounts on one address apart", async () => {
+      // The case this must never get wrong: same address, same accountUuid,
+      // different organisation. Two plans, two quotas, two profiles.
+      await addWork();
+      await profile(["add", "personal"], { provider: "anthropic", share: "none" });
+      await profile(["login", "work"]);
+      env.ZC_ORG = "personal";
+      const second = await profile(["login", "personal"]);
+      assert.equal(second.value, 0, "a different organisation is a different account");
+      assert.notEqual((await bindingOf("work")).organizationUuid, (await bindingOf("personal")).organizationUuid);
+    });
+
+    it("reports a login changed from outside, and rebind accepts it", async () => {
+      await addWork();
+      await profile(["login", "work"]);
+      const record = await getRegistered("work", env);
+      // What `/logout` and a fresh login inside a session leave behind.
+      await writeFile(
+        join(record.dir, ".claude.json"),
+        JSON.stringify({
+          oauthAccount: {
+            emailAddress: "me@x.y",
+            organizationName: "Other",
+            accountUuid: "uuid-1",
+            organizationUuid: "org-Other",
+          },
+        }),
+      );
+
+      const doctored = await profile(["doctor"]);
+      assert.match(doctored.err, /work is for me@x\.y · Acme but is signed in as me@x\.y · Other/u);
+
+      const listed = JSON.parse((await profile(["list"], { json: true })).out).find((row) => row.name === "work");
+      assert.equal(listed.binding.state, "drifted");
+      assert.equal(listed.binding.boundTo, "me@x.y · Acme");
+      assert.equal(listed.binding.signedInAs, "me@x.y · Other");
+      assert.match(
+        (await profile(["list"])).out,
+        /signed in to the wrong account: this profile is for me@x\.y · Acme/u,
+      );
+
+      const rebound = await profile(["rebind", "work"]);
+      assert.equal(rebound.value, 0);
+      assert.match(rebound.err, /now for me@x\.y · Other, and no longer for me@x\.y · Acme/u);
+      assert.doesNotMatch((await profile(["doctor"])).err, /signed in as/u);
+    });
+
+    it("has nothing to bind a Z.ai profile to, and says so", async () => {
+      await profile(["add", "glm"], { provider: "zai", share: "none" });
+      const refused = await rejects(() =>
+        cmdProfile({ options: { args: ["rebind", "glm"] }, env, cwd: home.dir }, { zaiLogin, interactive: false }),
+      );
+      assert.match(refused.message, /name no account to bind to/u);
+    });
   });
 
   it("starts a subshell with the profile pinned and says when you leave it", async () => {

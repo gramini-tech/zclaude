@@ -158,6 +158,7 @@ const BOOL_FLAGS = Object.freeze({
   "--force": "force",
   "--usage": "usage",
   "--no-usage": "noUsage",
+  "--rebind": "rebind",
   "--sso": "sso",
   "--console": "useConsole",
 });
@@ -272,6 +273,7 @@ Profiles (one Claude or Z.ai account each, scoped to the terminal that started i
   zclaude profile shell <name>                 a subshell pinned to the profile
   zclaude profile env <name>                   print exports for advanced use
   zclaude profile remove <name> [--yes]        delete the profile, its login and its directory
+  zclaude profile rebind <name>                tie a profile to the account it holds now
   zclaude profile doctor [--fix]               check every profile and this shell
 
 Arguments
@@ -290,6 +292,7 @@ Options (must come before any claude argument or profile name)
   --share <what>               profile add: all (default), config, history or none
   --provider <name>            profile add: anthropic or zai
   --sso, --console, --email    passed to \`claude auth login\` for an Anthropic profile
+  --rebind                     profile login: accept an account other than the one the profile is for
   --yes                        profile remove: do not ask
   --fix                        profile doctor: relink what it can
   --force                      self-update: install anyway; profile list --usage: skip the cache
