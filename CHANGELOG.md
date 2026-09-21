@@ -2,6 +2,58 @@
 
 ## Unreleased
 
+**zclaude no longer refreshes a login that something else is holding.** A
+profile whose account also holds the global login is one refresh token living in
+two Keychain items. Usage polling and the renewal job refreshed the profile's
+copy; Anthropic rotates the refresh token on every use and retires the old one
+at once, which left the global item holding a token the server rejects. Claude
+Code reads that item, and it answers `invalid_grant` by signing out, so an
+editor that had been working all morning suddenly asked for a login. The same
+thing killed a profile outright when it was the second copy that got spent.
+
+The new rule lives in `src/swap/lineage.js`. A login is a *lineage*, named by a
+fingerprint of its refresh token, and zclaude mints the next token in one only
+when nothing else can be holding it:
+
+- The global slot is Claude Code's. The CLI, the VS Code extension and the
+  desktop app all read it, and the extension keeps what it read in memory and
+  refreshes on its own clock without taking any lock
+  ([claude-code#61923](https://github.com/anthropics/claude-code/issues/61923)),
+  so there is no lock that would have made this safe. That account is read-only
+  to zclaude now, however close to expiry it is.
+- A profile with a session running is that session's, for the same reason.
+- When it cannot tell what is running, it declines. Not knowing has to read as
+  "something is", or the one case this exists to prevent is the case it misses.
+
+When zclaude does refresh, the new credential goes into every store that held
+the old one in a single pass, including the plaintext `.credentials.json`
+fallback wherever one already exists. Claude Code reads both stores and prefers
+whichever is unexpired, so updating the Keychain alone lets a stale file win
+([#98334](https://github.com/NousResearch/hermes-agent/issues/98334) has the
+read order). A store that could not be written is named in the result rather
+than logged and forgotten; it is a login that will stop working.
+
+Around that:
+
+- `zclaude renew` reports these as `left alone`, with the reason, instead of
+  silently doing nothing.
+- Two profiles registered on one account are renewed once. The fan-out has
+  already written the second, and refreshing it again would rotate a token that
+  is current.
+- Reading usage no longer replaces a token that is merely due for a refresh.
+  The five-minute buffer exists so a token cannot die mid-request; there are
+  still five minutes of it left, and spending them costs nothing.
+- The usage poller takes zclaude's credentials lock around a refresh. It had
+  been writing a credential with no lock at all, which could hand a switch the
+  token the server had just rotated away.
+
+An account already signed out by the old behaviour needs signing in again:
+`zclaude profile login <name>`. Nothing can revive a retired refresh token.
+
+**The extension's minimum zclaude is 0.2.56**, the first version with that rule.
+An older CLI behind a newer extension is how the sign-outs happened, so the
+editor says which one to update.
+
 **The extension's minimum zclaude is 0.2.53**, the version that first had
 `auto pick`. It had been left at the one that first had `switch`, so an older
 install answered that one call with "`zclaude auto pick` is not a command" and

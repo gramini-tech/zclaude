@@ -2,7 +2,7 @@
 // network or a Keychain: the fetch and the `security` runner are both injected.
 
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 
@@ -26,7 +26,8 @@ import {
   usagePath,
   usageRows,
 } from "../src/usage/index.js";
-import { claudeCredentialService } from "../src/profiles/keychain-name.js";
+import { claudeCredentialService, DEFAULT_CREDENTIAL_SERVICE } from "../src/profiles/keychain-name.js";
+import { putRegistered } from "../src/profiles/registry.js";
 import { tempHome } from "./helpers.js";
 
 const NOW = 1_800_000_000_000;
@@ -300,6 +301,63 @@ describe("usage for a profile", () => {
       const onDisk = JSON.parse(await readFile(usagePath(env), "utf8"));
       assert.equal(onDisk.profiles.work.weekly.pct, 61);
       assert.doesNotMatch(JSON.stringify(onDisk), /sk-ant/u, "no token reaches the cache file");
+    } finally {
+      await home.cleanup();
+    }
+  });
+
+  // The reported bug: polling usage for a profile whose account also holds the
+  // global login refreshed that account's token, the server retired the old
+  // refresh token, and the VS Code extension — still carrying it — was signed
+  // out at its next refresh.
+  it("never mints a token for the account holding the global login", async () => {
+    const home = await tempHome();
+    try {
+      const env = { HOME: home.dir, ZCLAUDE_HOME: join(home.dir, ".zclaude"), USER: "tester" };
+      const dir = join(home.dir, ".zclaude", "profiles", "work", "home");
+      await mkdir(dir, { recursive: true });
+      await putRegistered({ name: "work", provider: "anthropic", dir }, env);
+      // Two minutes from expiry: inside the refresh buffer, so the old code
+      // would have refreshed here. Both stores hold the one refresh token.
+      const shared = JSON.stringify(credential({ expiresAt: NOW + 120_000 }));
+      const blobs = new Map([
+        [claudeCredentialService(dir), shared],
+        [DEFAULT_CREDENTIAL_SERVICE, shared],
+      ]);
+      const fetchImpl = fakeFetch(({ url }) => {
+        assert.notEqual(url, TOKEN_URL, "the token endpoint must not be reached");
+        return Response.json(USAGE_BODY);
+      });
+
+      const usage = await usageFor(record(dir), { env, fetchImpl, security: keychain(blobs), now: NOW });
+      assert.equal(usage.state, "ok", "the token is still good for two minutes, so it is spent rather than replaced");
+      assert.equal(usage.weekly.pct, 61);
+      assert.equal(JSON.parse(blobs.get(DEFAULT_CREDENTIAL_SERVICE)).claudeAiOauth.refreshToken, "sk-ant-ort-bbbb");
+    } finally {
+      await home.cleanup();
+    }
+  });
+
+  it("says the numbers are pending rather than refreshing a shared login that has lapsed", async () => {
+    const home = await tempHome();
+    try {
+      const env = { HOME: home.dir, ZCLAUDE_HOME: join(home.dir, ".zclaude"), USER: "tester" };
+      const dir = join(home.dir, ".zclaude", "profiles", "work", "home");
+      await mkdir(dir, { recursive: true });
+      await putRegistered({ name: "work", provider: "anthropic", dir }, env);
+      const shared = JSON.stringify(credential({ expiresAt: NOW - 1000 }));
+      const blobs = new Map([
+        [claudeCredentialService(dir), shared],
+        [DEFAULT_CREDENTIAL_SERVICE, shared],
+      ]);
+      const fetchImpl = fakeFetch(() => {
+        throw new Error("nothing should be asked");
+      });
+
+      const usage = await usageFor(record(dir), { env, fetchImpl, security: keychain(blobs), now: NOW });
+      assert.equal(usage.state, "stale-token");
+      assert.match(usage.detail, /global login/u);
+      assert.equal(fetchImpl.calls.length, 0);
     } finally {
       await home.cleanup();
     }

@@ -465,18 +465,43 @@ Windows it prints the `schtasks` command rather than running it.
 
 Because it runs unattended it is deliberately timid. It works one profile at a time; the first
 refresh token the server rejects ends the run and that profile is quarantined rather than retried on
-a timer, until you sign it in again; it never touches the global login, which belongs to Claude Code
-and to `zclaude switch`; and a Keychain that will not answer stops the run with a message instead of
-being asked again every six hours. `zclaude renew status` shows the last run, anything quarantined,
-and whether your account rotates refresh tokens — which decides whether renewing extends the lineage
-or merely keeps the access token fresh.
+a timer, until you sign it in again; and a Keychain that will not answer stops the run with a message
+instead of being asked again every six hours. `zclaude renew status` shows the last run, anything
+quarantined, and whether your account rotates refresh tokens, which decides whether renewing extends
+the lineage or merely keeps the access token fresh.
 
-One thing it does before anything else: if a profile's account is also the global login, it takes the
-live credential back into that profile. Claude Code refreshes the token in the slot as it works and
-the server rotates the refresh token, so the profile's own copy falls behind and is rejected — which
-looks exactly like an expired login and is nothing of the sort. `zclaude switch capture` does the
-same by hand, and `profile doctor` says when it is needed. The capture only ever moves forwards: a
-profile holding the newer token keeps it.
+### One refresher per login
+
+Anthropic rotates the refresh token every time one is spent and retires the old one immediately, so a
+login has room for exactly one refresher. After a switch the same login sits in two Keychain items,
+the global one Claude Code reads and the profile's own, and if zclaude spends the profile's copy the
+global one is left holding a token the server rejects. Claude Code answers that by signing out, which
+is how a VS Code session that had been working all morning ends up asking for a login.
+
+So zclaude mints a token only for a login nothing else can be holding:
+
+- **The global slot is Claude Code's.** The CLI, the VS Code extension and the desktop app all read
+  it, and the extension keeps what it read in memory and refreshes on its own clock without taking
+  any lock ([claude-code#61923](https://github.com/anthropics/claude-code/issues/61923)). No lock on
+  this side would have helped. That account is read-only to zclaude, however close to expiry it is.
+- **A profile with a session running belongs to that session**, for the same reason.
+- **When it cannot tell what is running, it declines.** Not knowing has to read as "something is".
+
+`zclaude renew` reports these as `left alone`, with the reason. Nothing is lost by waiting: the
+client that owns the login refreshes it, and the next read picks the new token up out of the
+Keychain.
+
+When zclaude does refresh, the result is written into every store that held the old token in one
+pass, including the plaintext `.credentials.json` fallback wherever one already exists. Claude Code
+reads both stores and prefers whichever is unexpired, so updating the Keychain alone would let a
+stale file win. A store that could not be written is named rather than logged and forgotten.
+
+One thing the job does before anything else: if a profile's account is also the global login, it
+takes the live credential back into that profile. Claude Code refreshes the token in the slot as it
+works and the server rotates it, so the profile's own copy falls behind and is rejected, which looks
+exactly like an expired login and is nothing of the sort. `zclaude switch capture` does the same by
+hand, and `profile doctor` says when it is needed. The capture only ever moves forwards: a profile
+holding the newer token keeps it.
 
 Removing the last Anthropic profile removes the schedule with it, and every uninstall path
 (`zclaude self-uninstall`, `install.sh --uninstall`) takes the plist, timer or crontab line away.

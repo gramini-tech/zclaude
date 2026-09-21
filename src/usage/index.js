@@ -12,11 +12,12 @@ import { dirname, join } from "node:path";
 import { zaiConfig, zclaudeHome } from "../config.js";
 import { log } from "../logger.js";
 import { claudeCredentialService } from "../profiles/keychain-name.js";
-import { describeCredential, parseCredential, readCredential, writeCredential } from "../swap/keychain.js";
+import { describeCredential, parseCredential, readCredential } from "../swap/keychain.js";
+import { lineageOf, refreshLineage } from "../swap/lineage.js";
 import { acquire } from "../swap/locks.js";
 import { loadCredential } from "../store.js";
 import { fetchQuota } from "../zai.js";
-import { fetchUsage, needsRefresh, normaliseUsage, refreshCredential } from "./anthropic.js";
+import { fetchUsage, needsRefresh, normaliseUsage } from "./anthropic.js";
 import { countdown, resetPhrase, resetTime } from "./when.js";
 
 const CACHE_VERSION = 1;
@@ -242,9 +243,12 @@ async function zaiUsage(record, { env, fetchImpl, signal, now }) {
 
 /**
  * Read a profile's credential, refreshing it first when it is about to expire.
- * A rotated credential is written back before it is used: the previous refresh
- * token stops working the moment the server rotates it, so a rotation that is
- * fetched and not persisted logs the profile out.
+ *
+ * The refresh goes through the lineage layer rather than straight to the token
+ * endpoint, because reading usage is not worth signing somebody out of their
+ * editor. If this account also holds the global login, or a session is running
+ * on it, another client mints its next token and this one spends what is left
+ * of the current one instead.
  */
 async function freshCredential(record, { env, fetchImpl, signal, allowRefresh, now, security }) {
   // The global login's item carries no directory hash, so a record may name the
@@ -259,20 +263,33 @@ async function freshCredential(record, { env, fetchImpl, signal, allowRefresh, n
   const blob = parseCredential(raw);
   if (!blob) return { state: "unauthorized" };
   if (!needsRefresh(blob, now)) return { state: "ok", blob };
-  if (!allowRefresh) return { state: "stale-token" };
 
-  const refreshed = await refreshCredential(blob, { fetchImpl, signal, now });
+  // `needsRefresh` fires five minutes early, so an access token that is merely
+  // due a refresh is usually still good for this one request.
+  const expiresAt = Number(blob.claudeAiOauth.expiresAt);
+  const usable = Number.isFinite(expiresAt) && expiresAt > now;
+  if (!allowRefresh) return usable ? { state: "ok", blob } : { state: "stale-token" };
+
+  const refreshed = await refreshLineage(lineageOf(blob), { env, security, fetchImpl, signal, now });
+  if (refreshed.state === "not-ours") {
+    log.debug("usage", "left this login alone", { profile: record.name, reason: refreshed.detail });
+    return usable ? { state: "ok", blob } : { state: "stale-token", detail: refreshed.detail };
+  }
   if (refreshed.state === "dead") return { state: "dead", detail: refreshed.detail };
   if (refreshed.state !== "ok") return { state: "offline", detail: refreshed.detail };
-  try {
-    await writeCredential({ service, secret: JSON.stringify(refreshed.blob), env, security });
-  } catch (error) {
-    // The rotated token exists on the server but not on disk. Say so loudly:
-    // the profile may need a sign-in, and pretending otherwise hides it.
-    log.error("usage", "refreshed credential could not be stored", { profile: record.name, error });
-    return { state: "unknown", detail: `refreshed token could not be stored: ${error.message}` };
+  if (refreshed.failed.length > 0) {
+    // The rotated token exists on the server but not in every store that held
+    // the old one. Say so loudly: those stores are now a login that will stop
+    // working, and pretending otherwise hides it.
+    const where = refreshed.failed.map((one) => one.store).join(", ");
+    log.error("usage", "refreshed credential could not be stored", { profile: record.name, where });
+    return { state: "unknown", detail: `the refreshed token could not be stored for ${where}` };
   }
-  log.info("usage", "profile token refreshed", { profile: record.name, rotated: refreshed.rotated });
+  log.info("usage", "profile token refreshed", {
+    profile: record.name,
+    rotated: refreshed.rotated,
+    written: refreshed.written,
+  });
   return { state: "ok", blob: refreshed.blob };
 }
 

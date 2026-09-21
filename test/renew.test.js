@@ -173,6 +173,65 @@ describe("the renewal run", () => {
     }
   });
 
+  // The reported bug, from the other end: the profile whose account is also the
+  // global login is one refresh token, in two Keychain items. Renewing the
+  // profile's copy retires the token the VS Code extension is holding, and
+  // Claude Code answers that by signing the editor out.
+  it("leaves alone a login the global slot is also holding", async () => {
+    const { home, env, security, items } = await setup({ shared: NOW - 1000 });
+    try {
+      const dir = join(home.dir, ".zclaude", "profiles", "shared", "home");
+      // One credential, two stores, which is what a switch leaves behind.
+      items.set(DEFAULT_CREDENTIAL_SERVICE, items.get(claudeCredentialService(dir)));
+      const before = items.get(DEFAULT_CREDENTIAL_SERVICE);
+
+      const { results } = await runRenewal({
+        env,
+        security,
+        now: NOW,
+        fetchImpl: async () => {
+          throw new Error("the token endpoint must not be reached");
+        },
+      });
+      assert.equal(results[0].state_, "in-use");
+      assert.match(results[0].detail, /global login/u);
+      assert.match(describeResult(results[0]), /^left alone/u);
+      assert.equal(items.get(DEFAULT_CREDENTIAL_SERVICE), before);
+      assert.equal(items.get(claudeCredentialService(dir)), before);
+    } finally {
+      await home.cleanup();
+    }
+  });
+
+  it("writes a renewed token into every store that held the old one", async () => {
+    const { home, env, security, items } = await setup({ one: NOW - 1000, two: null });
+    try {
+      // The same account registered twice: both copies have to move forward, or
+      // whichever is left behind is a login that stops working.
+      const first = join(home.dir, ".zclaude", "profiles", "one", "home");
+      const second = join(home.dir, ".zclaude", "profiles", "two", "home");
+      items.set(claudeCredentialService(second), items.get(claudeCredentialService(first)));
+
+      const { results } = await runRenewal({
+        env,
+        security,
+        now: NOW,
+        fetchImpl: grant({ access_token: "next-access", refresh_token: "sk-ant-ort-next", expires_in: 3600 }),
+      });
+      assert.equal(results[0].state_, "renewed");
+      for (const dir of [first, second]) {
+        const oauth = JSON.parse(items.get(claudeCredentialService(dir))).claudeAiOauth;
+        assert.equal(oauth.refreshToken, "sk-ant-ort-next");
+        assert.equal(oauth.accessToken, "next-access");
+      }
+      // The second profile is then already in step, so its own turn is a no-op.
+      assert.equal(results[1].state_, "in-step");
+      assert.match(describeResult(results[1]), /already renewed/u);
+    } finally {
+      await home.cleanup();
+    }
+  });
+
   it("stops at the first dead lineage instead of marching through the rest", async () => {
     const { home, env, security } = await setup({ a: NOW - 1000, b: NOW - 1000 });
     try {

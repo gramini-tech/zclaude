@@ -11,10 +11,13 @@
 //     by Claude Code itself and this does nothing to it.
 //   - it works one profile at a time, and the first dead refresh lineage ends
 //     the run rather than marching through the rest.
-//   - it never writes the global slot. Whatever is signed in there belongs to
-//     Claude Code, and to `zclaude switch`. It does read it once, to take a
-//     rotated token back into the profile that owns the account, because
-//     otherwise that profile's own copy is the one the server rejects.
+//   - it never mints a token for a login something else is holding. An account
+//     that is also the global login, or that has a session running, is Claude
+//     Code's to refresh; rotating it from here retires the token the editor
+//     extension is still carrying, and Claude Code answers that by signing out.
+//     It does read the global slot once, to take a rotated token back into the
+//     profile that owns the account, because otherwise that profile's own copy
+//     is the one the server rejects.
 //   - a Keychain that will not answer stops the run with a message instead of
 //     being retried in a loop.
 
@@ -22,9 +25,9 @@ import { log } from "../logger.js";
 import { claudeCredentialService } from "../profiles/keychain-name.js";
 import { listRegistered } from "../profiles/registry.js";
 import { captureBack } from "../swap/index.js";
+import { refreshLineage } from "../swap/lineage.js";
 import { withCredentialsLock } from "../swap/locks.js";
-import { parseCredential, readCredential, writeCredential } from "../swap/keychain.js";
-import { refreshCredential } from "../usage/anthropic.js";
+import { parseCredential, readCredential } from "../swap/keychain.js";
 import { isQuarantined, readRenewState, tokenFingerprint, withoutProfile, writeRenewState } from "./state.js";
 
 /** Refresh anything expiring inside this window; leave the rest alone. */
@@ -46,6 +49,10 @@ export async function runRenewal({
   let state = await readRenewState(env);
   const results = [];
   let stopped = null;
+  // Profiles a refresh earlier in this run has already written. Two profiles
+  // can be one account, and the fan-out updates both; refreshing the second
+  // would rotate a token that is already the current one.
+  const done = new Set();
 
   // A profile whose account is also the global login goes stale on its own:
   // Claude Code refreshes the token in the slot as it works and the server
@@ -65,9 +72,11 @@ export async function runRenewal({
     // the server has just rotated away.
     const seen = state;
     const outcome = await withCredentialsLock(
-      () => renewOne(profile, { env, security, fetchImpl, now, horizonMs, force, state: seen }),
+      () => renewOne(profile, { env, security, fetchImpl, now, horizonMs, force, state: seen, done }),
       { env },
     );
+    const written = outcome.written ?? [];
+    for (const name of written) done.add(name);
     results.push({ profile: profile.name, ...outcome });
     state = outcome.state ?? state;
     if (outcome.stop) {
@@ -92,7 +101,8 @@ export async function runRenewal({
   return { results, stopped, rotates: finished.rotates };
 }
 
-async function renewOne(profile, { env, security, fetchImpl, now, horizonMs, force, state }) {
+async function renewOne(profile, { env, security, fetchImpl, now, horizonMs, force, state, done }) {
+  if (done.has(profile.name)) return { state_: "in-step" };
   const service = claudeCredentialService(profile.dir);
   let raw;
   try {
@@ -113,7 +123,11 @@ async function renewOne(profile, { env, security, fetchImpl, now, horizonMs, for
     return { state_: "fresh", expiresInMs: expiresAt - now };
   }
 
-  const refreshed = await refreshCredential(blob, { fetchImpl, now });
+  // One entry point for minting a token: it decides whether this lineage is
+  // ours to refresh at all, and writes the answer into every store that held
+  // the old one. We are already inside the credentials lock.
+  const refreshed = await refreshLineage(fingerprint, { env, security, fetchImpl, now, locked: true });
+  if (refreshed.state === "not-ours") return { state_: "in-use", detail: refreshed.detail };
   if (refreshed.state === "dead") {
     const quarantined = {
       ...state.quarantined,
@@ -130,17 +144,27 @@ async function renewOne(profile, { env, security, fetchImpl, now, horizonMs, for
   }
   if (refreshed.state !== "ok") return { state_: "unreachable", detail: refreshed.detail };
 
-  try {
-    await writeCredential({ service, secret: JSON.stringify(refreshed.blob), env, security });
-  } catch (error) {
-    // The new token exists on the server but not on disk. Say it loudly: the
-    // profile may need signing in again, and a quiet failure hides that.
-    log.error("renew", "refreshed token could not be stored", { profile: profile.name, error });
-    return { state_: "not-stored", detail: error.message, stop: true, reason: error.message };
+  if (refreshed.failed.length > 0) {
+    // The new token exists on the server but not everywhere the old one lived.
+    // Say it loudly and stop: those stores now hold a token the server has
+    // retired, and a quiet failure hides a login that is about to break.
+    const where = refreshed.failed.map((one) => one.store).join(", ");
+    log.error("renew", "refreshed token could not be stored", { profile: profile.name, where });
+    const detail = `the new token could not be stored for ${where}`;
+    return { state_: "not-stored", detail, stop: true, reason: detail };
   }
-  log.info("renew", "profile renewed", { profile: profile.name, rotated: refreshed.rotated });
+  log.info("renew", "profile renewed", {
+    profile: profile.name,
+    rotated: refreshed.rotated,
+    written: refreshed.written,
+  });
   // A fresh sign-in clears an old quarantine for the same profile.
-  return { state_: "renewed", rotated: refreshed.rotated, state: withoutProfile(state, profile.name) };
+  return {
+    state_: "renewed",
+    rotated: refreshed.rotated,
+    written: refreshed.written,
+    state: withoutProfile(state, profile.name),
+  };
 }
 
 /** One line per profile, for `zclaude renew status` and the run's own output. */
@@ -154,6 +178,12 @@ export function describeResult(entry) {
     }
     case "no-login": {
       return "no login stored";
+    }
+    case "in-use": {
+      return `left alone (${entry.detail})`;
+    }
+    case "in-step": {
+      return "already renewed, with another profile on the same account";
     }
     case "quarantined": {
       return "needs signing in again; not retried";
