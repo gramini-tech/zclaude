@@ -21,6 +21,7 @@ import { mcpServersWithSecrets, readDefaultConfig, trustedProjects } from "./pro
 import { detachedShares } from "./profiles/share.js";
 import { deleteCredential, loadCredential } from "./store.js";
 import { credentialHealth, formatCredits, formatUsage, signInHint, usageForAll, usageRows } from "./usage/index.js";
+import { sameAccountGroups } from "./swap/identity.js";
 import { swapStatus } from "./swap/index.js";
 import { info, mask, paint, success, warn } from "./ui/log.js";
 import { askCopyMcp, askCopyTrust, askProfileName, askProvider, askSharing, askSignIn } from "./ui/profile-wizard.js";
@@ -169,9 +170,38 @@ function signedInText(probe) {
   return accountLabel(probe.identity) ?? `signed in (${probe.credential})`;
 }
 
+/**
+ * Which other profiles are signed in to the very same account, by name.
+ *
+ * Carried on every row because two profiles on one account report one quota,
+ * so their numbers match exactly and the rows read as a bug in the numbers
+ * rather than as what they are. Every surface that lists profiles can say so.
+ * @param {Array<{record: object, probe: object}>} rows
+ * @returns {Map<string, string[]>}
+ */
+function sharedAccounts(rows) {
+  const groups = sameAccountGroups(
+    rows.map(({ record, probe }) => ({
+      name: record.name,
+      accountUuid: probe.identity?.accountUuid ?? null,
+      organizationUuid: probe.identity?.organizationUuid ?? null,
+    })),
+  );
+  const byName = new Map();
+  for (const names of groups) {
+    for (const name of names)
+      byName.set(
+        name,
+        names.filter((other) => other !== name),
+      );
+  }
+  return byName;
+}
+
 /** One line per profile, for `profile list` and for `zclaude status`. */
 export async function profileSummaries(env) {
   const rows = await profileRows(env);
+  const shared = sharedAccounts(rows);
   return rows.map(({ record, probe }) => ({
     name: record.name,
     provider: record.provider,
@@ -181,6 +211,7 @@ export async function profileSummaries(env) {
     identity: probe.identity,
     credential: probe.credential,
     account: signedInText(probe),
+    sameAccountAs: shared.get(record.name) ?? [],
   }));
 }
 
@@ -211,10 +242,19 @@ async function cmdList({ env, options }) {
   const width = Math.max(...printed.map(({ record }) => record.name.length), 4);
   const accountWidth = Math.max(...printed.map(({ account }) => account.length), 12);
   const grey = (text) => paint(text, "grey", process.stdout);
+  const shared = sharedAccounts(rows);
   for (const { record, account } of printed) {
     process.stdout.write(
       `${record.name.padEnd(width)}  ${record.provider.padEnd(9)} ${account.padEnd(accountWidth)}  ${grey(`shares ${describeShare(record.share)}`)}\n`,
     );
+    // Two profiles on one account report one quota, so their rows carry the
+    // same numbers. Said here, that is a fact; left unsaid it reads as a bug.
+    const twin = shared.get(record.name) ?? [];
+    if (twin.length > 0) {
+      process.stdout.write(
+        `${" ".repeat(width + 2)}${grey(`the same account as ${twin.join(", ")}, so both rows report one quota`)}\n`,
+      );
+    }
     // Lines of their own rather than a wider row: an account plus an
     // organization plus three windows and their reset times does not fit in 80
     // columns, and this is the surface with room to spell them out.
@@ -534,12 +574,35 @@ async function checkOvertakenByTheSlot(env) {
   ];
 }
 
+/**
+ * Two profiles signed in to one account. Legitimate for a moment — the same
+ * login registered twice — but they share a quota, so rotation between them
+ * moves nothing and their usage rows match to the percentage point. It is
+ * nearly always a sign-in that picked the wrong organisation: one address can
+ * hold a company seat and a personal subscription, and the consent screen
+ * offers both.
+ */
+async function checkSharedAccounts(env) {
+  const rows = await profileRows(env);
+  return sameAccountGroups(
+    rows.map(({ record, probe }) => ({
+      name: record.name,
+      accountUuid: probe.identity?.accountUuid ?? null,
+      organizationUuid: probe.identity?.organizationUuid ?? null,
+    })),
+  ).map((names) => ({
+    what: `${names.join(" and ")} are signed in to the same account, so they share one quota and report the same usage`,
+    fix: `One address can hold two accounts in two organisations. \`zclaude profile login ${names.at(-1)}\` and pick the other organisation, or remove the profile you do not need.`,
+  }));
+}
+
 async function cmdDoctor({ env, options }) {
   const records = await listRegistered(env);
   /** @type {{what: string, fix?: string}[]} */
   const found = [
     ...(await environmentChecks(env)),
     ...(await checkSharedZaiKey(records, env)),
+    ...(await checkSharedAccounts(env)),
     ...(await checkOvertakenByTheSlot(env)),
   ];
   for (const record of records) found.push(...(await checkProfile(record, env)));

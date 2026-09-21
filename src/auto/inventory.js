@@ -18,7 +18,7 @@ import { byProfile, liveSessions } from "../sessions/index.js";
 import { listRegistered } from "../profiles/registry.js";
 import { claudeCredentialService } from "../profiles/keychain-name.js";
 import { isQuarantined, readRenewState, tokenFingerprint } from "../renew/state.js";
-import { configFileIn, describeIdentity, readIdentityBlock } from "../swap/identity.js";
+import { configFileIn, describeIdentity, readIdentityBlock, sameAccountGroups } from "../swap/identity.js";
 import { describeCredential, parseCredential, readCredential } from "../swap/keychain.js";
 import { swapStatus } from "../swap/index.js";
 import { usageForAll } from "../usage/index.js";
@@ -119,21 +119,11 @@ function accountFrom({ record, identity, credential, quarantined }, { tiers, usa
  *
  * Two team seats in one organisation are genuinely different accounts and are
  * legitimately rotatable; one account registered twice is not, and switching
- * between its two names would look like progress and move nothing.
+ * between its two names would look like progress and move nothing. The grouping
+ * itself lives beside `sameAccount`, which decides the same question one pair
+ * at a time, so the two cannot drift apart.
  * @param {object[]} accounts
  */
 export function duplicates(accounts) {
-  const seen = new Map();
-  for (const account of accounts) {
-    // Both uuids, which is what `sameAccount` compares and what the "one email,
-    // two plans" case requires: a company seat and a personal subscription share
-    // an account uuid and are metered entirely apart, so they are two accounts
-    // and rotating between them is real work, not a no-op.
-    if (!account.accountUuid || !account.organizationUuid) continue;
-    const key = `${account.accountUuid}/${account.organizationUuid}`;
-    const names = seen.get(key) ?? [];
-    names.push(account.name);
-    seen.set(key, names);
-  }
-  return [...seen.values()].filter((names) => names.length > 1);
+  return sameAccountGroups(accounts);
 }

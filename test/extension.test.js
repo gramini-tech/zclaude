@@ -332,6 +332,33 @@ describe("the hover panel", () => {
     assert.match(text, /href="command:zclaude\.auto">use<\/a>/u);
   });
 
+  // One address can hold a company seat and a personal subscription, which are
+  // two accounts with two quotas. Two profiles signed in to the *same* one are
+  // not: every number matches, and matching numbers with nothing said about
+  // them read as a fault in the numbers.
+  it("says when two profiles are one account, once per pair", () => {
+    const twinned = [
+      { name: "gramini", provider: "anthropic" },
+      { name: "hoomanely", provider: "anthropic", sameAccountAs: ["max"] },
+      { name: "max", provider: "anthropic", sameAccountAs: ["hoomanely"] },
+    ];
+    const text = panel({ profiles: twinned });
+    assert.match(text, /hoomanely and max are one account, so those rows report one quota/u);
+    assert.equal(text.match(/are one account/gu).length, 1, "one line for the pair, not one per row");
+    // The organisation is identical on both, so the cell that normally tells
+    // two profiles apart has to say something else.
+    assert.match(text, /same as max/u);
+    assert.match(text, /same as hoomanely/u);
+  });
+
+  it("keeps the organisation under the name when the accounts are genuinely different", () => {
+    const text = panel({
+      profiles: [{ name: "max", provider: "anthropic", account: "a@b.com · Acme", sameAccountAs: [] }],
+    });
+    assert.match(text, /Acme/u);
+    assert.doesNotMatch(text, /are one account/u);
+  });
+
   it("does not offer Auto as an action when it would pick the account already in use", () => {
     // A link that changes nothing is worse than no link.
     const text = panel({ auto: { pick: { profile: "gramini", reason: "starting on the emptiest account" } } });

@@ -93,6 +93,31 @@ export function describeIdentity(account) {
   };
 }
 
+/**
+ * Names grouped by the account they are signed in as, for the groups with more
+ * than one name in them.
+ *
+ * The key is both uuids, never the email. One address can hold two accounts —
+ * a company seat and a personal subscription on the same address are separate
+ * organisations with separate quotas — and they are two accounts worth having
+ * twice. The same account under two names is not: its two rows report one
+ * pool, so identical numbers on both are the truth and look like a bug.
+ * @param {Array<{name: string, accountUuid?: string | null, organizationUuid?: string | null}>} accounts
+ * @returns {string[][]}
+ */
+export function sameAccountGroups(accounts) {
+  /** @type {Map<string, string[]>} */
+  const seen = new Map();
+  for (const account of accounts) {
+    if (!account.accountUuid || !account.organizationUuid) continue;
+    const key = `${account.accountUuid}/${account.organizationUuid}`;
+    const names = seen.get(key) ?? [];
+    names.push(account.name);
+    seen.set(key, names);
+  }
+  return [...seen.values()].filter((names) => names.length > 1);
+}
+
 /** Whether two identity blocks name the same account in the same organisation. */
 export function sameAccount(a, b) {
   const left = describeIdentity(a);

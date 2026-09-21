@@ -20,7 +20,7 @@
  * extension reported "no account could be chosen" — blaming the accounts for a
  * version mismatch.
  */
-const MINIMUM_ZCLAUDE = "0.2.57";
+const MINIMUM_ZCLAUDE = "0.2.58";
 
 const ACTIONS = Object.freeze({
   refresh: "zclaude.action.refresh",
@@ -358,6 +358,7 @@ function hoverPanel({ status, profiles = [], usage = {}, busy = {}, auto = null,
   } else {
     lines.push("Nobody is signed in.", "");
   }
+  for (const line of sharedAccountLines(profiles)) lines.push(escapeHtml(line), "");
   if (profiles.length > 0) {
     lines.push(accountTable({ profiles, usage, busy, auto, active: status?.owner ?? null, now }), "");
   }
@@ -436,12 +437,43 @@ function profileRow({ profile, usage, busy, active, names, now }) {
  * The full "vipinr@hoomanely.com · Hoomanely Inc" under every name would make
  * the first column wider than the three usage columns put together, and the
  * address is already named in full above the table. The organisation is the
- * part that differs.
+ * part that differs — except when it does not. Two profiles signed in to one
+ * account carry the same organisation and the same numbers, so the cell says
+ * which other profile this one is, which is the only thing left that differs.
  */
 function organisationOf(profile) {
+  const twin = profile.sameAccountAs ?? [];
+  if (twin.length > 0) return `same as ${twin.join(", ")}`;
   const account = accountOf(profile);
   const parts = account.split(" · ");
   return parts.length > 1 ? parts.at(-1) : account;
+}
+
+/**
+ * Two names for one account, said in a sentence above the table.
+ *
+ * The table cannot carry this on its own. Both rows report the one quota, so
+ * every number matches to the percentage point, and matching numbers with no
+ * explanation read as a fault in the numbers rather than as the truth about
+ * the accounts. One line per group, whichever row is met first.
+ * @param {Array<{name: string, sameAccountAs?: string[]}>} profiles
+ * @returns {string[]}
+ */
+function sharedAccountLines(profiles) {
+  const seen = new Set();
+  const lines = [];
+  for (const profile of profiles) {
+    const twin = profile.sameAccountAs ?? [];
+    if (twin.length === 0) continue;
+    // Not `toSorted`: the editor's Node can be 18, where it does not exist.
+    const group = [profile.name, ...twin];
+    group.sort((a, b) => a.localeCompare(b));
+    const key = group.join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    lines.push(`$(warning) ${group.join(" and ")} are one account, so those rows report one quota.`);
+  }
+  return lines;
 }
 
 function actionFor(profile, active, usage) {
@@ -521,6 +553,7 @@ module.exports = {
   isSupported,
   localTime,
   MINIMUM_ZCLAUDE,
+  sharedAccountLines,
   outdatedText,
   quickPickItems,
   statusBarText,

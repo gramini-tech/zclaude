@@ -74,12 +74,18 @@ async function readBusy() {
 /** One account in the click list, saying up front if it cannot be picked. */
 function profileRow(profile, { active, usage }) {
   const can = rotatable(profile, usage[profile.name]);
+  // Two names for one account is worth saying before the pick: both rows show
+  // the same address, the same organisation and the same numbers, and picking
+  // the other one moves nothing.
+  const twin = profile.sameAccountAs ?? [];
+  const shared = twin.length > 0 ? `$(warning) the same account as ${twin.join(", ")}` : null;
+  const blocked = can.ok ? null : `$(circle-slash) ${can.reason}`;
   return {
     label: `${profile.name === active ? "$(check) " : "$(blank) "}${profile.name}`,
     description: accountOf(profile),
     // Said before it is picked rather than after. The list used to offer a
     // switch that three layers below it would refuse.
-    detail: can.ok ? undefined : `$(circle-slash) ${can.reason}`,
+    detail: [blocked, shared].filter(Boolean).join("  ") || undefined,
     name: profile.name,
     provider: profile.provider,
     reason: can.reason,

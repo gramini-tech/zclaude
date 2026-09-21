@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+**Two profiles signed in to one account now say so, in the editor and in the
+terminal.** One address can hold two accounts: a company seat and a personal
+subscription are separate organisations with separate quotas, and zclaude has
+always kept those apart by both uuids rather than by the address. Two profiles
+signed in to the *same* account are a different thing. They share one quota, so
+every window matches to the percentage point, the organisation under each name
+is identical, and nothing on screen says why. It reads as the numbers being
+broken.
+
+`zclaude auto status` had the only check, which is the one surface nobody was
+looking at. Now:
+
+- `profile list --json` carries `sameAccountAs` on every row, and
+  `profile list` prints it under the name.
+- `profile doctor` reports the pair and names the likely cause, which is a
+  sign-in that picked the wrong organisation on the consent screen.
+- The editor's hover puts a line above the table, once per pair, and the cell
+  that normally carries the organisation says `same as <other>` instead. That
+  cell exists to tell two profiles on one address apart, and when the account
+  is the same the organisation no longer does.
+- The click list says it before you pick, beside any reason the row cannot be
+  switched to.
+
+`profile list --json` identities gained `accountUuid` and `organizationUuid`,
+because the email and the organisation name cannot answer this and the
+extension had nothing else to go on. The grouping moved to `sameAccountGroups`
+in `src/swap/identity.js`, beside `sameAccount`, which decides the same
+question one pair at a time.
+
 **`CLAUDE_CONFIG_DIR` no longer moves the global slot's config file while
 leaving its Keychain item behind.** Found by running `zclaude renew run` inside
 a `zclaude gramini` session, which is a shell where that variable is set: the

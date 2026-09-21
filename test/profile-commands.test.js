@@ -385,6 +385,53 @@ describe("profile commands", () => {
     assert.equal(result.value, 0);
   });
 
+  // One address can hold two accounts: a company seat and a personal
+  // subscription are separate organisations with separate quotas. Two profiles
+  // signed in to the *same* one are a mistake, and the only sign of it is two
+  // rows of identical numbers, which reads as a fault in the numbers.
+  it("spots two profiles signed in to one account, and keeps two real accounts apart", async () => {
+    const seat = {
+      accountUuid: "uuid-1",
+      emailAddress: "me@x.y",
+      organizationUuid: "org-acme",
+      organizationName: "Acme",
+    };
+    const personal = { ...seat, organizationUuid: "org-personal", organizationName: "me@x.y's Organization" };
+    for (const [name, account] of [
+      ["work", seat],
+      ["spare", personal],
+    ]) {
+      await profile(["add", name], { provider: "anthropic", share: "none" });
+      const record = await getRegistered(name, env);
+      await writeFile(join(record.dir, ".claude.json"), JSON.stringify({ oauthAccount: account }));
+    }
+
+    // Same address, two organisations: two accounts, and nothing to report.
+    const apart = await profile(["doctor"]);
+    assert.doesNotMatch(apart.err, /the same account/u);
+    const listedApart = JSON.parse((await profile(["list"], { json: true })).out);
+    assert.deepEqual(
+      listedApart.map((row) => row.sameAccountAs),
+      [[], []],
+    );
+
+    // Now put the second one in the first one's organisation, which is what a
+    // sign-in that picked the wrong organisation leaves behind.
+    const spare = await getRegistered("spare", env);
+    await writeFile(join(spare.dir, ".claude.json"), JSON.stringify({ oauthAccount: seat }));
+
+    const together = await profile(["doctor"]);
+    assert.match(together.err, /spare and work are signed in to the same account/u);
+    assert.match(together.err, /pick the other organisation/u);
+
+    const listed = JSON.parse((await profile(["list"], { json: true })).out);
+    assert.deepEqual(Object.fromEntries(listed.map((row) => [row.name, row.sameAccountAs])), {
+      spare: ["work"],
+      work: ["spare"],
+    });
+    assert.match((await profile(["list"])).out, /the same account as spare, so both rows report one quota/u);
+  });
+
   it("doctor reports a deleted directory without trying to repair it", async () => {
     await addWork();
     const record = await getRegistered("work", env);

@@ -41,6 +41,12 @@ export async function readIdentity(configDir) {
       email: typeof account.emailAddress === "string" ? account.emailAddress : null,
       organization: typeof account.organizationName === "string" ? account.organizationName : null,
       seat: typeof account.seatTier === "string" ? account.seatTier : null,
+      // The two fields that actually identify an account. The address does not:
+      // a company seat and a personal subscription on one address are separate
+      // organisations with separate quotas, and two profiles signed in to the
+      // same one report a single pool under two names.
+      accountUuid: typeof account.accountUuid === "string" ? account.accountUuid : null,
+      organizationUuid: typeof account.organizationUuid === "string" ? account.organizationUuid : null,
     };
   } catch {
     return null;

@@ -110,9 +110,25 @@ describe("profile probe", () => {
     assert.equal(await readIdentity(dir), null);
     await writeFile(
       join(dir, ".claude.json"),
-      JSON.stringify({ oauthAccount: { emailAddress: "a@b.c", organizationName: "Acme", seatTier: "team_tier_1" } }),
+      JSON.stringify({
+        oauthAccount: {
+          emailAddress: "a@b.c",
+          organizationName: "Acme",
+          seatTier: "team_tier_1",
+          accountUuid: "uuid-1",
+          organizationUuid: "org-1",
+        },
+      }),
     );
-    assert.deepEqual(await readIdentity(dir), { email: "a@b.c", organization: "Acme", seat: "team_tier_1" });
+    // Both uuids come through: the address cannot tell a company seat from a
+    // personal subscription, and everything that compares accounts needs them.
+    assert.deepEqual(await readIdentity(dir), {
+      email: "a@b.c",
+      organization: "Acme",
+      seat: "team_tier_1",
+      accountUuid: "uuid-1",
+      organizationUuid: "org-1",
+    });
     await writeFile(join(dir, ".claude.json"), "{broken");
     assert.equal(await readIdentity(dir), null);
   });
