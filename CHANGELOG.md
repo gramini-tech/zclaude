@@ -40,6 +40,10 @@ which account the profile is for and which one it is holding.
   first launch does that on its own when the account is not already spoken for.
 - `profile list --json` and `profile show --json` carry `binding`:
   `state` (`unbound`, `matches`, `drifted`, `unknown`), `boundTo`, `signedInAs`.
+- Whether a rollback is possible is judged by where the login actually lives.
+  A machine with no Keychain keeps it in `.credentials.json`, which restores
+  perfectly well; asking `security` there fails and means nothing, and judging
+  by that alone declined every rollback on Linux.
 
 **Two profiles signed in to one account now say so, in the editor and in the
 terminal.** One address can hold two accounts: a company seat and a personal

@@ -27,7 +27,7 @@ import { log } from "../logger.js";
 import { readCredential, removeCredential, writeCredential } from "../swap/keychain.js";
 import { configFileIn, readIdentityBlock, writeIdentityBlock } from "../swap/identity.js";
 import { claudeCredentialService, credentialFilePath } from "./keychain-name.js";
-import { accountLabel } from "./probe.js";
+import { accountLabel, credentialLocation } from "./probe.js";
 
 /**
  * @typedef {object} Binding
@@ -110,29 +110,40 @@ export function boundElsewhere(others, binding) {
 /**
  * Everything needed to put a profile's login back exactly as it was.
  *
- * `restorable` is the whole point of the shape. A snapshot that could not read
- * the Keychain cannot undo anything, and a rollback that silently does half the
- * job is worse than one that was never offered.
+ * `restorable` is the whole point of the shape. A rollback that silently does
+ * half the job is worse than one that was never offered, so it is claimed only
+ * when the login it would restore has actually been read.
+ *
+ * Where that login lives decides what has to be read. A machine with no
+ * Keychain keeps it in a plaintext file beside the config directory, and
+ * failing to run `security` there is not a loss of anything — there was never
+ * a Keychain item to lose. Judging restorability by the Keychain alone made
+ * every rollback on Linux decline a rollback it could have done.
  * @param {{name: string, dir: string}} record
- * @param {{env?: NodeJS.ProcessEnv, security?: import("../swap/keychain.js").SecurityRunner}} [options]
+ * @param {{env?: NodeJS.ProcessEnv, security?: import("../swap/keychain.js").SecurityRunner, platform?: NodeJS.Platform}} [options]
  */
-export async function snapshotLogin(record, { env = process.env, security } = {}) {
+export async function snapshotLogin(record, { env = process.env, security, platform = process.platform } = {}) {
   const service = claudeCredentialService(record.dir);
   const file = credentialFilePath(record.dir);
+  // "unknown" is the only answer that means a rollback cannot be promised: a
+  // Keychain that refused looks exactly like an item that is not there.
+  const where = await credentialLocation(record.dir, { platform, ...(security && { security }) });
   let credential = null;
-  let restorable = true;
-  try {
-    credential = await readCredential({ service, env, security });
-  } catch (error) {
-    log.debug("profile", "no rollback available for this sign-in", { name: record.name, error });
-    restorable = false;
+  let restorable = where !== "unknown";
+  if (where === "keychain") {
+    try {
+      credential = await readCredential({ service, env, security });
+    } catch (error) {
+      log.debug("profile", "no rollback available for this sign-in", { name: record.name, error });
+      restorable = false;
+    }
   }
   return {
     service,
     file,
+    where,
+    hasKeychain: platform === "darwin",
     credential,
-    // Claude Code writes the plaintext fallback where there is no Keychain, so
-    // a snapshot that ignored it would restore nothing on Linux.
     fileText: await readFile(file, "utf8").catch(() => null),
     identity: await readIdentityBlock(configFileIn(record.dir)),
     restorable,
@@ -150,12 +161,17 @@ export async function restoreLogin(record, snapshot, { env = process.env, securi
   if (!snapshot?.restorable) return false;
   const { service, file } = snapshot;
   let ok = true;
-  try {
-    if (snapshot.credential) await writeCredential({ service, secret: snapshot.credential, env, security });
-    else await removeCredential({ service, env, security });
-  } catch (error) {
-    log.error("profile", "the previous credential could not be put back", { error });
-    ok = false;
+  // Only where there is a Keychain to write to. Asking `security` to delete an
+  // item on a machine that has no `security` fails, and would report a rollback
+  // that otherwise succeeded as a failure.
+  if (snapshot.hasKeychain) {
+    try {
+      if (snapshot.credential) await writeCredential({ service, secret: snapshot.credential, env, security });
+      else await removeCredential({ service, env, security });
+    } catch (error) {
+      log.error("profile", "the previous credential could not be put back", { error });
+      ok = false;
+    }
   }
   try {
     if (snapshot.fileText === null) await rm(file, { force: true });
