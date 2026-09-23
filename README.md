@@ -839,6 +839,120 @@ Listing models never signs anything in and never refreshes a token. An account w
 lapsed is skipped rather than renewed, because seeing a model list is not worth spending a rotation;
 [Keeping tokens alive](#keeping-tokens-alive) explains why that matters.
 
+## Routing one session across providers
+
+The router is a small HTTP proxy on `127.0.0.1` that Claude Code points at for the duration of a
+session. Requests arrive already labelled by class — opus, sonnet, haiku, fable — and each class
+goes wherever a route table says. So a subagent turn can be answered by a GLM model while the main
+turn rotates across Anthropic accounts, inside one session, without changing anything in Claude Code.
+
+It routes generation and nothing else. The request and response stay in Anthropic Messages shape;
+what changes per hop is the URL, the authorization header, and the `model` string. Usage lookups,
+token counting and everything else pass through to the real provider.
+
+```sh
+zclaude router config init          # write ~/.zclaude/router.json with its explanation
+zclaude router route sonnet glm     # sonnet-class work goes to the Z.ai target named "glm"
+zclaude router serve                # hold this terminal; other launches use it
+zclaude work -p "say hi"            # in another terminal
+zclaude router log                  # what went where
+```
+
+Nothing routes until `enabled` is `true` in `~/.zclaude/router.json`. Editing it by hand is expected;
+the file carries its own `_readme`, and a value out of range is clamped with a warning rather than
+rejected.
+
+### The route table
+
+```jsonc
+{
+  "enabled": true,
+  "targets": {
+    "any": { "kind": "anthropic", "profile": "auto" },
+    "work": { "kind": "anthropic", "profile": "work" },
+    "glm": { "kind": "zai", "model": "latest" },
+    "glm-fast": { "kind": "zai", "model": "latest:fast" },
+  },
+  "routes": {
+    "opus": { "to": ["work", "any"] },
+    "sonnet": { "to": ["any", "glm"] },
+    "haiku": { "to": ["glm-fast", "any"] },
+    "unknown": { "to": ["any"] },
+  },
+}
+```
+
+A target is somewhere a request can go. `"profile": "auto"` means whichever Anthropic account has the
+most room, ranked by the same policy `zclaude auto` uses; a profile name pins it to that account.
+
+A route is an ordered list of target names, and the order is both the preference and the fallback
+chain. **A list of one pins that class**: when its target is spent, those requests wait and then fail
+rather than quietly answering from somewhere else. That surprises people, so `router status` marks it.
+
+No model version appears anywhere in this file. A Z.ai target names a selector — `latest`,
+`latest:fast`, or an exact id if you really mean one — and it is resolved against what the provider
+publishes at the moment a request is sent. `zclaude router models` shows what each one means today.
+An exact id the provider has retired falls forward to the newest with a warning, because a route that
+stops working the day a model is withdrawn is worse than one that moves on and says so.
+
+### What it does when an account is spent
+
+Two kinds of 429 arrive from Anthropic and they mean opposite things. A _quota_ 429 means the window
+is used up, so the request moves to the next target in the chain. A _burst_ 429 means too many
+requests in a minute while the window is still mostly free, and moving would be a mistake: rotating
+to another account discards a warm prompt cache, which on an agentic turn is most of the input
+tokens. The router waits out the `retry-after` and asks the same account again.
+
+When nothing in a class's chain can take a request, it holds silently for up to 240 seconds, polling
+every five, and then returns a real `429` with a `retry-after` that Claude Code's own retry handles.
+Nothing is written to the response until an upstream has answered, so there is exactly one moment
+where a request becomes uninterruptible, and no failover after it.
+
+A conversation stays on the account that holds its prompt cache for five minutes, keyed on the system
+prompt, the tool names and the first user turn. After a compaction those change, so the binding
+releases at exactly the moment the cache it was protecting stopped existing.
+
+### Session mode, and what is not built
+
+The router runs for a session, not for the machine. `zclaude <profile>` starts one (or uses the one
+`zclaude router serve` is already running) and points that session at it with `ANTHROPIC_BASE_URL`,
+`ANTHROPIC_AUTH_TOKEN` and `ZCLAUDE_ROUTER`. When claude exits, a router zclaude started for it exits
+too. Plain `claude`, other terminals and the VS Code extension are untouched.
+
+Machine-wide interception would mean writing those keys into Claude Code's own user settings, which
+makes a local process a dependency of every Claude Code on the machine. That is designed and not
+built. `zclaude router status` says `session` and will keep saying it until it is.
+
+Two things to know about pointing Claude Code at any non-first-party base URL, router or not:
+MCP tool search turns off unless `ENABLE_TOOL_SEARCH=true` is set, which zclaude sets for you; and
+Remote Control is disabled and does not come back for that session. The WebFetch domain check and
+the fast-mode availability check talk to `api.anthropic.com` directly and never reach the router.
+
+### The local page
+
+`zclaude router open` edits the route table in a browser, shows what each selector resolves to right
+now, and streams the request log. It binds to loopback only, with no setting to change that, and the
+`Host` header is checked on every request so a page on someone else's domain resolving to 127.0.0.1
+is refused.
+
+The command mints a single-use link valid for sixty seconds; opening it trades the link for a cookie
+scoped to `/__zclaude/`. The router's bearer token never reaches the browser, and the proxy path
+ignores cookies entirely, so a hostile page cannot make your browser spend your quota.
+
+**The request log is metadata only.** Class, target, model id, status, duration and token counts. No
+prompts and no responses, not behind a flag, and there is no setting that turns that on.
+
+### What the router never does
+
+It never calls `zclaude switch`. Per-request selection and moving the global login are different
+jobs, and the router does only the first. `~/.claude.json` is not touched either, which has one
+honest cost: the account Claude Code _displays_ comes from that file, so during a routed session the
+name on screen may not be the account that answered. `zclaude router log` is the truth.
+
+It also never refreshes an OAuth token that something else might be holding. A routed session
+authenticates with a local token and never reads its profile's credential, so it is not counted as a
+refresher; see [One refresher per login](#one-refresher-per-login).
+
 ## Passing arguments to Claude Code
 
 zclaude is a launcher, so most of what you type is not for it. The rule is positional:
@@ -970,6 +1084,14 @@ zclaude switch <profile>                   move the global claude login to that 
 zclaude switch --status [--json]           which account plain claude uses right now
 zclaude switch --restore                   put the previous global login back
 zclaude switch capture                     store the live login back into its profile
+zclaude router status [--json]             where each class of model goes, and whether one is serving
+zclaude router route <class> [target...]   send a class somewhere; one target pins it there
+zclaude router models [--json] [--force]   what each provider publishes now, and what selectors mean
+zclaude router serve [--port n]            be the router in this terminal
+zclaude router stop                        stop the one that is serving
+zclaude router log [-n 50] [--json]        what it has served lately, metadata only
+zclaude router open [--print]              open the local page
+zclaude router config [show|path|init]     the route table: ~/.zclaude/router.json
 zclaude renew status [--json]              is the renewal job scheduled, and what did it do
 zclaude renew install                      schedule the renewal
 zclaude renew uninstall                    remove the schedule
@@ -1019,6 +1141,8 @@ All zclaude options go before any argument meant for `claude`.
 | `--log-level`, `--log-file`, `--no-log` | run-log controls, see "Run logs" below                                                       |
 | `--keep-config`                         | `self-uninstall`: keep `~/.zclaude`                                                          |
 | `--path`                                | `zclaude log`: print only the log file path                                                  |
+| `--port <n>`                            | `router serve`: listen on this port instead of the one in `router.json`                      |
+| `--print`                               | `router open`: print the link instead of opening a browser                                   |
 | `--help`, `--version`                   | zclaude help and versions (`zclaude -- --help` for claude's own)                             |
 
 ## Configuration
@@ -1080,6 +1204,7 @@ MY_TEAM_MCP_TOKEN=...
 | `ZCLAUDE_ALLOW_SETTINGS_OVERRIDE=1`                                                                                                                  | launch even when a settings `env` block overrides this session                                                    |
 | `ZCLAUDE_NO_UPDATE_CHECK=1`                                                                                                                          | skip the daily check for a newer version                                                                          |
 | `ZCLAUDE_AUTO_DAEMON=1`                                                                                                                              | set on the watcher's own process; you never set this yourself                                                     |
+| `ZCLAUDE_ROUTER`                                                                                                                                     | set on a routed session's child process, to the router's port; you never set this yourself                        |
 | `ZCLAUDE_EDITOR`                                                                                                                                     | which editor `zclaude auto edit` opens; `$VISUAL` then `$EDITOR` otherwise                                        |
 | `ZCLAUDE_INSTALL_NO_VSIX=1`                                                                                                                          | installer: do not offer or install the VS Code status bar item                                                    |
 | `ZCLAUDE_INSTALL_NO_RENEW=1`                                                                                                                         | installer: do not offer or install the background token renewal                                                   |

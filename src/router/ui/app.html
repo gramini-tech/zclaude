@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>zclaude router</title>
+    <link rel="stylesheet" href="/__zclaude/ui/app.css" />
+  </head>
+  <body>
+    <header>
+      <h1>zclaude router</h1>
+      <p id="where" class="muted">connecting…</p>
+    </header>
+
+    <main>
+      <section id="routes-pane">
+        <div class="pane-head">
+          <h2>Routes</h2>
+          <div class="actions">
+            <button id="refresh-models" type="button">Refresh models</button>
+            <button id="save" type="button" disabled>Save</button>
+          </div>
+        </div>
+        <p class="muted">
+          Each class of model goes to the first target that can take it, then falls back through the rest. A class with
+          one target is pinned: when that target is spent those requests wait and then fail rather than moving somewhere
+          else.
+        </p>
+        <table id="routes">
+          <thead>
+            <tr>
+              <th>class</th>
+              <th>chain</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <p id="route-errors" class="errors" hidden></p>
+      </section>
+
+      <section id="targets-pane">
+        <div class="pane-head">
+          <h2>Targets</h2>
+          <span id="model-source" class="muted"></span>
+        </div>
+        <p class="muted">
+          A Z.ai target names a selector rather than a version. <code>latest</code> and <code>latest:fast</code> are
+          resolved against what the provider publishes at the moment a request is sent, so this table does not go stale
+          when they ship something new.
+        </p>
+        <table id="targets">
+          <thead>
+            <tr>
+              <th>name</th>
+              <th>kind</th>
+              <th>where</th>
+              <th>resolves to</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <section id="accounts-pane">
+        <div class="pane-head"><h2>Accounts</h2></div>
+        <table id="accounts">
+          <thead>
+            <tr>
+              <th>profile</th>
+              <th>state</th>
+              <th>5h</th>
+              <th>7d</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <p id="sitting-out" class="muted"></p>
+      </section>
+
+      <section id="log-pane">
+        <div class="pane-head">
+          <h2>Recent requests</h2>
+          <span id="totals" class="muted"></span>
+        </div>
+        <p class="muted">
+          Metadata only. No prompts and no responses are recorded here, by this page or by the router, and there is no
+          setting that turns that on.
+        </p>
+        <table id="log">
+          <thead>
+            <tr>
+              <th>at</th>
+              <th>class</th>
+              <th>target</th>
+              <th>model</th>
+              <th>status</th>
+              <th>ms</th>
+              <th>tokens</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+    </main>
+
+    <script src="/__zclaude/ui/app.js" type="module"></script>
+  </body>
+</html>

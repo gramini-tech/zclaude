@@ -17,6 +17,9 @@
 // 401 or a quota 429 from the first account has to be replayable against the
 // second, and Node hands you a request body exactly once.
 
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+
 import { log } from "../logger.js";
 import { rewriteBody, serializeBody } from "./body.js";
 import { classifyRequest } from "./classify.js";
@@ -135,6 +138,8 @@ const sleep = (ms) =>
  */
 async function runAttempts({ first, request, parsed, buffer, req, path, deps, pick }) {
   const excluded = new Set();
+  /** Why each target said no, kept for the 503 rather than thrown away. */
+  const refusals = [];
   let target = first;
   let index = 0;
   let sameTargetAttempts = 0;
@@ -161,12 +166,22 @@ async function runAttempts({ first, request, parsed, buffer, req, path, deps, pi
       continue;
     }
 
-    excluded.add(target.record?.name ?? target.name);
+    const name = target.record?.name ?? target.name;
+    // Named at info, because a request that ends up exhausted is otherwise a
+    // 503 with nothing anywhere saying which target refused it or why, and
+    // that is an hour of somebody's evening.
+    log.info("router", "target refused; moving on", {
+      target: name,
+      why: decision.why,
+      status: answer.upstream.status,
+    });
+    refusals.push(`${name}: ${decision.why}`);
+    excluded.add(name);
     index += 1;
     sameTargetAttempts = 0;
     ({ target } = await pick(excluded));
   }
-  return { action: "exhausted", target: null, attemptIndex: index };
+  return { action: "exhausted", target: null, attemptIndex: index, refusals };
 }
 
 /**
@@ -234,11 +249,20 @@ export async function handleMessages({ req, res, path, deps: given }) {
   const outcome = await runAttempts({ first, request, parsed, buffer, req, path, deps, pick });
   if (outcome.action === "aborted") return;
   if (outcome.action === "exhausted") {
-    ledger?.record({ at: startedAt, klass: request.klass, target: null, status: 503, ms: now() - startedAt });
+    const why = outcome.refusals?.join("; ") || "no target in this class's chain could be reached";
+    log.warn("router", "every target refused", { klass: request.klass, why });
+    ledger?.record({
+      at: startedAt,
+      klass: request.klass,
+      target: null,
+      status: 503,
+      ms: now() - startedAt,
+      error: why,
+    });
     fail(res, {
       status: 503,
       type: "api_error",
-      message: "every account for this class of model refused the request",
+      message: `every target for ${request.klass} refused this request (${why})`,
     });
     return;
   }
@@ -275,8 +299,11 @@ async function resolveModel(target, deps, request) {
 async function commit({ res, answer, target, request, deps, startedAt, attemptIndex }) {
   const { upstream } = answer;
   const { now = Date.now, ledger } = deps;
+  // With `profile: "auto"` the table entry is "any", which says nothing about
+  // where the request went. The account is the interesting half.
+  const via = target.record?.name ?? target.profile ?? null;
   const headers = downstreamHeaders(upstream.headers, {
-    target: target.name,
+    target: via && via !== target.name ? `${target.name}/${via}` : target.name,
     klass: request.klass,
     model: answer.resolved ?? request.normalized,
     attempt: attemptIndex + 1,
@@ -293,6 +320,7 @@ async function commit({ res, answer, target, request, deps, startedAt, attemptIn
       at: startedAt,
       klass: request.klass,
       target: target.name,
+      via,
       model: read?.model ?? answer.resolved ?? request.normalized,
       status: upstream.status,
       ms: now() - startedAt,
@@ -302,10 +330,11 @@ async function commit({ res, answer, target, request, deps, startedAt, attemptIn
   }
 
   const tap = createUsageTap();
-  const { Readable } = await import("node:stream");
-  const { pipeline } = await import("node:stream/promises");
   try {
-    await pipeline(Readable.fromWeb(upstream.body), tap.stream, res);
+    // `Readable.from`, not `Readable.fromWeb`: the latter is Node 22. A web
+    // ReadableStream is async-iterable, which is all this needs and is stable
+    // on the version floor this package supports.
+    await pipeline(Readable.from(upstream.body), tap.stream, res);
   } catch (error) {
     // A failure after the first byte is a truncated stream, never a failover.
     log.warn("router", "stream failed after it was committed", { target: target.name, error });
@@ -318,6 +347,7 @@ async function commit({ res, answer, target, request, deps, startedAt, attemptIn
       at: startedAt,
       klass: request.klass,
       target: target.name,
+      via,
       model: seen.model ?? answer.resolved ?? request.normalized,
       status: upstream.status,
       ms: now() - startedAt,

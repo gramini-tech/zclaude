@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+**The router: one Claude Code session, several providers and accounts.** `zclaude router serve`
+runs a proxy on `127.0.0.1` that a launched session points at, and each request goes wherever the
+route table says for its class of model. Sonnet-class work can be answered by a GLM model while opus
+work rotates across Anthropic accounts, in one session, with nothing changed in Claude Code.
+
+Session mode only. Machine-wide interception writes into Claude Code's own user settings and makes a
+local process a dependency of every client on the machine; it is designed, not built, and
+`router status` reports `session` rather than pretending.
+
+- **No model version is written down anywhere.** Routes key on class, and a Z.ai target names a
+  selector (`latest`, `latest:fast`) resolved against the live catalogue at request time. An exact id
+  the provider has retired falls forward with a warning rather than failing an hour later with a 404.
+- **Two kinds of 429, handled differently.** A quota 429 moves to the next target; a burst 429 waits
+  out its `retry-after` and asks the same account again, because rotating throws away a warm prompt
+  cache worth most of an agentic turn's input tokens.
+- **One decision point.** Nothing reaches the response until an upstream has answered, so a failover
+  is always possible before the first byte and never after it. The request body is held until then
+  for exactly that reason.
+- **Conversations stay where their cache is**, keyed on the system prompt, tool names and first user
+  turn, for five minutes. A compaction changes that key, which releases the binding at the moment the
+  cache it protected stopped existing.
+- **The response body is never rewritten.** `message_start` keeps the upstream's model id, so a
+  Z.ai-routed turn contributes nothing to the Anthropic burn estimator and an Anthropic turn still
+  does, without anything special being written.
+- **The local page** (`zclaude router open`) is loopback-only with a `Host` check, reached through a
+  single-use sixty-second link traded for a cookie, and its request log is metadata only: no prompts,
+  no responses, not behind a flag.
+- `busyProfiles` now filters out routed sessions. A routed session authenticates with a local token
+  and never reads its profile's OAuth credential, so counting it as a refresher would leave that
+  account's token to expire while the renewal job stood politely aside. The null-means-everything-is-
+  busy contract is unchanged.
+- The shared-settings copy now strips **and injects**. Stripping alone left the user's own settings
+  tier supplying `ANTHROPIC_BASE_URL`, and that tier beats the child environment, so a Z.ai profile
+  on a machine with a proxy configured would have been routed somewhere nobody asked for.
+- `conflictsIn` takes an `outranked` set, so a key zclaude writes into the `--settings` tier is not
+  reported as a conflict against a lower tier. Managed settings are never suppressed. Without this,
+  turning the router on would nag on every launch, and people would set
+  `ZCLAUDE_ALLOW_SETTINGS_OVERRIDE` permanently and lose the check that matters.
+
 **`zclaude models` asks each provider what it has, instead of printing a list compiled when the
 tool was written.** The old command filtered a hardcoded table by a Z.ai key, so a model released
 last week was invisible and a machine with no Z.ai plan got an error rather than an answer. Measured

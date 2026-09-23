@@ -170,7 +170,9 @@ export default [
     rules: strictCore,
   },
   {
-    files: ["site/**/*.js"],
+    // Browser code: the marketing site, and the router's local page. Neither
+    // runs in Node, so the Node feature floor does not apply to them.
+    files: ["site/**/*.js", "src/router/ui/**/*.js"],
     languageOptions: { globals: { ...globals.browser } },
     rules: {
       "n/no-unsupported-features/node-builtins": "off",

@@ -39,6 +39,7 @@ import {
 } from "./profile-commands.js";
 import { cmdAutoGroup } from "./auto-commands.js";
 import { cmdRenewGroup } from "./renew-commands.js";
+import { cmdRouterGroup } from "./router-commands.js";
 import { uninstall as unschedule } from "./renew/schedule.js";
 import {
   findEditors,
@@ -94,6 +95,8 @@ import {
   selfUpdate,
 } from "./update.js";
 import { listAllModels } from "./router/catalogue.js";
+import { loadRouterConfig } from "./router/config.js";
+import { ensureRouter } from "./router/service.js";
 import { checkKey, fetchQuota, formatQuota, quotaExhausted } from "./zai.js";
 
 // ------------------------------------------------------------------ parsing
@@ -103,6 +106,7 @@ export const COMMAND_NAMES = Object.freeze([
   "switch",
   "renew",
   "auto",
+  "router",
   "vscode",
   "sessions",
   "login",
@@ -117,7 +121,7 @@ export const COMMAND_NAMES = Object.freeze([
 ]);
 const COMMANDS = new Set(COMMAND_NAMES);
 // Commands that take their own subcommand and names, collected into options.args.
-const COMMAND_GROUPS = new Set(["profile", "switch", "renew", "vscode", "auto"]);
+const COMMAND_GROUPS = new Set(["profile", "switch", "renew", "vscode", "auto", "router"]);
 const VALUE_FLAGS = Object.freeze({
   "--profile": "profile",
   "--switch": "switch",
@@ -131,6 +135,8 @@ const VALUE_FLAGS = Object.freeze({
   "--model": "model",
   "--subagent-model": "subagentModel",
   "--fast-model": "fastModel",
+  "--port": "port",
+  "-n": "number",
 });
 const BOOL_FLAGS = Object.freeze({
   "--no-banner": "noBanner",
@@ -161,6 +167,7 @@ const BOOL_FLAGS = Object.freeze({
   "--rebind": "rebind",
   "--sso": "sso",
   "--console": "useConsole",
+  "--print": "print",
 });
 
 /** Parse `--flag value` or `--flag=value`; returns { key, value, consumed }. */
@@ -176,6 +183,17 @@ function takeValueFlag(argv, index) {
   return { key: VALUE_FLAGS[name], value, consumed: inline ? 1 : 2 };
 }
 
+/**
+ * Whether this argument could be one of ours to read a value for.
+ *
+ * Short flags (`-n`) are only zclaude's once a command has been named. Before
+ * that, a leading `-` belongs to claude, and swallowing one here would change
+ * what the child receives.
+ */
+function ourFlag(arg, command) {
+  return arg.startsWith("--") || (command !== null && arg.startsWith("-"));
+}
+
 export function parseArgs(argv) {
   const options = {};
   let command = null;
@@ -187,7 +205,7 @@ export function parseArgs(argv) {
       passthrough = argv.slice(i + 1);
       break;
     }
-    const valueFlag = arg.startsWith("--") ? takeValueFlag(argv, i) : null;
+    const valueFlag = ourFlag(arg, command) ? takeValueFlag(argv, i) : null;
     if (valueFlag) {
       options[valueFlag.key] = valueFlag.value;
       i += valueFlag.consumed;
@@ -247,6 +265,14 @@ Usage
   zclaude auto off                             stop the watcher and leave the login where it is
   zclaude auto attach [kind] [id] [--pid n]    hold or renew a lease; the editor uses this
   zclaude auto detach <id>                     give one up
+  zclaude router status [--json]               where each class of model goes, and whether one is serving
+  zclaude router route <class> [target...]     send a class somewhere; one target pins it there
+  zclaude router models [--json] [--force]     what each provider publishes now, and what selectors resolve to
+  zclaude router serve [--port n]              be the router in this terminal; launches elsewhere use it
+  zclaude router stop                          stop the one that is serving
+  zclaude router log [-n 50] [--json]          what it has served lately, metadata only
+  zclaude router open [--print]                open the local page (single-use link, loopback only)
+  zclaude router config [show|path|init]       the route table: ~/.zclaude/router.json
   zclaude renew status [--json]                is the token-renewal job scheduled, and what did it do
   zclaude renew install                        schedule it
   zclaude renew uninstall                      remove the schedule
@@ -353,8 +379,8 @@ function httpDetail(check) {
  * there silently wins; that is a decision for the user, never a warning zclaude
  * shrugs off, and zclaude never edits those files itself.
  */
-async function resolveSettingsConflict({ env, childEnv, cwd, interactive }) {
-  const found = await settingsConflicts({ childEnv, cwd });
+async function resolveSettingsConflict({ env, childEnv, cwd, interactive, outranked = null }) {
+  const found = await settingsConflicts({ childEnv, cwd, outranked });
   if (found.length === 0) return;
   log.warn("config", "settings env block overrides the session", found);
   const files = found.map((entry) => `${entry.path} (${entry.tier})`).join(", ");
@@ -843,20 +869,31 @@ async function cmdLaunch({ options, passthrough, env, cwd }) {
   // the built-in profiles bring neither, and must not, because setting
   // CLAUDE_CONFIG_DIR at all moves Claude Code off the default login.
   const record = profile.configDir ? await getRegistered(profile.id, env) : null;
-  const prepared = record ? await launchContext(record, env) : null;
+  // A Z.ai profile already points at one endpoint with one key, so there is
+  // nothing for the router to choose between. Routing is for the Anthropic
+  // side, where a class of model can go to several accounts or to a provider.
+  const routing = profile.zai ? null : await maybeRoute({ env, interactive });
+  const prepared = record ? await launchContext(record, env, { inject: routing?.inject ?? null }) : null;
   const claudeArgs = prepared?.claudeArgs ?? [];
   const auto = Boolean(options.auto || chose.auto);
-  const session = describeSession({ profile, prepared, env, cwd, auto });
+  const session = describeSession({ profile, prepared, env, cwd, auto, routed: Boolean(routing) });
 
   if (!profile.zai) {
-    const args = [...claudeArgs, ...(options.model ? ["--model", options.model] : []), ...claudeInput];
-    const childEnv = prepared
-      ? buildProfileEnv({ baseEnv: env, configDir: prepared.configDir, extra })
-      : buildPlainEnv({ baseEnv: env, extra });
-    if (prepared) await resolveSettingsConflict({ env, childEnv, cwd, interactive });
-    reportInheritedAuth(childEnv, profile);
-    await warnIfBusy(session, env, interactive);
-    return runWatched({ bin, args, childEnv, session, env, interactive, auto });
+    return launchAnthropic({
+      bin,
+      profile,
+      prepared,
+      routing,
+      session,
+      claudeArgs,
+      claudeInput,
+      options,
+      extra,
+      env,
+      cwd,
+      interactive,
+      auto,
+    });
   }
 
   const config = zaiConfig(env);
@@ -877,12 +914,84 @@ async function cmdLaunch({ options, passthrough, env, cwd }) {
   });
 }
 
+/** The Anthropic path: build the child environment, check it, and hand over. */
+async function launchAnthropic(one) {
+  const { bin, profile, prepared, routing, session, options, env, cwd, interactive, auto } = one;
+  const args = [...one.claudeArgs, ...(options.model ? ["--model", options.model] : []), ...one.claudeInput];
+  const extra = { ...one.extra, ...routing?.inject };
+  const childEnv = prepared
+    ? buildProfileEnv({ baseEnv: env, configDir: prepared.configDir, extra })
+    : buildPlainEnv({ baseEnv: env, extra });
+  if (prepared) {
+    await resolveSettingsConflict({ env, childEnv, cwd, interactive, outranked: routing?.outranked ?? null });
+  }
+  reportInheritedAuth(childEnv, profile, routing);
+  await warnIfBusy(session, env, interactive);
+  try {
+    return await runWatched({ bin, args, childEnv, session, env, interactive, auto });
+  } finally {
+    // A router this launch started belongs to this launch. One it adopted keeps
+    // serving whoever else is using it.
+    await routing?.close();
+  }
+}
+
+/**
+ * Start or adopt a router for this launch, when the route table asks for one.
+ *
+ * Three variables reach the child, and each earns its place. The base URL and
+ * the token are how Claude Code finds the router and proves it was launched by
+ * zclaude. ZCLAUDE_ROUTER is an ownership marker: a session can tell it is
+ * routed without guessing from a URL, and a mismatch with the running router is
+ * a fault somebody can name.
+ *
+ * ENABLE_TOOL_SEARCH goes with them because a non-first-party base URL turns
+ * MCP tool search off, and losing it silently on a large server set is the kind
+ * of regression that gets blamed on the model.
+ *
+ * Failing to start one is never fatal. The launch continues unrouted, which is
+ * exactly how it behaved before any of this existed.
+ */
+async function maybeRoute({ env, interactive }) {
+  const { config, warnings } = await loadRouterConfig({ env });
+  if (!config.enabled) return null;
+  if (interactive) for (const warning of warnings) warn(warning);
+
+  let started;
+  try {
+    started = await ensureRouter({ env });
+  } catch (error) {
+    warn(`The router did not start, so this session goes straight to Anthropic: ${error.message}`);
+    log.warn("router", "launch continued unrouted", { error });
+    return null;
+  }
+  const inject = {
+    ANTHROPIC_BASE_URL: started.url,
+    ANTHROPIC_AUTH_TOKEN: started.token,
+    ZCLAUDE_ROUTER: String(new URL(started.url).port),
+    ENABLE_TOOL_SEARCH: "true",
+  };
+  log.info("router", "session routed", { url: started.url, adopted: started.adopted });
+  if (interactive) {
+    info(`Routing through ${started.url}${started.adopted ? "" : " (started for this session)"}.`);
+  }
+  return {
+    inject,
+    // These are written into the --settings tier, which outranks every tier
+    // the conflict check reads, so a user settings file naming an endpoint is
+    // not a conflict here even though it looks like one.
+    outranked: new Set(["ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN"]),
+    close: started.close,
+  };
+}
+
 /**
  * An API key inherited from the shell replaces an account login. It is
  * reported rather than stripped: someone may have set it deliberately.
  */
-function reportInheritedAuth(childEnv, profile) {
-  const inherited = overridingAuthVars(childEnv);
+function reportInheritedAuth(childEnv, profile, routing = null) {
+  const ours = new Set(Object.keys(routing?.inject ?? {}));
+  const inherited = overridingAuthVars(childEnv).filter((key) => !ours.has(key));
   if (inherited.length === 0) return;
   warn(
     `${inherited.join(", ")} is set in this shell, so claude will use it instead of the ${profile.id} account login.`,
@@ -946,12 +1055,16 @@ async function launchZai({
  * directory of its own, so it is recorded against the default one — which is
  * exactly the account it spends.
  */
-function describeSession({ profile, prepared, env, cwd, auto = false }) {
+function describeSession({ profile, prepared, env, cwd, auto = false, routed = false }) {
   return {
     profile: profile.id,
     account: profile.description ?? null,
     configDir: prepared?.configDir ?? defaultConfigDir(env),
     cwd,
+    // A routed session authenticates with a local token and never touches its
+    // profile's OAuth lineage, so it is not a refresher and must not make one
+    // look busy. `refreshingProfiles` reads this.
+    routed,
     // The marker that says this session asked to be rotated. Everything that
     // decides whether the global login may move reads it, which is why it is
     // recorded here rather than inferred from anything later.
@@ -1572,6 +1685,7 @@ const COMMAND_HANDLERS = {
   profile: cmdProfileGroup,
   switch: cmdSwitchGroup_,
   renew: cmdRenewGroup,
+  router: cmdRouterGroup,
   auto: cmdAutoGroup,
   vscode: cmdVscodeGroup,
   sessions: cmdSessions,

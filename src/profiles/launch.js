@@ -77,9 +77,19 @@ export async function deleteProfile(name, env = process.env, { platform = proces
 
 /**
  * Bring a profile's directory up to date and return what claude needs.
+ *
+ * `inject` are env entries that must reach Claude Code in a tier that outranks
+ * the user's own settings.json. The router's base URL and token are the reason
+ * it exists: putting them only in the child environment loses to a user tier
+ * that happens to name an endpoint, and losing there routes a profile's
+ * traffic somewhere nobody asked for.
+ *
+ * @param {object} record
+ * @param {NodeJS.ProcessEnv} [env]
+ * @param {{inject?: Record<string, string> | null}} [options]
  * @returns {Promise<{configDir: string, claudeArgs: string[], occupied: string[], detached: string[], removedSettings: string[], recreated: boolean}>}
  */
-export async function prepareLaunch(record, env = process.env) {
+export async function prepareLaunch(record, env = process.env, { inject = null } = {}) {
   const configDir = canonicalConfigDir(record.dir);
   // A directory that vanished is worth saying out loud: Claude Code keys its
   // credentials by this path, so an empty directory here picks up whatever
@@ -96,11 +106,15 @@ export async function prepareLaunch(record, env = process.env) {
     const linked = await linkShares({ defaultDir, configDir, share });
     result.occupied = linked.occupied;
   }
-  if (share.config) {
+  const injecting = inject && Object.keys(inject).length > 0 ? inject : null;
+  // Sharing off still writes the tier when there is something to inject: the
+  // file is the only place a value reliably beats the user's own settings.
+  if (injecting || share.config) {
     const shared = await materialiseSharedSettings({
       defaultDir,
       profileRootDir: dirname(configDir),
       provider: record.provider,
+      inject: injecting,
     });
     if (shared) {
       // Built here rather than in cli.js: this is claude's flag, not zclaude's.
@@ -113,6 +127,7 @@ export async function prepareLaunch(record, env = process.env) {
     name: record.name,
     configDir,
     shared: share,
+    injected: injecting ? Object.keys(injecting) : [],
     detached: result.detached,
   });
   return result;

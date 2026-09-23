@@ -191,6 +191,40 @@ describe("shared settings filter", () => {
     assert.equal(Object.hasOwn(filtered, "env"), false);
     assert.deepEqual(filterSettings(null, { provider: "zai" }).settings, {});
   });
+
+  // Strip-then-inject. Stripping alone leaves the user's own settings tier
+  // supplying these keys, and that tier beats the child environment, so a
+  // routed launch would quietly go somewhere else. These four tests pin that.
+  it("injects after stripping, so the injected value is the one that survives", () => {
+    const inject = { ANTHROPIC_BASE_URL: "http://127.0.0.1:34317", ANTHROPIC_AUTH_TOKEN: "zcr_test" };
+    const { settings: filtered, injected } = filterSettings(settings, { provider: "zai", inject });
+    assert.equal(filtered.env.ANTHROPIC_BASE_URL, "http://127.0.0.1:34317");
+    assert.equal(filtered.env.ANTHROPIC_AUTH_TOKEN, "zcr_test");
+    assert.deepEqual(injected, ["ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN"]);
+    // Everything else it was going to strip is still stripped.
+    assert.equal(filtered.env.ANTHROPIC_API_KEY, undefined);
+    assert.equal(filtered.env.CLAUDE_CONFIG_DIR, undefined);
+  });
+
+  it("creates the env block when the source had none but something is injected", () => {
+    const { settings: filtered } = filterSettings(
+      { permissions: { allow: [] } },
+      { provider: "anthropic", inject: { ANTHROPIC_BASE_URL: "http://127.0.0.1:1" } },
+    );
+    assert.equal(filtered.env.ANTHROPIC_BASE_URL, "http://127.0.0.1:1");
+  });
+
+  it("changes nothing when there is nothing to inject", () => {
+    const plain = filterSettings(settings, { provider: "anthropic" });
+    const empty = filterSettings(settings, { provider: "anthropic", inject: {} });
+    assert.deepEqual(empty.settings, plain.settings);
+    assert.deepEqual(empty.injected, []);
+  });
+
+  it("still strips when the injection is not an object", () => {
+    const { settings: filtered } = filterSettings(settings, { provider: "anthropic", inject: "nonsense" });
+    assert.equal(filtered.env.ANTHROPIC_API_KEY, undefined);
+  });
 });
 
 describe("share materialisation", () => {
@@ -212,6 +246,23 @@ describe("share materialisation", () => {
     const before = (await stat(first.path)).mtimeMs;
     const second = await materialiseSharedSettings({ defaultDir, profileRootDir, provider: "zai" });
     assert.equal((await stat(second.path)).mtimeMs, before, "unchanged source must not rewrite the copy");
+  });
+
+  it("writes the tier even with no user settings at all, when there is something to inject", async () => {
+    const bare = join(home.dir, "bare");
+    const profileRootDir = join(home.dir, "profiles", "bare");
+    await mkdir(bare, { recursive: true });
+    // Nothing to share: without an injection this returns null and no file.
+    assert.equal(await materialiseSharedSettings({ defaultDir: bare, profileRootDir, provider: "anthropic" }), null);
+    const written = await materialiseSharedSettings({
+      defaultDir: bare,
+      profileRootDir,
+      provider: "anthropic",
+      inject: { ANTHROPIC_BASE_URL: "http://127.0.0.1:34317" },
+    });
+    assert.ok(written);
+    const body = JSON.parse(await readFile(written.path, "utf8"));
+    assert.equal(body.env.ANTHROPIC_BASE_URL, "http://127.0.0.1:34317");
   });
 
   it("ignores a settings file that is not valid JSON", async () => {

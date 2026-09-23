@@ -941,8 +941,8 @@ async function reportAccount(record, env) {
 }
 
 /** Resolve a profile's launch environment. Used by the launcher. */
-export async function launchContext(record, env) {
-  const prepared = await prepareLaunch(record, env);
+export async function launchContext(record, env, { inject = null } = {}) {
+  const prepared = await prepareLaunch(record, env, { inject });
   reportPreparation(prepared, record);
   await reportAccount(record, env);
   return { ...prepared, dir: canonicalConfigDir(record.dir) };

@@ -32,6 +32,7 @@ import { forgetSession, readSessions } from "./store.js";
  * @property {boolean} tracked false for one zclaude did not start
  * @property {string | null} host the machine that started it
  * @property {boolean} auto whether it asked to be rotated between accounts
+ * @property {boolean} [routed] whether it reaches Anthropic through the local router
  */
 
 /**

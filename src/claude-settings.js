@@ -78,13 +78,22 @@ const ALIAS_MODELS = new Set(["opus", "sonnet", "haiku"]);
 
 /**
  * Which keys in one env block would override this session.
+ *
+ * `outranked` names keys this launch writes into a higher tier of its own, the
+ * `--settings` file, which beats every tier read here. Without it, turning the
+ * router on would report a conflict on every launch, and the way people make a
+ * nagging check stop is to set ZCLAUDE_ALLOW_SETTINGS_OVERRIDE permanently and
+ * lose the check that matters. Managed settings are never suppressed: no tier
+ * of ours outranks a machine policy.
+ *
  * @param {Record<string, unknown>} block
  * @param {Record<string, string>} childEnv
+ * @param {{outranked?: Set<string> | null}} [options]
  */
-export function conflictsIn(block, childEnv) {
+export function conflictsIn(block, childEnv, { outranked = null } = {}) {
   const conflicts = [];
   for (const key of SESSION_KEYS) {
-    if (!Object.hasOwn(block, key)) continue;
+    if (!Object.hasOwn(block, key) || outranked?.has(key)) continue;
     const theirs = String(block[key]);
     if (key === "ANTHROPIC_API_KEY") {
       conflicts.push({ key, theirs: mask(theirs), ours: "(unset)" });
@@ -102,12 +111,21 @@ export function conflictsIn(block, childEnv) {
  * Every tier whose env block would override the environment being launched.
  * The child's own environment decides which user-tier file is read, so a
  * profile is checked against its own settings rather than the default ones.
- * @param {{childEnv: Record<string, string>, cwd?: string, platform?: NodeJS.Platform}} args
+ * @param {{childEnv: Record<string, string>, cwd?: string, platform?: NodeJS.Platform, outranked?: Set<string> | null}} args
  */
-export async function settingsConflicts({ childEnv, cwd = process.cwd(), platform = process.platform }) {
+export async function settingsConflicts({
+  childEnv,
+  cwd = process.cwd(),
+  platform = process.platform,
+  outranked = null,
+}) {
   const tiers = await claudeSettingsTiers({ env: childEnv, cwd, platform });
   return tiers
-    .map((tier) => ({ tier: tier.tier, path: tier.path, conflicts: conflictsIn(tier.block, childEnv) }))
+    .map((tier) => ({
+      tier: tier.tier,
+      path: tier.path,
+      conflicts: conflictsIn(tier.block, childEnv, { outranked: tier.tier === "managed" ? null : outranked }),
+    }))
     .filter((entry) => entry.conflicts.length > 0);
 }
 

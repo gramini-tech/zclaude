@@ -110,18 +110,29 @@ export function holdersOf(stores, lineage) {
 }
 
 /**
- * Profiles with a Claude Code session running right now, or null when that
- * could not be established.
+ * Profiles with a Claude Code session that refreshes their login itself, or
+ * null when that could not be established.
  *
  * Null is not "none". Not knowing which profiles are live is the one reading
  * that must never let a refresh go ahead underneath one, so callers treat it as
- * "every profile is busy" rather than as an empty set.
+ * "every profile is busy" rather than as an empty set. That contract is the
+ * most important line in this function and nothing below weakens it.
+ *
+ * A routed session is filtered out, and only a routed one. It authenticates to
+ * the local router with a token zclaude minted and never reads the profile's
+ * OAuth credential at all, so it cannot be the refresher this is protecting.
+ * Counting it would make an account look permanently busy for as long as a
+ * routed session was open, and the renewal job would let its token expire
+ * while politely standing back for a session that was never going to refresh
+ * it. The claim is narrow on purpose: it is about a session zclaude launched
+ * with ANTHROPIC_AUTH_TOKEN set, not about what Claude Code does in general.
  * @param {{env?: NodeJS.ProcessEnv, now?: number}} [options]
  * @returns {Promise<Set<string> | null>}
  */
 export async function busyProfiles({ env = process.env, now = Date.now() } = {}) {
   try {
-    return new Set(byProfile(await liveSessions({ env, now, reap: false })).keys());
+    const live = await liveSessions({ env, now, reap: false });
+    return new Set(byProfile(live.filter((session) => session.routed !== true)).keys());
   } catch (error) {
     log.debug("swap", "live sessions could not be read", { error });
     return null;

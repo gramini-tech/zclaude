@@ -315,6 +315,35 @@ describe("ranking for an auto target", () => {
     }
   });
 
+  it("does not offer a Z.ai target that has already refused this request", async () => {
+    // Found live: `expand` honoured `excluded` for Anthropic profiles but not
+    // for Z.ai ones, so a chain whose first target was Z.ai kept returning that
+    // same target. A class whose Z.ai key is missing exhausted against one
+    // target instead of falling through to the account behind it.
+    const { home, env } = await machine(["work"]);
+    try {
+      const selector = createSelector({ env, intervalMs: 0, inventoryImpl: async () => ({ accounts: [] }) });
+      await selector.refresh({ now: NOW, force: true });
+      const candidates = [
+        { name: "glm", kind: "zai", model: "latest" },
+        { name: "work", kind: "anthropic", profile: "work" },
+      ];
+      const first = await selector.choose({ candidates, klass: "sonnet", now: NOW });
+      assert.equal(first.target.name, "glm");
+      const next = await selector.choose({ candidates, klass: "sonnet", now: NOW, excluded: new Set(["glm"]) });
+      assert.equal(next.target.name, "work", "the chain must move past a target that already refused");
+      const nothing = await selector.choose({
+        candidates,
+        klass: "sonnet",
+        now: NOW,
+        excluded: new Set(["glm", "work"]),
+      });
+      assert.equal(nothing.target, null);
+    } finally {
+      await home.cleanup();
+    }
+  });
+
   it("keeps serving from the last snapshot when a refresh fails", async () => {
     // A snapshot that cannot be taken is not a reason to refuse traffic, and a
     // pinned target does not need one at all.

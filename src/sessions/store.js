@@ -32,6 +32,8 @@ export function sessionsDir(env = process.env) {
  * @property {string} host
  * @property {number} startedAt
  * @property {boolean} [auto] this session asked to be rotated between accounts
+ * @property {boolean} [routed] this session talks to the local router, so it
+ *   holds no OAuth credential of its own and is not a refresher
  */
 
 // Extra keys are added to version 1 rather than bumping it. `readSessions`

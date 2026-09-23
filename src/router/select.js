@@ -95,7 +95,12 @@ export function createSelector({
    */
   async function expand(entry, { klass, now, excluded }) {
     if (entry.kind === "zai") {
-      return penalised(entry.name, now) ? [] : [{ ...entry, record: null }];
+      // `excluded` as well as penalised: a target that has already refused this
+      // request must not be offered again. Without this the chain never gets
+      // past its first Z.ai entry, and a class whose first target has no key
+      // stored exhausts against that one target instead of falling through.
+      if (penalised(entry.name, now) || excluded.has(entry.name)) return [];
+      return [{ ...entry, record: null }];
     }
     if (entry.profile !== "auto") {
       const record = await getRegistered(entry.profile, env).catch(() => null);

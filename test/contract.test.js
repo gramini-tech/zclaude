@@ -14,6 +14,7 @@ import { COMMAND_NAMES, HELP } from "../src/cli.js";
 import { PROFILE_SUBCOMMANDS } from "../src/profile-commands.js";
 import { AUTO_SUBCOMMANDS } from "../src/auto-commands.js";
 import { RENEW_SUBCOMMANDS, selfBinary } from "../src/renew-commands.js";
+import { ROUTER_SUBCOMMANDS } from "../src/router-commands.js";
 import { SWITCH_SUBCOMMANDS } from "../src/swap-commands.js";
 import { VSCODE_SUBCOMMANDS } from "../src/vscode-commands.js";
 import { EDITORS, EXTENSION_ID, packagedVersion, vsixPath } from "../src/vscode/index.js";
@@ -216,6 +217,17 @@ describe("documentation contract", () => {
     }
   });
 
+  it("every router subcommand is listed in --help and the README", async () => {
+    const readme = await readFile(join(root, "README.md"), "utf8");
+    for (const sub of ROUTER_SUBCOMMANDS) {
+      // `routes` is the same command as `status` under a name that reads
+      // better in a sentence, so either spelling counts as documented.
+      const shown = (text) => text.includes(`router ${sub}`) || (sub === "routes" && text.includes("router status"));
+      assert.ok(shown(HELP), `router ${sub} missing from --help`);
+      assert.ok(shown(readme), `router ${sub} missing from README`);
+    }
+  });
+
   it("schedules this installation rather than whatever is on PATH", () => {
     // A scheduled job outlives the shell that created it, so "zclaude" alone
     // would break the moment PATH differs — which is exactly what happens
@@ -374,5 +386,25 @@ describe("profile isolation contract", () => {
     assert.equal(env.CLAUDE_CONFIG_DIR, "/p/home");
     assert.equal(env.CLAUDE_SECURESTORAGE_CONFIG_DIR, undefined);
     assert.equal(env.ANTHROPIC_PROFILE, undefined);
+  });
+
+  // A routed launch adds four variables and no more. This pins the set because
+  // each one has a consequence: ANTHROPIC_API_KEY instead of AUTH_TOKEN would
+  // bill the API rather than the plan, and a fifth added quietly here is a
+  // change to what Claude Code does that nobody reviewed.
+  it("a routed launch adds exactly the four documented variables", () => {
+    const routed = {
+      ANTHROPIC_BASE_URL: "http://127.0.0.1:34317",
+      ANTHROPIC_AUTH_TOKEN: "zcr_x",
+      ZCLAUDE_ROUTER: "34317",
+      ENABLE_TOOL_SEARCH: "true",
+    };
+    const plain = buildProfileEnv({ baseEnv: { HOME: "/home/x" }, configDir: "/p/home" });
+    const env = buildProfileEnv({ baseEnv: { HOME: "/home/x" }, configDir: "/p/home", extra: routed });
+    const added = Object.keys(env).filter((key) => !Object.hasOwn(plain, key));
+    const byName = (a, b) => a.localeCompare(b);
+    assert.deepEqual(added.toSorted(byName), Object.keys(routed).toSorted(byName));
+    assert.equal(Object.hasOwn(env, "ANTHROPIC_API_KEY"), false, "an API key bills the API, not the plan");
+    assert.match(env.ANTHROPIC_BASE_URL, /^http:\/\/127\.0\.0\.1:/u, "the router is loopback only");
   });
 });

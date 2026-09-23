@@ -1,0 +1,188 @@
+/* Hand-written, no build step and no remote anything. The CSP the router sends
+   allows 'self' only, so a font from a CDN or an inline style attribute added
+   later will not load, and will not say why. */
+
+:root {
+  --bg: #12131a;
+  --panel: #1a1c25;
+  --line: #2a2d3a;
+  --text: #e4e6ef;
+  --muted: #8b90a4;
+  --accent: #7aa2f7;
+  --warn: #e0af68;
+  --bad: #f7768e;
+  --good: #9ece6a;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f6f7fb;
+    --panel: #ffffff;
+    --line: #e2e4ee;
+    --text: #1c1e28;
+    --muted: #64697d;
+    --accent: #3b62c4;
+    color-scheme: light;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font:
+    14px/1.5 ui-monospace,
+    "SF Mono",
+    Menlo,
+    Consolas,
+    monospace;
+}
+
+header {
+  padding: 20px 24px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+h1 {
+  margin: 0;
+  font-size: 17px;
+  letter-spacing: 0.02em;
+}
+
+h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+main {
+  display: grid;
+  gap: 16px;
+  padding: 16px 24px 40px;
+  max-width: 1100px;
+}
+
+section {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+.pane-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.muted {
+  color: var(--muted);
+  margin: 4px 0 10px;
+  font-size: 12.5px;
+}
+
+.errors {
+  color: var(--bad);
+  white-space: pre-wrap;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 4px 8px 4px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+td {
+  padding: 5px 8px 5px 0;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+button {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+button:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+button:not(:disabled):hover {
+  border-color: var(--accent);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.chain {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 2px 6px;
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.pin {
+  color: var(--warn);
+  font-size: 11.5px;
+}
+
+.status-ok {
+  color: var(--good);
+}
+
+.status-bad {
+  color: var(--bad);
+}
+
+.status-wait {
+  color: var(--warn);
+}
+
+code {
+  color: var(--accent);
+}
+
+#log td {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}

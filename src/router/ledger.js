@@ -18,7 +18,8 @@ export const DEFAULT_CAP = 500;
  * @typedef {object} Entry
  * @property {number} at
  * @property {string} klass
- * @property {string | null} target
+ * @property {string | null} target the name in the route table
+ * @property {string | null} via the account or provider profile that answered
  * @property {string | null} model the id that actually answered
  * @property {number} status
  * @property {number} ms
@@ -40,6 +41,7 @@ export function createLedger({ cap = DEFAULT_CAP } = {}) {
           at: entry.at ?? Date.now(),
           klass: entry.klass ?? "unknown",
           target: entry.target ?? null,
+          via: entry.via ?? null,
           model: entry.model ?? null,
           status: entry.status ?? 0,
           ms: Math.round(entry.ms ?? 0),
@@ -75,7 +77,9 @@ export function createLedger({ cap = DEFAULT_CAP } = {}) {
       const byClass = new Map();
       let tokens = 0;
       for (const entry of entries) {
-        const target = entry.target ?? "(none)";
+        // Counted by account rather than by table entry: "any" served 40
+        // requests says nothing, and which account served them is the question.
+        const target = entry.via ?? entry.target ?? "(none)";
         byTarget.set(target, (byTarget.get(target) ?? 0) + 1);
         byClass.set(entry.klass, (byClass.get(entry.klass) ?? 0) + 1);
         tokens += (entry.usage?.input ?? 0) + (entry.usage?.output ?? 0);

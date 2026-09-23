@@ -57,10 +57,19 @@ const MODEL_ENV_KEYS = Object.freeze([
 
 /**
  * A copy of the user's settings that is safe to layer onto a profile.
+ *
+ * Strip, then inject. Stripping alone removes these keys from *this tier*,
+ * which leaves the user's own settings file still supplying them, and that tier
+ * outranks the child environment. So a Z.ai profile launched on a machine whose
+ * user settings name a different endpoint would quietly use that endpoint.
+ * Writing the profile's own values into the tier that wins settles it by
+ * construction, rather than by anybody reasoning about precedence at the call
+ * site.
+ *
  * @param {object} settings the default installation's parsed settings
- * @param {{provider: "anthropic" | "zai"}} args
+ * @param {{provider: "anthropic" | "zai", inject?: Record<string, string> | null}} args
  */
-export function filterSettings(settings, { provider }) {
+export function filterSettings(settings, { provider, inject = null }) {
   const source = settings && typeof settings === "object" ? structuredClone(settings) : {};
   const drop = provider === "zai" ? [...AUTH_ENV_KEYS, ...MODEL_ENV_KEYS] : AUTH_ENV_KEYS;
   const out = { ...source };
@@ -68,13 +77,17 @@ export function filterSettings(settings, { provider }) {
   // this profile has not installed.
   delete out.enabledPlugins;
   if (provider === "zai") delete out.model;
+  const given = inject && typeof inject === "object" ? inject : {};
   if (out.env && typeof out.env === "object") {
     const env = { ...out.env };
     for (const key of drop) delete env[key];
+    Object.assign(env, given);
     if (Object.keys(env).length > 0) out.env = env;
     else delete out.env;
+  } else if (Object.keys(given).length > 0) {
+    out.env = { ...given };
   }
-  return { settings: out, removed: dropped(source, drop, provider) };
+  return { settings: out, removed: dropped(source, drop, provider), injected: Object.keys(given) };
 }
 
 function dropped(source, keys, provider) {
@@ -92,12 +105,15 @@ function sharedSettingsPath(profileRootDir) {
  * Refresh the filtered copy when the source changes. Returns the path to pass
  * as --settings, or null when there is nothing to share.
  */
-export async function materialiseSharedSettings({ defaultDir, profileRootDir, provider }) {
+export async function materialiseSharedSettings({ defaultDir, profileRootDir, provider, inject = null }) {
   let raw;
   try {
     raw = await readFile(join(canonicalConfigDir(defaultDir), "settings.json"), "utf8");
   } catch {
-    return null;
+    // No user settings to share. There may still be values to inject, and this
+    // tier is the only one that reliably outranks them.
+    if (!inject || Object.keys(inject).length === 0) return null;
+    raw = "{}";
   }
   let parsed;
   try {
@@ -105,7 +121,7 @@ export async function materialiseSharedSettings({ defaultDir, profileRootDir, pr
   } catch {
     return null;
   }
-  const { settings, removed } = filterSettings(parsed, { provider });
+  const { settings, removed } = filterSettings(parsed, { provider, inject });
   const path = sharedSettingsPath(profileRootDir);
   const next = `${JSON.stringify(settings, null, 2)}\n`;
   const current = await readFile(path, "utf8").catch(() => null);

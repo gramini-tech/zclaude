@@ -1,6 +1,12 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "entry": ["scripts/bump-version.js", "site/main.js", "extension/src/**/*.js", "test/**/*.test.js"],
+  "entry": [
+    "scripts/bump-version.js",
+    "site/main.js",
+    "src/router/ui/app.js",
+    "extension/src/**/*.js",
+    "test/**/*.test.js"
+  ],
   "project": ["bin/**/*.js", "extension/src/**/*.js", "scripts/**/*.js", "site/**/*.js", "src/**/*.js", "test/**/*.js"],
   "ignoreDependencies": ["@vscode/vsce"]
 }

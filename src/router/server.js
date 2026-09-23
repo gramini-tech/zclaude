@@ -81,7 +81,7 @@ function refuse(res, status, type, message) {
  * Start listening.
  *
  * @param {{env?: NodeJS.ProcessEnv, port: number, token?: string, deps: object}} args
- * @returns {Promise<{port: number, token: string, close: () => Promise<void>, url: string}>}
+ * @returns {Promise<{port: number, token: string, close: () => Promise<void>, url: string, onClose: (fn: () => void) => void}>}
  */
 export async function startRouter({ env = process.env, port, token = mintToken(), deps }) {
   const started = Date.now();
@@ -119,7 +119,8 @@ export async function startRouter({ env = process.env, port, token = mintToken()
   });
 
   async function handle(req, res, gone) {
-    const [path] = (req.url ?? "/").split("?", 1);
+    const url = new URL(req.url ?? "/", `http://${HOST}:${bound}`);
+    const path = url.pathname;
 
     if (path === "/__zclaude/healthz") {
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
@@ -141,6 +142,11 @@ export async function startRouter({ env = process.env, port, token = mintToken()
       refuse(res, 403, "permission_error", "this router answers on 127.0.0.1 only");
       return;
     }
+    // The control plane authenticates itself, because it accepts a cookie the
+    // proxied paths below must never accept. Dispatching before the bearer
+    // check is what keeps those two schemes from leaking into each other.
+    if (deps.control && (await deps.control.handle(req, res, path, url))) return;
+
     if (!tokenMatches(bearerFrom(req.headers), token)) {
       log.warn("router", "unauthenticated caller", { path });
       refuse(res, 401, "authentication_error", "this router only answers zclaude-launched sessions");
@@ -175,5 +181,7 @@ export async function startRouter({ env = process.env, port, token = mintToken()
         server.closeAllConnections?.();
         server.close(() => resolve());
       }),
+    /** For a caller that wants to wait rather than to stop: `router serve`. */
+    onClose: (fn) => server.once("close", fn),
   };
 }

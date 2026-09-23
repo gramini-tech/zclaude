@@ -323,6 +323,24 @@ describe("when nothing can take it", () => {
     assert.equal(out.status(), 503);
     assert.equal(out.json().error.type, "api_error");
   });
+
+  it("says in the 503 which target refused and why, and records it", async () => {
+    // Found live: a 503 saying only "every account refused" left nothing
+    // anywhere naming the target or the reason, which is an hour of guessing.
+    const recorded = [];
+    const deps = depsWith({ fetchImpl: fakeUpstream([]), tokenState: "unauthorized" });
+    deps.ledger = {
+      record: (entry) => {
+        recorded.push(entry);
+      },
+    };
+    const out = collectingResponse();
+    await handleMessages({ req: fakeRequest({ body: opusBody }), res: out.res, path: "/v1/messages", deps });
+    assert.match(out.json().error.message, /opus/u, "the class is named");
+    assert.match(out.json().error.message, /work/u, "the target that refused is named");
+    assert.equal(recorded.at(-1).status, 503);
+    assert.ok(recorded.at(-1).error, "the ledger keeps the reason too");
+  });
 });
 
 describe("keeping a conversation where its cache is", () => {
