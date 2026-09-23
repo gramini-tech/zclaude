@@ -21,7 +21,7 @@ export const TOKEN_URL = "https://platform.claude.com/v1/oauth/token";
 // Claude Code's public OAuth client. A refresh grant is bound to the client it
 // was issued for, so this is not ours to choose.
 export const OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
-const BETA_HEADER = "oauth-2025-04-20";
+export const BETA_HEADER = "oauth-2025-04-20";
 const DEFAULT_TIMEOUT_MS = 6000;
 /** Refresh a little before expiry: a token that dies mid-request is a failure. */
 export const EXPIRY_BUFFER_MS = 5 * 60 * 1000;

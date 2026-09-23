@@ -28,6 +28,13 @@ const CATEGORIES = Object.freeze([
   "http",
   "claude",
   "console",
+  // Categories the source already logs to. Without them here a filter naming
+  // one returns nothing, which is how `ZCLAUDE_LOG_CATEGORIES=auto` read as an
+  // empty log rather than as a typo.
+  "auto",
+  "sessions",
+  "vscode",
+  "router",
 ]);
 const DEFAULT_KEEP = 30;
 const DEFAULT_LEVEL = "debug";

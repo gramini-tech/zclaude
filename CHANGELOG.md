@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+**`zclaude models` asks each provider what it has, instead of printing a list compiled when the
+tool was written.** The old command filtered a hardcoded table by a Z.ai key, so a model released
+last week was invisible and a machine with no Z.ai plan got an error rather than an answer. Measured
+while building this: `claude-opus-5-5` had been out for two days and appeared in no table in this
+repository.
+
+`src/router/catalogue.js` is the first piece of the routing work and stands on its own. Anthropic
+publishes `GET /v1/models`, which accepts the OAuth token a subscription login already carries and
+reports each model's release date and context window, so the window no longer has to come from
+`MODEL_CONTEXT_WINDOWS`. Z.ai publishes ids only.
+
+- Newest first. Z.ai gives no dates and answers alphabetically, which put its oldest model first, so
+  the version numbers in the id are the fallback ordering and a plain id sorts ahead of its flash
+  variant. Without that, "the latest model" would have meant `glm-4.5`.
+- Cached for six hours in `~/.zclaude/models.json`; `--force` asks again. A stale live answer beats
+  the built-in table, because ids that were real an hour ago are worth more than ids from a table
+  that never knew them. Every block says which it is showing.
+- Listing models never mints a token. An account whose access token has lapsed is skipped rather
+  than refreshed: a model list is not worth spending a rotation, and `src/swap/lineage.js` explains
+  at length what a second refresher costs.
+- `zclaude models` gained `--json` and `--force`, answers for every provider, and exits 0 when a
+  provider cannot be reached rather than failing the whole command.
+
+`ZAI_API_KEY` is now read in one place (`explicitZaiKey` in `src/store.js`) rather than twice, so the
+catalogue and the rest of the CLI cannot disagree about which key applies.
+
+**Four log categories that were being dropped.** `src/logger.js` keeps a fixed list of category
+names and silently ignores anything else, while the source has been logging to `auto`, `sessions`
+and `vscode` for releases. `ZCLAUDE_LOG_CATEGORIES=auto` returned an empty log rather than saying it
+did not know the name. All four are now listed, `router` included.
+
 **A profile is an account now, and a sign-in that lands on a different one is
 undone.** One email holds two accounts: a company seat and a personal
 subscription share an address and an `accountUuid`, sit in different

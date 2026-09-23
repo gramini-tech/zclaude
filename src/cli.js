@@ -16,16 +16,7 @@ import {
   runClaude,
 } from "./claude.js";
 import { claudeSettingsTiers, describeConflicts, SESSION_KEYS, settingsConflicts } from "./claude-settings.js";
-import {
-  CONSOLE_KEYS_URL,
-  describeContextWindow,
-  flag,
-  isZaiBaseUrl,
-  loginTimeoutMs,
-  VERSION,
-  zaiConfig,
-  zclaudeHome,
-} from "./config.js";
+import { CONSOLE_KEYS_URL, flag, isZaiBaseUrl, loginTimeoutMs, VERSION, zaiConfig, zclaudeHome } from "./config.js";
 import {
   authError,
   EXIT,
@@ -76,7 +67,15 @@ import {
   userSettingsPath,
   writeSettingsFile,
 } from "./settings.js";
-import { deleteCredential, loadCredential, readState, saveCredential, storePaths, writeState } from "./store.js";
+import {
+  deleteCredential,
+  explicitZaiKey,
+  loadCredential,
+  readState,
+  saveCredential,
+  storePaths,
+  writeState,
+} from "./store.js";
 import { printBanner } from "./ui/banner.js";
 import { debug, error as logError, info, mask, paint, setQuiet, setVerbose, success, warn } from "./ui/log.js";
 import { chooseProfile } from "./ui/menu.js";
@@ -94,6 +93,7 @@ import {
   selfUninstall,
   selfUpdate,
 } from "./update.js";
+import { listAllModels } from "./router/catalogue.js";
 import { checkKey, fetchQuota, formatQuota, quotaExhausted } from "./zai.js";
 
 // ------------------------------------------------------------------ parsing
@@ -258,7 +258,7 @@ Usage
   zclaude login [--no-browser] [--paste] [--api-key] [--no-store]
   zclaude logout                               forget the stored Z.ai key
   zclaude status [--json]                      show credential, config and model state
-  zclaude models                               list models available to your Z.ai key
+  zclaude models [--json] [--force]            every model each provider currently has
   zclaude log [--json] [--path]                show the latest run log (post-mortem)
   zclaude self-install                         install zclaude globally with npm (e.g. from npx)
   zclaude self-update [--force]                update the same way it was installed (--force skips the check)
@@ -341,10 +341,6 @@ function reportWarnings(layered) {
   for (const record of [layered.project, layered.user]) {
     for (const message of record.warnings) warn(message);
   }
-}
-
-function explicitKey(env) {
-  return typeof env.ZAI_API_KEY === "string" && env.ZAI_API_KEY.trim() ? env.ZAI_API_KEY.trim() : "";
 }
 
 function httpDetail(check) {
@@ -523,10 +519,10 @@ async function findCandidate(env, profile = null) {
   if (profile) {
     const own = await loadCredential({ env, profile });
     if (own) debug(`Loaded the key for profile "${profile}" from ${own.source}`);
-    else if (explicitKey(env)) warn(`ZAI_API_KEY is ignored for profile "${profile}"; it has its own stored key.`);
+    else if (explicitZaiKey(env)) warn(`ZAI_API_KEY is ignored for profile "${profile}"; it has its own stored key.`);
     return own;
   }
-  const explicit = explicitKey(env);
+  const explicit = explicitZaiKey(env);
   if (explicit) {
     debug("Using ZAI_API_KEY from the environment");
     return { apiKey: explicit, source: "env" };
@@ -1101,7 +1097,7 @@ async function cmdLogout({ env }) {
 }
 
 function storedOrExplicit(env) {
-  const explicit = explicitKey(env);
+  const explicit = explicitZaiKey(env);
   return explicit ? Promise.resolve({ apiKey: explicit, source: "env" }) : loadCredential({ env });
 }
 
@@ -1113,19 +1109,42 @@ function optionalClaude(env) {
   }
 }
 
-async function cmdModels({ env }) {
-  const config = zaiConfig(env);
-  const stored = await storedOrExplicit(env);
-  if (!stored) throw authError("No Z.ai credential available.", "Run `zclaude login` first.");
-  const check = await checkKey(stored.apiKey, config);
-  if (check.status === "rejected")
-    throw keyRejectedError(
-      `Z.ai rejected the ${stored.source} key (HTTP ${check.httpStatus}).`,
-      "Run `zclaude login` to sign in again.",
-    );
-  if (check.status !== "valid")
-    throw new ZclaudeError(`Could not list models (${httpDetail(check)}).`, { exitCode: EXIT.NETWORK });
-  for (const model of check.models) process.stdout.write(`${model.id.padEnd(20)} ${describeContextWindow(model.id)}\n`);
+/** A context window as a person reads it, from whatever number we have. */
+function windowText(size) {
+  if (!Number.isFinite(size) || size <= 0) return "";
+  return size >= 1_000_000 ? "1M context" : `${Math.round(size / 1000)}K context`;
+}
+
+/**
+ * Every model each provider currently has.
+ *
+ * Asked rather than remembered. This used to print a hardcoded table filtered
+ * by a Z.ai key, which meant a model released last week was invisible and a
+ * machine with no Z.ai plan got an error instead of an answer.
+ */
+async function cmdModels({ env, options }) {
+  const all = await listAllModels({ env, force: Boolean(options.force) });
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(all, null, 2)}\n`);
+    return EXIT.OK;
+  }
+  const grey = (text) => paint(text, "grey", process.stdout);
+  // Sized from the content: model ids run from "glm-5" to
+  // "claude-sonnet-4-5-20250929", and a fixed guess breaks on the long ones.
+  const every = Object.values(all).flatMap((catalogue) => catalogue.models);
+  const width = Math.max(...every.map((model) => model.id.length), 8);
+  for (const [provider, catalogue] of Object.entries(all)) {
+    const note = catalogue.source === "live" ? `${catalogue.models.length} models` : catalogue.detail;
+    process.stdout.write(`${provider}  ${grey(`(${catalogue.source}${note ? `: ${note}` : ""})`)}\n`);
+    for (const model of catalogue.models) {
+      const released = model.releasedAt ? model.releasedAt.slice(0, 10) : "";
+      const label = model.label === model.id ? "" : model.label;
+      const tail = [label, released].filter(Boolean).join("  ");
+      const line = `  ${model.id.padEnd(width)}  ${windowText(model.contextWindow).padEnd(11)}`;
+      process.stdout.write(`${tail ? `${line}  ${grey(tail)}` : line.trimEnd()}\n`);
+    }
+    if (catalogue.models.length === 0) process.stdout.write(`  ${grey("nothing to list")}\n`);
+  }
   return EXIT.OK;
 }
 

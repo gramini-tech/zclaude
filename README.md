@@ -737,7 +737,7 @@ zclaude login                    # sign in now, then pick models and launch
 zclaude login --api-key          # paste a key from the Z.ai console instead
 zclaude login --no-browser       # print the URL instead of opening a browser
 zclaude login --paste            # always paste the redirect URL back
-zclaude models                   # what your plan can use
+zclaude models                   # every model each provider currently has
 zclaude --reconfigure            # re-run the model wizard
 zclaude logout                   # forget the stored key
 ```
@@ -802,6 +802,42 @@ CLIProxyAPI. zclaude does the same:
    find-or-create a key named `zclaude`, copy its secret.
 5. The key is checked against `GET https://api.z.ai/api/coding/paas/v4/models`, which also yields the
    model list for the wizard.
+
+## Which models exist
+
+`zclaude models` asks each provider what it has, rather than printing a list compiled when the tool
+was written.
+
+```console
+$ zclaude models
+anthropic  (live: 12 models)
+  claude-opus-5-5             1M context   Claude Opus 5.5  2026-09-21
+  claude-sonnet-5             1M context   Claude Sonnet 5  2026-06-29
+  ...
+zai  (live: 11 models)
+  glm-5.3                     1M context
+  glm-5.3-flash               1M context
+  ...
+```
+
+Anthropic publishes `GET /v1/models`, which accepts the OAuth token a subscription login already
+carries and reports each model's release date and context window. Z.ai publishes ids only, so their
+context windows come from the table in `src/config.js`, and the ordering comes from the version
+numbers in the id because nobody publishes a date. Newest is first in both.
+
+The answer is cached for six hours under `~/.zclaude/models.json`; `--force` asks again. A provider
+that cannot be reached says so and falls back, and the header on each block tells you which you are
+looking at:
+
+| Header               | Meaning                                                                                                |
+| -------------------- | ------------------------------------------------------------------------------------------------------ |
+| `(live: N models)`   | asked just now                                                                                         |
+| `(cached)`           | a live answer from within the last six hours, or an older one kept because the provider is unreachable |
+| `(fallback: reason)` | the built-in table, for the reason given                                                               |
+
+Listing models never signs anything in and never refreshes a token. An account whose token has
+lapsed is skipped rather than renewed, because seeing a model list is not worth spending a rotation;
+[Keeping tokens alive](#keeping-tokens-alive) explains why that matters.
 
 ## Passing arguments to Claude Code
 
@@ -945,7 +981,7 @@ zclaude sessions [--json]                  what is running now, and on which acc
 zclaude login                              sign in to Z.ai now, then offer to launch
 zclaude logout                             forget the stored Z.ai key
 zclaude status                             what would happen on the next launch
-zclaude models                             models your Z.ai plan can use
+zclaude models [--json] [--force]          every model each provider currently has
 zclaude log                                the latest run log
 zclaude self-install | self-update | self-uninstall
 ```

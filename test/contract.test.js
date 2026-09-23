@@ -20,6 +20,7 @@ import { EDITORS, EXTENSION_ID, packagedVersion, vsixPath } from "../src/vscode/
 import { vsixContents } from "../scripts/build-extension.js";
 import { CLAUDE_COMMANDS } from "../src/profiles/paths.js";
 import { CALLBACK_SCHEME, CONSOLE_KEYS_URL, DEFAULT_MODELS, MODEL_CONTEXT_WINDOWS, zaiConfig } from "../src/config.js";
+import { ANTHROPIC_MODELS_URL, DEFAULT_TTL_MS as CATALOGUE_TTL_MS, PROVIDERS } from "../src/router/catalogue.js";
 import { EXIT } from "../src/errors.js";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -40,6 +41,14 @@ describe("protocol contract", () => {
     });
     assert.equal(CALLBACK_SCHEME, "zcode");
     assert.equal(CONSOLE_KEYS_URL, "https://z.ai/manage-apikey/apikey-list");
+  });
+
+  it("pins where each provider's model list is asked for", () => {
+    // The list itself is never pinned, on purpose: see src/router/catalogue.js.
+    // Where it is asked for is protocol, and protocol must not drift silently.
+    assert.equal(ANTHROPIC_MODELS_URL, "https://api.anthropic.com/v1/models");
+    assert.deepEqual([...PROVIDERS], ["anthropic", "zai"]);
+    assert.equal(CATALOGUE_TTL_MS, 6 * 60 * 60 * 1000);
   });
 
   it("pins the default models and known context windows", () => {

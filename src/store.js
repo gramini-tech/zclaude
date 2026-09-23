@@ -228,6 +228,18 @@ async function fileCredential(file, meta) {
  * Returns { apiKey, source, email, userId, keyName } or null. `source` is
  * "keychain" or "file".
  */
+/**
+ * A key handed in through the environment, which outranks anything stored.
+ *
+ * Lives here rather than in cli.js because the model catalogue needs the same
+ * answer, and two readings of "which key applies" is how one surface reports a
+ * plan the other cannot see.
+ * @param {NodeJS.ProcessEnv} env
+ */
+export function explicitZaiKey(env) {
+  return typeof env.ZAI_API_KEY === "string" && env.ZAI_API_KEY.trim() ? env.ZAI_API_KEY.trim() : "";
+}
+
 export async function loadCredential({
   env = process.env,
   platform = process.platform,

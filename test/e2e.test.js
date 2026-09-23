@@ -509,9 +509,13 @@ describe("end to end", () => {
     assert.equal(report.claude.version, "fake-claude 9.9.9");
     assert.deepEqual(report.profiles.slice(0, 3), ["auto", "claude", "zai"]);
 
+    // `models` asks each provider for its own list rather than printing a
+    // table. The ids are whatever the fake Z.ai server returns, so this asserts
+    // the shape and the source, never a particular model.
     const models = await run(["models"], { ...env, ZAI_API_KEY: GOOD_KEY });
     assert.equal(models.code, 0, models.stderr);
-    assert.match(models.stdout, /^glm-5\.3\s+1M context$/mu);
+    assert.match(models.stdout, /^zai {2}\(live: \d+ models\)$/mu);
+    assert.match(models.stdout, /^ {2}glm-5\.3 +1M context/mu);
 
     const text = await run(["status"], { ...env, ZAI_API_KEY: GOOD_KEY });
     assert.match(text.stdout, /credential {2}env \*{4}STUV/u);
@@ -519,8 +523,15 @@ describe("end to end", () => {
     const logout = await run(["logout"], env);
     assert.equal(logout.code, 0);
     assert.match(logout.stderr, /No stored Z\.ai credential/u);
+    // With nothing signed in, `models` used to exit 4. It now answers: each
+    // provider reports what it has and, when it could not be asked, why. Z.ai
+    // still lists here because the call above cached a live answer, and ids
+    // that were real a moment ago beat a table that never knew them.
     const noKey = await run(["models"], env);
-    assert.equal(noKey.code, 4);
+    assert.equal(noKey.code, 0, noKey.stderr);
+    assert.match(noKey.stdout, /^zai {2}\(cached\)$/mu);
+    assert.match(noKey.stdout, /^anthropic {2}\(fallback: /mu);
+    assert.match(noKey.stdout, /^ {2}nothing to list$/mu, "and an empty provider says so rather than inventing one");
   });
 
   it("self-install installs globally and verifies the command really runs", async () => {
