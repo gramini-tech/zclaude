@@ -853,12 +853,14 @@ token counting and everything else pass through to the real provider.
 ```sh
 zclaude router config init          # write ~/.zclaude/router.json with its explanation
 zclaude router route sonnet glm     # sonnet-class work goes to the Z.ai target named "glm"
+zclaude router on                   # route sessions started by zclaude
 zclaude router serve                # hold this terminal; other launches use it
 zclaude work -p "say hi"            # in another terminal
 zclaude router log                  # what went where
 ```
 
-Nothing routes until `enabled` is `true` in `~/.zclaude/router.json`. Editing it by hand is expected;
+Nothing routes until `zclaude router on`, which is `enabled` in `~/.zclaude/router.json`. Editing that
+file by hand is expected;
 the file carries its own `_readme`, and a value out of range is clamped with a warning rather than
 rejected.
 
@@ -1085,6 +1087,8 @@ zclaude switch --status [--json]           which account plain claude uses right
 zclaude switch --restore                   put the previous global login back
 zclaude switch capture                     store the live login back into its profile
 zclaude router status [--json]             where each class of model goes, and whether one is serving
+zclaude router on [--session-only]         route sessions started by zclaude
+zclaude router off                         stop routing new launches
 zclaude router route <class> [target...]   send a class somewhere; one target pins it there
 zclaude router models [--json] [--force]   what each provider publishes now, and what selectors mean
 zclaude router serve [--port n]            be the router in this terminal
@@ -1143,6 +1147,8 @@ All zclaude options go before any argument meant for `claude`.
 | `--path`                                | `zclaude log`: print only the log file path                                                  |
 | `--port <n>`                            | `router serve`: listen on this port instead of the one in `router.json`                      |
 | `--print`                               | `router open`: print the link instead of opening a browser                                   |
+| `--session-only`                        | `router on`: route only what zclaude launches, which is the only mode there is               |
+| `--machine-wide`                        | `router on`: refused, because that mode is designed and not built                            |
 | `--help`, `--version`                   | zclaude help and versions (`zclaude -- --help` for claude's own)                             |
 
 ## Configuration

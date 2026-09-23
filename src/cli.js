@@ -168,6 +168,8 @@ const BOOL_FLAGS = Object.freeze({
   "--sso": "sso",
   "--console": "useConsole",
   "--print": "print",
+  "--session-only": "sessionOnly",
+  "--machine-wide": "machineWide",
 });
 
 /** Parse `--flag value` or `--flag=value`; returns { key, value, consumed }. */
@@ -266,6 +268,8 @@ Usage
   zclaude auto attach [kind] [id] [--pid n]    hold or renew a lease; the editor uses this
   zclaude auto detach <id>                     give one up
   zclaude router status [--json]               where each class of model goes, and whether one is serving
+  zclaude router on [--session-only]           route sessions started by zclaude (--machine-wide is refused)
+  zclaude router off                           stop routing new launches
   zclaude router route <class> [target...]     send a class somewhere; one target pins it there
   zclaude router models [--json] [--force]     what each provider publishes now, and what selectors resolve to
   zclaude router serve [--port n]              be the router in this terminal; launches elsewhere use it

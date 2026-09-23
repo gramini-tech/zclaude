@@ -23,6 +23,7 @@ import { join } from "node:path";
 import { zaiConfig, zclaudeHome } from "../config.js";
 import { log } from "../logger.js";
 import { pidExists } from "../sessions/liveness.js";
+import { observeUsage } from "../usage/index.js";
 import { listModels, resolveModel } from "./catalogue.js";
 import { HOST, loadRouterConfig } from "./config.js";
 import { createAffinity } from "./affinity.js";
@@ -124,6 +125,10 @@ function buildDeps({ env, config, security, fetchImpl, ledger }) {
       affinity,
       ledger,
       fetchImpl,
+      // Free telemetry: a routed response carries this account's own quota
+      // headers, so the usage endpoint becomes the fallback rather than the
+      // only source.
+      observeUsage,
       catalogue: {
         list: (options) => listModels({ security, fetchImpl, ...options }),
         resolve: resolveModel,

@@ -247,6 +247,47 @@ async function cmdOpen({ env, options }) {
   return EXIT.OK;
 }
 
+// ------------------------------------------------------------------ on / off
+
+/**
+ * Turn routing on for launches from this machine.
+ *
+ * `--session-only` is accepted and is the only mode there is, so a script
+ * written today keeps working when a machine-wide mode exists and stops meaning
+ * something different the day it arrives.
+ */
+async function cmdOn({ env, options }) {
+  if (options.machineWide) {
+    throw usageError(
+      "Machine-wide routing is not built.",
+      "It writes into Claude Code's own user settings, which makes this process a dependency of every Claude Code on the machine. `zclaude router on` turns on session routing instead.",
+    );
+  }
+  const { config } = await loadRouterConfig({ env });
+  const profiles = (await listRegistered(env)).filter((one) => one.provider === "anthropic").map((one) => one.name);
+  const { ok, errors } = validateRouteTable(config, { profiles });
+  if (!ok) {
+    // Refused rather than turned on with a broken table: the failure would
+    // otherwise appear inside somebody's next session as a 503.
+    for (const problem of errors) warn(`${problem.path}: ${problem.message}`);
+    throw usageError("The route table has problems, so routing was not turned on.", `Edit ${routerConfigPath(env)}.`);
+  }
+  await writeRouterConfig({ ...config, enabled: true }, { env });
+  success("Routing is on for sessions started by zclaude.");
+  info("Plain `claude`, other terminals and the editor extension are untouched.");
+  info("`zclaude router serve` runs one router for every session; without it each launch runs its own.");
+  return EXIT.OK;
+}
+
+async function cmdOff({ env }) {
+  const { config } = await loadRouterConfig({ env });
+  await writeRouterConfig({ ...config, enabled: false }, { env });
+  success("Routing is off. New launches go straight to their provider.");
+  const state = await readRouterState(env);
+  if (state) info("A router is still serving; `zclaude router stop` ends it. Sessions already running keep using it.");
+  return EXIT.OK;
+}
+
 // -------------------------------------------------------------------- config
 
 async function cmdConfig({ env, args, options }) {
@@ -270,6 +311,8 @@ async function cmdConfig({ env, args, options }) {
 
 const SUBCOMMANDS = {
   status: cmdStatus,
+  on: cmdOn,
+  off: cmdOff,
   routes: cmdStatus,
   route: cmdRoute,
   models: cmdModels,

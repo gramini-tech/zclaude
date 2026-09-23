@@ -12,6 +12,7 @@ import { after, beforeEach, describe, it } from "node:test";
 
 import { ROUTER_SUBCOMMANDS, cmdRouterGroup } from "../src/router-commands.js";
 import { DEFAULT_ROUTER_CONFIG, ROUTE_CLASSES, loadRouterConfig, routerConfigPath } from "../src/router/config.js";
+import { putRegistered, removeRegistered } from "../src/profiles/registry.js";
 
 const home = await mkdtemp(join(tmpdir(), "zclaude-router-cli-"));
 const env = { ...process.env, ZCLAUDE_HOME: home, HOME: home, ZCLAUDE_NO_KEYCHAIN: "1", NO_COLOR: "1" };
@@ -99,6 +100,49 @@ describe("zclaude router route", () => {
   });
 });
 
+describe("zclaude router on and off", () => {
+  it("turns routing on, and off again", async () => {
+    await run(["config", "init"]);
+    await run(["on"]);
+    assert.equal((await loadRouterConfig({ env })).config.enabled, true);
+    await run(["off"]);
+    assert.equal((await loadRouterConfig({ env })).config.enabled, false);
+  });
+
+  it("refuses machine-wide, and says why rather than pretending", async () => {
+    await assert.rejects(run(["on"], { machineWide: true }), /not built/u);
+    assert.equal((await loadRouterConfig({ env })).config.enabled, false);
+  });
+
+  it("refuses to turn on over a table naming a profile that is gone", async () => {
+    // The loader drops a route whose *target* vanished, with a warning, so it
+    // never reaches here. A target naming a profile that was removed does
+    // reach here, and turning routing on over it would surface as a 503 inside
+    // somebody's next session instead of as a message now.
+    await putRegistered({ name: "kept", provider: "anthropic", dir: join(home, "kept") }, env);
+    await writeFile(
+      routerConfigPath(env),
+      JSON.stringify({
+        version: 1,
+        targets: { any: { kind: "anthropic", profile: "auto" }, gone: { kind: "anthropic", profile: "removed" } },
+        routes: { sonnet: { to: ["gone"] }, unknown: { to: ["any"] } },
+      }),
+      "utf8",
+    );
+    await assert.rejects(run(["on"]), /route table has problems/u);
+    assert.equal((await loadRouterConfig({ env })).config.enabled, false);
+    await removeRegistered("kept", env);
+  });
+
+  it("accepts --session-only, which is the only mode there is", async () => {
+    await run(["config", "init"]);
+    const { code } = await run(["on"], { sessionOnly: true });
+    assert.equal(code, 0);
+    assert.equal((await loadRouterConfig({ env })).config.enabled, true);
+    await run(["off"]);
+  });
+});
+
 describe("zclaude router config", () => {
   it("prints the path", async () => {
     const { out } = await run(["config", "path"]);
@@ -133,6 +177,18 @@ describe("the group itself", () => {
 
   it("exports exactly the subcommands the help and README document", () => {
     const sorted = [...ROUTER_SUBCOMMANDS].toSorted((a, b) => a.localeCompare(b));
-    assert.deepEqual(sorted, ["config", "log", "models", "open", "route", "routes", "serve", "status", "stop"]);
+    assert.deepEqual(sorted, [
+      "config",
+      "log",
+      "models",
+      "off",
+      "on",
+      "open",
+      "route",
+      "routes",
+      "serve",
+      "status",
+      "stop",
+    ]);
   });
 });

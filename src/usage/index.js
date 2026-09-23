@@ -442,6 +442,84 @@ async function persistSettled(settled, { env, now }) {
 }
 
 /**
+ * One window, preferring the fresher percentage and keeping the reset time only
+ * the endpoint knows.
+ */
+function mergeWindow(fresh, kept) {
+  if (!fresh) return kept ?? null;
+  return { pct: fresh.pct, resetsAt: fresh.resetsAt ?? kept?.resetsAt ?? null };
+}
+
+/** The cached entry with the header reading folded in, never replaced by it. */
+function mergeObserved(previous, observed, now) {
+  return {
+    ...previous,
+    state: "ok",
+    fiveHour: mergeWindow(observed.fiveHour, previous.fiveHour),
+    // The weekly header carries no reset time, so whatever the endpoint last
+    // said is kept beside the fresher percentage.
+    weekly: mergeWindow(observed.weekly ? { pct: observed.weekly.pct, resetsAt: null } : null, previous.weekly),
+    scoped: previous.scoped ?? [],
+    credits: previous.credits ?? null,
+    fetchedAt: observed.fetchedAt ?? now,
+    detail: null,
+    source: "headers",
+  };
+}
+
+/**
+ * Fold quota numbers that arrived on a response into the cache.
+ *
+ * `anthropic-ratelimit-unified-*` come back on every Max response, so a routed
+ * session produces a fresh reading of its own account for free, on traffic
+ * somebody was sending anyway. That turns the usage endpoint from the only
+ * source into the fallback, and the picker, the watcher and the VS Code status
+ * bar all read better numbers without a single extra request.
+ *
+ * It is a merge, never a replacement. The headers carry two windows and a
+ * status and nothing else: no scoped per-model limits, no credit balance, no
+ * reset time for the weekly window. Overwriting the cached entry with them
+ * would erase what only the endpoint knows, so anything absent here keeps
+ * whatever was already there.
+ *
+ * Never throws and never blocks the request it came from.
+ *
+ * @param {string} profile
+ * @param {{fiveHour: {pct: number, resetsAt: string | null} | null, weekly: {pct: number} | null, status?: string | null, fetchedAt?: number}} observed
+ * @param {{env?: NodeJS.ProcessEnv, now?: number}} [options]
+ */
+export async function observeUsage(profile, observed, { env = process.env, now = Date.now() } = {}) {
+  if (!profile || !observed || (!observed.fiveHour && !observed.weekly)) return null;
+  let release;
+  try {
+    release = await acquire(`${usagePath(env)}.lock`, { staleMs: 5000, timeoutMs: 2000 });
+  } catch (error) {
+    // A reading that cannot take the lock is discarded rather than queued. The
+    // next response carries another one a few seconds later.
+    log.debug("usage", "cache lock busy; not recording an observation", { error });
+    return null;
+  }
+  try {
+    const cache = await readCache(env);
+    const previous = cache.profiles[profile] ?? {};
+    // A cached reading taken *after* this one wins: responses can land out of
+    // order, and a stale number overwriting a fresh one is worse than skipping.
+    if (Number(previous.fetchedAt) > (observed.fetchedAt ?? now)) return null;
+    const merged = mergeObserved(previous, observed, now);
+    cache.profiles[profile] = merged;
+    await writeCache(cache, env);
+    log.debug("usage", "recorded a reading from response headers", {
+      profile,
+      fiveHour: merged.fiveHour?.pct ?? null,
+      weekly: merged.weekly?.pct ?? null,
+    });
+    return merged;
+  } finally {
+    await release();
+  }
+}
+
+/**
  * Usage for several profiles at once, reported as each one lands so a caller
  * can paint a row at a time rather than waiting for the slowest.
  * @param {Array<object>} records

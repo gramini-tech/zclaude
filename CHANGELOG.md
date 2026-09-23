@@ -29,6 +29,18 @@ local process a dependency of every client on the machine; it is designed, not b
 - **The local page** (`zclaude router open`) is loopback-only with a `Host` check, reached through a
   single-use sixty-second link traded for a cookie, and its request log is metadata only: no prompts,
   no responses, not behind a flag.
+- `zclaude router on` / `off` turn it on for launches rather than making you
+  edit `enabled` by hand. `--session-only` is accepted and is the only mode;
+  `--machine-wide` is refused with the reason rather than quietly ignored.
+- **`observeUsage` folds the quota headers a routed response already carries
+  into the usage cache.** `anthropic-ratelimit-unified-*` arrive on every Max
+  response, so a routed session produces a fresh reading of its own account for
+  free, and the picker, the watcher and the VS Code status bar all get better
+  numbers with no extra requests. It is a merge and never a replacement: the
+  headers know two percentages and nothing else, so the scoped per-model limits,
+  the credit balance and the weekly reset time that only the endpoint reports
+  survive it. A reading older than what is cached is discarded, because
+  responses land out of order.
 - `busyProfiles` now filters out routed sessions. A routed session authenticates with a local token
   and never reads its profile's OAuth credential, so counting it as a refresher would leave that
   account's token to expire while the renewal job stood politely aside. The null-means-everything-is-
