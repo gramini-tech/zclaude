@@ -28,6 +28,7 @@ export const UNKNOWN_CLASS = "unknown";
  * @property {string[]} betas the anthropic-beta values the client sent
  * @property {boolean} hasCacheControl whether any block carries a cache breakpoint
  * @property {string[]} toolNames
+ * @property {string} systemText the system prompt, capped, for the cache key
  * @property {string} firstUserText the opening of the conversation, capped
  */
 
@@ -54,6 +55,22 @@ export function firstUserText(messages) {
   if (!Array.isArray(content)) return "";
   const block = content.find((entry) => entry?.type === "text" && typeof entry.text === "string");
   return block?.text ?? "";
+}
+
+/**
+ * The system prompt as one string, capped.
+ *
+ * Only for hashing a conversation, never for sending: it carries Claude Code's
+ * working directory and environment, which is what scopes a cache key to a
+ * project. The body's own `system` is forwarded untouched.
+ */
+export function systemText(system) {
+  if (typeof system === "string") return system.slice(0, 8192);
+  if (!Array.isArray(system)) return "";
+  return system
+    .map((entry) => (typeof entry?.text === "string" ? entry.text : ""))
+    .join("\n")
+    .slice(0, 8192);
 }
 
 /**
@@ -96,6 +113,7 @@ export function classifyRequest(body, { betas } = {}) {
     toolNames: Array.isArray(body?.tools)
       ? body.tools.map((tool) => (typeof tool?.name === "string" ? tool.name : "")).filter(Boolean)
       : [],
+    systemText: systemText(body?.system),
     firstUserText: firstUserText(body?.messages).slice(0, 4096),
   };
 }

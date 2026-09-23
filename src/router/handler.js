@@ -174,8 +174,12 @@ async function runAttempts({ first, request, parsed, buffer, req, path, deps, pi
  *
  * @param {{req: object, res: object, path: string, deps: object}} input
  */
-export async function handleMessages({ req, res, path, deps }) {
-  const { config, selector, ledger, now = Date.now } = deps;
+export async function handleMessages({ req, res, path, deps: given }) {
+  // Normalised once, here, so every function below reads the same clock. A
+  // default applied locally and not written back left `deps.now` undefined in
+  // the helpers, which is the kind of bug that only shows up over a socket.
+  const deps = { ...given, now: given.now ?? Date.now };
+  const { config, selector, ledger, now } = deps;
   const startedAt = now();
 
   const { buffer, tooLarge } = await readBody(req, config.limits.bodyBytes);
