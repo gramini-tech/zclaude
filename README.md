@@ -1,8 +1,7 @@
 # zclaude
 
-An account manager for [Claude Code](https://claude.com/claude-code). Run several accounts at the
-same time, see how much of each plan is left before you pick one, and move the login that everything
-else on the machine uses.
+Run [Claude Code](https://claude.com/claude-code) on several accounts at once, and route a single
+session across all of them.
 
 <p align="center">
   <img src="site/logo.svg" alt="zclaude" width="560">
@@ -14,9 +13,16 @@ else on the machine uses.
 
 Claude Code keeps one login per machine. Sign in with a second account and the first is signed out,
 the VS Code extension included, so a work account and a personal one mean logging in and out all day.
-And when you are near a limit there is nothing that tells you which of your accounts still has room.
+When you are near a limit there is nothing that tells you which of your accounts still has room. And
+whichever account you start a session on is the account you finish it on, however full it gets.
 
-zclaude answers both. Three things, in the order you will use them:
+zclaude answers all three by making the account a finer and finer choice:
+
+| The account is chosen | by                                                               |
+| --------------------- | ---------------------------------------------------------------- |
+| once per machine      | Claude Code, and `zclaude switch` when you want to move it       |
+| once per terminal     | a profile: `zclaude work`                                        |
+| **once per request**  | **the router, by class of model, across accounts and providers** |
 
 **Run several accounts at once.** Each account gets a profile with its own credentials and its own
 Claude Code configuration directory, scoped to the terminal you start it from. Three terminals, three
@@ -39,10 +45,21 @@ gramini    anthropic vipinr@gramini.com · Hoomanely Inc    shares config + hist
            credits spent
 ```
 
-**Move the global login.** Profiles cover the terminals you start with zclaude. `switch` moves the
-one login that plain `claude`, the VS Code extension and anything else shelling out to Claude Code
-all share — credential and identity together, with the previous one captured back and backed up
-first, and everything else in `~/.claude.json` left exactly as it was.
+**Route one session across all of them.** A local proxy sits in front of the session and sends each
+request to whichever account or provider a route table names for that class of model. The main turn
+rotates across your Anthropic accounts as they fill up; the subagent turns go to a GLM model; it is
+one Claude Code session and you changed nothing inside it. When an account's window is spent the next
+request goes elsewhere, without restarting anything.
+
+```sh
+zclaude router route sonnet glm    # sonnet-class work goes to a Z.ai model
+zclaude router on                  # and sessions zclaude starts are routed
+```
+
+**Move the global login.** Profiles and routing cover the sessions you start with zclaude. `switch`
+moves the one login that plain `claude`, the VS Code extension and anything else shelling out to
+Claude Code all share, credential and identity together, with the previous one captured back and
+backed up first, and everything else in `~/.claude.json` left exactly as it was.
 
 ```sh
 zclaude switch work             # everything on this machine is now work's account
@@ -138,6 +155,14 @@ zclaude work                               # this terminal runs on that account
 That is the whole idea. `zclaude` on its own shows a menu; naming a profile skips it. Anything else
 you type is passed to `claude`, so `zclaude mcp list` and `zclaude -p "hi"` still work, and profile
 names can never be one of claude's own commands.
+
+Once you have two accounts, routing is three more lines:
+
+```sh
+zclaude router config init                 # the route table, with its own explanation in it
+zclaude router on                          # sessions zclaude starts are routed from here
+zclaude work                               # and this one picks an account per request
+```
 
 ## Several accounts at once
 
@@ -320,6 +345,174 @@ The last line is pay-as-you-go credit, which Anthropic calls extra usage. When i
 row shows what is left (`credits $37.66 left`); when the account has spent it, `credits spent`; when
 a spend limit stopped it, `credit limit reached`. An account that simply never turned it on says
 nothing, since that is a choice rather than news. A Z.ai coding plan has no equivalent tier.
+
+## Routing one session across accounts and providers
+
+A profile picks an account when the session starts. The router picks one for every request.
+
+It is a small HTTP proxy on `127.0.0.1` that Claude Code points at for the length of a session.
+Requests arrive already labelled by class, opus or sonnet or haiku or fable, and each class goes
+wherever a route table says. So the main turn can rotate across your Anthropic accounts as their
+windows fill while the subagent turns are answered by a GLM model, inside one session, with nothing
+changed in Claude Code and nothing to restart when an account runs out.
+
+It routes generation and nothing else. The request and the response stay in Anthropic Messages shape;
+what changes per hop is the URL, the authorization header and the `model` string. Usage lookups,
+token counting and every other endpoint pass through to the real provider untouched.
+
+```sh
+zclaude router config init          # write ~/.zclaude/router.json with its explanation
+zclaude router route sonnet glm     # sonnet-class work goes to the Z.ai target named "glm"
+zclaude router on                   # and sessions zclaude starts are routed
+zclaude router serve                # hold this terminal; launches elsewhere use it
+zclaude work -p "say hi"            # in another terminal
+zclaude router log                  # what went where
+```
+
+```
+19:32:45  200  sonnet  any→hoomanely    3454ms  2in/3out +24124c
+19:32:45  200  sonnet  any→gramini      1380ms  2in/5out
+19:31:02  200  haiku   glm-fast→zai      412ms  2in/9out
+```
+
+`any→hoomanely` is the route table entry and then the account that actually answered; the real output
+carries the model id between them. Two sessions running at the same moment landed on different
+accounts because the ranking looks at what is left on each. The last line is a helper model answered
+by a different provider, in the same session as the ones above it.
+
+Nothing routes until `zclaude router on`. Editing `~/.zclaude/router.json` by hand is expected: the
+file carries its own `_readme`, and a value out of range is clamped with a warning rather than
+rejected.
+
+### Why this is different from switching
+
+`zclaude switch` moves one login for the whole machine, and `zclaude auto` moves it between accounts
+on a timer. Both change what every Claude Code on the machine sees, which is why both are careful,
+slow and deliberate. The router changes nothing outside the session it serves. It never calls
+`switch`, in any mode. Two routed sessions can be on two different accounts in the same millisecond,
+and a third terminal running plain `claude` does not know either of them exists.
+
+That also means the two answer different questions and you can use both. Keep `switch` for the login
+your editor and your scripts share; use the router for the session you are actually working in.
+
+### The route table
+
+```jsonc
+{
+  "enabled": true,
+  "targets": {
+    "any": { "kind": "anthropic", "profile": "auto" },
+    "work": { "kind": "anthropic", "profile": "work" },
+    "glm": { "kind": "zai", "model": "latest" },
+    "glm-fast": { "kind": "zai", "model": "latest:fast" },
+  },
+  "routes": {
+    "opus": { "to": ["work", "any"] },
+    "sonnet": { "to": ["any", "glm"] },
+    "haiku": { "to": ["glm-fast", "any"] },
+    "unknown": { "to": ["any"] },
+  },
+}
+```
+
+A target is somewhere a request can go. `"profile": "auto"` means whichever Anthropic account has the
+most room, ranked by the same policy `zclaude auto` uses; a profile name pins it to that account.
+
+A route is an ordered list of target names, and the order is both the preference and the fallback
+chain. **A list of one pins that class**: when its target is spent, those requests wait and then fail
+rather than quietly answering from somewhere else. That surprises people, so `router status` marks it.
+
+No model version appears anywhere in this file. A Z.ai target names a selector — `latest`,
+`latest:fast`, or an exact id if you really mean one — and it is resolved against what the provider
+publishes at the moment a request is sent. `zclaude router models` shows what each one means today.
+An exact id the provider has retired falls forward to the newest with a warning, because a route that
+stops working the day a model is withdrawn is worse than one that moves on and says so.
+
+### What it does when an account is spent
+
+Two kinds of 429 arrive from Anthropic and they mean opposite things. A _quota_ 429 means the window
+is used up, so the request moves to the next target in the chain. A _burst_ 429 means too many
+requests in a minute while the window is still mostly free, and moving would be a mistake: rotating
+to another account discards a warm prompt cache, which on an agentic turn is most of the input
+tokens. The router waits out the `retry-after` and asks the same account again.
+
+When nothing in a class's chain can take a request, it holds silently for up to 240 seconds, polling
+every five, and then returns a real `429` with a `retry-after` that Claude Code's own retry handles.
+Nothing is written to the response until an upstream has answered, so there is exactly one moment
+where a request becomes uninterruptible, and no failover after it.
+
+A conversation stays on the account that holds its prompt cache for five minutes, keyed on the system
+prompt, the tool names and the first user turn. After a compaction those change, so the binding
+releases at exactly the moment the cache it was protecting stopped existing.
+
+### The numbers get better while you use it
+
+Every subscription response carries Anthropic's `anthropic-ratelimit-unified-*` headers, which say
+how full that account's five-hour and weekly windows are and when each resets. A routed session is
+therefore producing a fresh reading of its own account on traffic you were sending anyway, and the
+router folds those into the same cache the menu, `profile list --usage`, the watcher and the VS Code
+status bar all read.
+
+The usage endpoint becomes the fallback rather than the only source. It is a merge and never a
+replacement: the headers know two windows, and the endpoint also reports per-model limits and your
+pay-as-you-go balance, so nothing the headers are silent about is overwritten. Writes are throttled
+to a percentage point or thirty seconds per account, because an agentic session produces several
+responses a second.
+
+### Two sessions at once
+
+Nothing about the router is per-session state. Start `zclaude router serve` in a terminal and every
+launch afterwards shares it: one route table, one ledger, one page. Two sessions asking for the same
+class at the same moment are ranked independently and usually land on different accounts, because the
+ranking is by what is left rather than by a fixed order.
+
+`zclaude sessions` marks a routed session, because its profile name is where it started rather than
+where it is. `zclaude router log` is the record of where each request actually went.
+
+Without a shared router each launch runs its own inside the zclaude process that started it, on a
+port of its own, and closes it when `claude` exits. That works, and the only thing you lose is the
+shared view: a router nobody else knows about keeps its log to itself.
+
+### Session mode, and what is not built
+
+The router runs for a session, not for the machine. `zclaude <profile>` starts one (or uses the one
+`zclaude router serve` is already running) and points that session at it with `ANTHROPIC_BASE_URL`,
+`ANTHROPIC_AUTH_TOKEN` and `ZCLAUDE_ROUTER`. When claude exits, a router zclaude started for it exits
+too. Plain `claude`, other terminals and the VS Code extension are untouched.
+
+Machine-wide interception would mean writing those keys into Claude Code's own user settings, which
+makes a local process a dependency of every Claude Code on the machine. That is designed and not
+built. `zclaude router status` says `session` and will keep saying it until it is.
+
+Two things to know about pointing Claude Code at any non-first-party base URL, router or not:
+MCP tool search turns off unless `ENABLE_TOOL_SEARCH=true` is set, which zclaude sets for you; and
+Remote Control is disabled and does not come back for that session. The WebFetch domain check and
+the fast-mode availability check talk to `api.anthropic.com` directly and never reach the router.
+
+### The local page
+
+`zclaude router open` edits the route table in a browser, shows what each selector resolves to right
+now, and streams the request log. It binds to loopback only, with no setting to change that, and the
+`Host` header is checked on every request so a page on someone else's domain resolving to 127.0.0.1
+is refused.
+
+The command mints a single-use link valid for sixty seconds; opening it trades the link for a cookie
+scoped to `/__zclaude/`. The router's bearer token never reaches the browser, and the proxy path
+ignores cookies entirely, so a hostile page cannot make your browser spend your quota.
+
+**The request log is metadata only.** Class, target, model id, status, duration and token counts. No
+prompts and no responses, not behind a flag, and there is no setting that turns that on.
+
+### What the router never does
+
+It never calls `zclaude switch`. Per-request selection and moving the global login are different
+jobs, and the router does only the first. `~/.claude.json` is not touched either, which has one
+honest cost: the account Claude Code _displays_ comes from that file, so during a routed session the
+name on screen may not be the account that answered. `zclaude router log` is the truth.
+
+It also never refreshes an OAuth token that something else might be holding. A routed session
+authenticates with a local token and never reads its profile's credential, so it is not counted as a
+refresher; see [One refresher per login](#one-refresher-per-login).
 
 ## When a login has expired
 
@@ -835,125 +1028,13 @@ looking at:
 | `(cached)`           | a live answer from within the last six hours, or an older one kept because the provider is unreachable |
 | `(fallback: reason)` | the built-in table, for the reason given                                                               |
 
+The same catalogue is what a route table's `latest` and `latest:fast` resolve against, so
+[a route](#routing-one-session-across-accounts-and-providers) written today keeps meaning the current
+model without anybody editing it.
+
 Listing models never signs anything in and never refreshes a token. An account whose token has
 lapsed is skipped rather than renewed, because seeing a model list is not worth spending a rotation;
 [Keeping tokens alive](#keeping-tokens-alive) explains why that matters.
-
-## Routing one session across providers
-
-The router is a small HTTP proxy on `127.0.0.1` that Claude Code points at for the duration of a
-session. Requests arrive already labelled by class — opus, sonnet, haiku, fable — and each class
-goes wherever a route table says. So a subagent turn can be answered by a GLM model while the main
-turn rotates across Anthropic accounts, inside one session, without changing anything in Claude Code.
-
-It routes generation and nothing else. The request and response stay in Anthropic Messages shape;
-what changes per hop is the URL, the authorization header, and the `model` string. Usage lookups,
-token counting and everything else pass through to the real provider.
-
-```sh
-zclaude router config init          # write ~/.zclaude/router.json with its explanation
-zclaude router route sonnet glm     # sonnet-class work goes to the Z.ai target named "glm"
-zclaude router on                   # route sessions started by zclaude
-zclaude router serve                # hold this terminal; other launches use it
-zclaude work -p "say hi"            # in another terminal
-zclaude router log                  # what went where
-```
-
-Nothing routes until `zclaude router on`, which is `enabled` in `~/.zclaude/router.json`. Editing that
-file by hand is expected;
-the file carries its own `_readme`, and a value out of range is clamped with a warning rather than
-rejected.
-
-### The route table
-
-```jsonc
-{
-  "enabled": true,
-  "targets": {
-    "any": { "kind": "anthropic", "profile": "auto" },
-    "work": { "kind": "anthropic", "profile": "work" },
-    "glm": { "kind": "zai", "model": "latest" },
-    "glm-fast": { "kind": "zai", "model": "latest:fast" },
-  },
-  "routes": {
-    "opus": { "to": ["work", "any"] },
-    "sonnet": { "to": ["any", "glm"] },
-    "haiku": { "to": ["glm-fast", "any"] },
-    "unknown": { "to": ["any"] },
-  },
-}
-```
-
-A target is somewhere a request can go. `"profile": "auto"` means whichever Anthropic account has the
-most room, ranked by the same policy `zclaude auto` uses; a profile name pins it to that account.
-
-A route is an ordered list of target names, and the order is both the preference and the fallback
-chain. **A list of one pins that class**: when its target is spent, those requests wait and then fail
-rather than quietly answering from somewhere else. That surprises people, so `router status` marks it.
-
-No model version appears anywhere in this file. A Z.ai target names a selector — `latest`,
-`latest:fast`, or an exact id if you really mean one — and it is resolved against what the provider
-publishes at the moment a request is sent. `zclaude router models` shows what each one means today.
-An exact id the provider has retired falls forward to the newest with a warning, because a route that
-stops working the day a model is withdrawn is worse than one that moves on and says so.
-
-### What it does when an account is spent
-
-Two kinds of 429 arrive from Anthropic and they mean opposite things. A _quota_ 429 means the window
-is used up, so the request moves to the next target in the chain. A _burst_ 429 means too many
-requests in a minute while the window is still mostly free, and moving would be a mistake: rotating
-to another account discards a warm prompt cache, which on an agentic turn is most of the input
-tokens. The router waits out the `retry-after` and asks the same account again.
-
-When nothing in a class's chain can take a request, it holds silently for up to 240 seconds, polling
-every five, and then returns a real `429` with a `retry-after` that Claude Code's own retry handles.
-Nothing is written to the response until an upstream has answered, so there is exactly one moment
-where a request becomes uninterruptible, and no failover after it.
-
-A conversation stays on the account that holds its prompt cache for five minutes, keyed on the system
-prompt, the tool names and the first user turn. After a compaction those change, so the binding
-releases at exactly the moment the cache it was protecting stopped existing.
-
-### Session mode, and what is not built
-
-The router runs for a session, not for the machine. `zclaude <profile>` starts one (or uses the one
-`zclaude router serve` is already running) and points that session at it with `ANTHROPIC_BASE_URL`,
-`ANTHROPIC_AUTH_TOKEN` and `ZCLAUDE_ROUTER`. When claude exits, a router zclaude started for it exits
-too. Plain `claude`, other terminals and the VS Code extension are untouched.
-
-Machine-wide interception would mean writing those keys into Claude Code's own user settings, which
-makes a local process a dependency of every Claude Code on the machine. That is designed and not
-built. `zclaude router status` says `session` and will keep saying it until it is.
-
-Two things to know about pointing Claude Code at any non-first-party base URL, router or not:
-MCP tool search turns off unless `ENABLE_TOOL_SEARCH=true` is set, which zclaude sets for you; and
-Remote Control is disabled and does not come back for that session. The WebFetch domain check and
-the fast-mode availability check talk to `api.anthropic.com` directly and never reach the router.
-
-### The local page
-
-`zclaude router open` edits the route table in a browser, shows what each selector resolves to right
-now, and streams the request log. It binds to loopback only, with no setting to change that, and the
-`Host` header is checked on every request so a page on someone else's domain resolving to 127.0.0.1
-is refused.
-
-The command mints a single-use link valid for sixty seconds; opening it trades the link for a cookie
-scoped to `/__zclaude/`. The router's bearer token never reaches the browser, and the proxy path
-ignores cookies entirely, so a hostile page cannot make your browser spend your quota.
-
-**The request log is metadata only.** Class, target, model id, status, duration and token counts. No
-prompts and no responses, not behind a flag, and there is no setting that turns that on.
-
-### What the router never does
-
-It never calls `zclaude switch`. Per-request selection and moving the global login are different
-jobs, and the router does only the first. `~/.claude.json` is not touched either, which has one
-honest cost: the account Claude Code _displays_ comes from that file, so during a routed session the
-name on screen may not be the account that answered. `zclaude router log` is the truth.
-
-It also never refreshes an OAuth token that something else might be holding. A routed session
-authenticates with a local token and never reads its profile's credential, so it is not counted as a
-refresher; see [One refresher per login](#one-refresher-per-login).
 
 ## Passing arguments to Claude Code
 
@@ -1320,6 +1401,15 @@ stored by an earlier interactive `zclaude login`, and models come from config or
   `~/.zclaude`, so it is removed by name. `--keep-config` keeps the profiles, and therefore their
   logins.
 - The key travels only to `api.z.ai`, `zcode.z.ai` and `chat.z.ai`. No telemetry.
+- **The router binds `127.0.0.1` and nothing else**, with no setting that changes it in any mode, and
+  a contract test asserts no other address appears in its source. A `Host` header that does not name
+  it is refused, which is what stops a page on someone else's domain resolving to 127.0.0.1 and
+  talking to it. The proxied paths take a bearer token and ignore cookies entirely, so a hostile page
+  in your browser cannot make the browser spend your quota; the local page takes a cookie those paths
+  never accept, obtained through a single-use link that expires in sixty seconds.
+- **The router's request log is metadata only**: class, target, account, model id, status, duration
+  and token counts. No prompts and no responses, not behind a flag, and no setting turns it on. It
+  lives in memory, capped, and goes when the process does.
 - Secrets are masked in every log line and error message.
 
 ## Development

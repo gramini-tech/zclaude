@@ -291,6 +291,18 @@ async function resolveModel(target, deps, request) {
 }
 
 /**
+ * Which account or key actually answered, as against which table entry chose it.
+ *
+ * With `profile: "auto"` the entry is called something like "any", which says
+ * nothing about where the request went. Named the same way for both kinds of
+ * target so one log line reads the same however it was routed.
+ */
+function whoAnswered(target) {
+  if (target.kind === "zai") return target.zaiProfile ?? "zai";
+  return target.record?.name ?? target.profile ?? null;
+}
+
+/**
  * The one place a response is committed.
  *
  * After `writeHead` the account is fixed and nothing can be retried, which is
@@ -301,7 +313,7 @@ async function commit({ res, answer, target, request, deps, startedAt, attemptIn
   const { now = Date.now, ledger } = deps;
   // With `profile: "auto"` the table entry is "any", which says nothing about
   // where the request went. The account is the interesting half.
-  const via = target.record?.name ?? target.profile ?? null;
+  const via = whoAnswered(target);
   const headers = downstreamHeaders(upstream.headers, {
     target: via && via !== target.name ? `${target.name}/${via}` : target.name,
     klass: request.klass,

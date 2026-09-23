@@ -241,7 +241,7 @@ export function parseArgs(argv) {
   return { command: command ?? "launch", options, passthrough };
 }
 
-export const HELP = `zclaude ${VERSION} — interactive preloader for Claude Code
+export const HELP = `zclaude ${VERSION} — several Claude Code accounts, and one session across them
 
 Usage
   zclaude                                      pick a profile from the menu, then launch claude

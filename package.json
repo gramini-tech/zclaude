@@ -1,7 +1,7 @@
 {
   "name": "zclaude",
-  "version": "0.2.70",
-  "description": "An account manager for Claude Code: run several accounts at once, one per terminal, see how much of each plan is left, and move the global login everything else uses",
+  "version": "0.2.71",
+  "description": "Run Claude Code on several accounts at once, and route one session across all of them: a profile per terminal, a local router that picks an account or provider per request, and every plan's remaining usage before you choose",
   "author": {
     "name": "Gramini Labs",
     "url": "https://gramini.com"
@@ -55,6 +55,9 @@
     "claude-code",
     "anthropic",
     "multi-account",
+    "router",
+    "proxy",
+    "model-routing",
     "profiles",
     "usage",
     "rate-limits",

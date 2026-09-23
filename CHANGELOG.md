@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+**The README and the website are reframed around the router rather than
+carrying a section about it.** zclaude was described as an account manager; it
+now makes the account a steadily finer choice — once per machine with `switch`,
+once per terminal with a profile, once per request with the router — and the
+docs lead with that. The tagline, the package description, the `--help` line and
+the banner follow. The site gains a router section with a real log, five FAQ
+entries answering what it does, how it differs from a switch, what happens when
+an account runs out, whether model versions get pinned and whether prompts are
+recorded, and three cards at the top of the feature grid.
+
 **The router: one Claude Code session, several providers and accounts.** `zclaude router serve`
 runs a proxy on `127.0.0.1` that a launched session points at, and each request goes wherever the
 route table says for its class of model. Sonnet-class work can be answered by a GLM model while opus

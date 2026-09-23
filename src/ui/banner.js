@@ -100,7 +100,7 @@ export const MIN_COLUMNS = bannerWidth() + 2;
 export function renderBanner({ columns = 80, mode = "none" } = {}) {
   const colored = mode !== "none";
   const tint = (text) => (colored ? paint(text, "grey", { isTTY: true }, { FORCE_COLOR: "1" }) : text);
-  const tagline = `v${VERSION} · Claude Code preloader · Z.ai GLM Coding Plan`;
+  const tagline = `v${VERSION} · several accounts, one session across them · Anthropic + Z.ai`;
   if (columns < MIN_COLUMNS) {
     if (!colored) return `zclaude  ${tagline}\n`;
     const z = `${sgr(PALETTE.z[0], "fg", mode)}z${RESET}`;

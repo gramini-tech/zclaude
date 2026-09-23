@@ -77,7 +77,7 @@ describe("banner", () => {
   it("falls back to a one-liner on narrow terminals", () => {
     assert.equal(
       renderBanner({ columns: MIN_COLUMNS - 1, mode: "none" }),
-      `zclaude  v${VERSION} · Claude Code preloader · Z.ai GLM Coding Plan\n`,
+      `zclaude  v${VERSION} · several accounts, one session across them · Anthropic + Z.ai\n`,
     );
     assert.ok(renderBanner({ columns: MIN_COLUMNS - 1, mode: "256" }).includes(`${ESC}[38;5;`));
     assert.ok(renderBanner({ columns: MIN_COLUMNS, mode: "none" }).split("\n").length > 6);

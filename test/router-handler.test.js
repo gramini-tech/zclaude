@@ -149,6 +149,21 @@ describe("a request that simply works", () => {
     assert.equal(deps.recorded[0].usage.output, 20, "the usage was read out of the stream");
   });
 
+  it("names the provider a Z.ai route went out on, so one log line reads the same either way", async () => {
+    const fetchImpl = fakeUpstream([{ when: ZAI, reply: () => streamingResponse(sseBody()) }]);
+    const deps = depsWith({ fetchImpl, over: { config: { routes: { sonnet: { to: ["glm"] } } } } });
+    const out = collectingResponse();
+    await handleMessages({
+      req: fakeRequest({ body: JSON.stringify({ model: "claude-sonnet-test", stream: true }) }),
+      res: out.res,
+      path: "/v1/messages",
+      deps,
+    });
+    assert.equal(out.status(), 200);
+    assert.equal(deps.recorded.at(-1).target, "glm");
+    assert.equal(deps.recorded.at(-1).via, "zai", "an entry called 'glm' still says which provider answered");
+  });
+
   it("rewrites the model for a Z.ai route and sends its key", async () => {
     const fetchImpl = fakeUpstream([{ when: ZAI, reply: () => streamingResponse(sseBody({ model: "glm-current" })) }]);
     const deps = depsWith({ fetchImpl });
