@@ -60,6 +60,14 @@ local process a dependency of every client on the machine; it is designed, not b
   thirty seconds per account, because an agentic session produces several
   responses a second and each write is a lock acquire on a file the menu, the
   watcher and the editor extension all share.
+- `zclaude sessions` marks a routed session. Its profile name is where it
+  started, not where it is, and reading that column to decide where to launch
+  the next one would be wrong.
+- Four structural rules the router had in comments are now contract tests: it
+  spawns nothing (a forked child inherits the listening descriptor, which is the
+  one real way to strand a port), it imports statically (install.sh does
+  `rm -rf "$APP_DIR"` under a running process), it names no bind address but
+  loopback, and it commits a response in exactly one place.
 - `busyProfiles` now filters out routed sessions. A routed session authenticates with a local token
   and never reads its profile's OAuth credential, so counting it as a refresher would leave that
   account's token to expire while the renewal job stood politely aside. The null-means-everything-is-

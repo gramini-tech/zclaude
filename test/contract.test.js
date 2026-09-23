@@ -224,6 +224,53 @@ describe("the router pins no model version", () => {
   });
 });
 
+describe("the router's structural rules", () => {
+  const routerFiles = async () => {
+    const dir = join(root, "src", "router");
+    const names = (await readdir(dir, { recursive: true })).filter((name) => name.endsWith(".js"));
+    return Promise.all(names.map(async (name) => [name, await readFile(join(dir, name), "utf8")]));
+  };
+
+  it("never spawns a child, which is the one real way to strand a listening port", async () => {
+    // A forked child inherits the listening descriptor, so the port stays held
+    // after the router exits and the next start fails with EADDRINUSE against
+    // nothing anybody can find.
+    const files = await routerFiles();
+    for (const [name, text] of files) {
+      assert.doesNotMatch(text, /\b(?:spawn|spawnSync|fork|execFile|exec)\s*\(/u, `src/router/${name} spawns`);
+      assert.doesNotMatch(text, /from "node:child_process"/u, `src/router/${name} imports child_process`);
+    }
+  });
+
+  it("imports statically, because install.sh removes the app directory under a running one", async () => {
+    // `install.sh` does `rm -rf "$APP_DIR"`, so a module resolved lazily after
+    // an upgrade resolves to nothing, mid-request, in a process that was fine a
+    // second earlier.
+    const files = await routerFiles();
+    for (const [name, text] of files) {
+      assert.doesNotMatch(text, /await import\(/u, `src/router/${name} imports lazily`);
+    }
+  });
+
+  it("binds nowhere but loopback, with no setting that could change it", async () => {
+    const files = await routerFiles();
+    for (const [name, text] of files) {
+      assert.doesNotMatch(text, /0\.0\.0\.0|::\s*"|"::"/u, `src/router/${name} names a non-loopback bind`);
+    }
+    const server = await readFile(join(root, "src", "router", "server.js"), "utf8");
+    assert.match(server, /host: HOST/u, "the listen call takes the constant rather than anything configurable");
+  });
+
+  it("commits a response in exactly one place", async () => {
+    // The moment after which no failover is possible. A second one means
+    // mid-stream failover has been introduced by accident, and the failure mode
+    // is duplicated or contradictory output in somebody's terminal.
+    const handler = await readFile(join(root, "src", "router", "handler.js"), "utf8");
+    const commits = handler.match(/res\.writeHead\(/gu) ?? [];
+    assert.equal(commits.length, 2, "one in `commit`, one in the `fail` helper that never streams");
+  });
+});
+
 describe("documentation contract", () => {
   it("every flag parsed by the CLI is described in --help and the README", async () => {
     const cli = await readFile(join(root, "src", "cli.js"), "utf8");

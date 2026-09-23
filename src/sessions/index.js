@@ -69,6 +69,11 @@ export async function liveSessions({ env = process.env, now = Date.now(), reap =
         startedAt: record.startedAt,
         host: record.host ?? null,
         auto: record.auto === true,
+        // Rebuilt field by field rather than spread, so a key added to the
+        // record is invisible here until it is named. `routed` was: without
+        // this line `busyProfiles` filtered on a property that was never
+        // carried across, so the filter silently did nothing.
+        routed: record.routed === true,
         lastActiveAt,
         state: activityState(lastActiveAt, record.startedAt, now),
         tracked: true,
@@ -94,6 +99,8 @@ export async function untrackedSessions({ ours, owner = null, account = null, ps
       account,
       pid: entry.pid,
       cwd: null,
+      // Nothing zclaude started, so nothing zclaude routed.
+      routed: false,
       // Nothing outside the process says when it last did anything, and its
       // transcript cannot be told from any other session's on the same login.
       startedAt: 0,

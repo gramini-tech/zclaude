@@ -77,6 +77,54 @@ describe("zclaude sessions", () => {
     }
   });
 
+  it("marks a routed session, because its profile is where it started and not where it is", async () => {
+    const home = await tempHome();
+    try {
+      const env = envFor(home);
+      await recordSession(
+        {
+          profile: "work",
+          account: "me@x.y",
+          pid: process.pid,
+          startToken: await startToken(process.pid),
+          configDir: join(home.dir, "config"),
+          cwd: "/repo",
+          routed: true,
+        },
+        { env, now: NOW },
+      );
+      const result = await sessions(env);
+      assert.match(result.out, /routed/u);
+      assert.match(result.err, /picks its account per request/u);
+      assert.match(result.err, /router log/u, "and says where to look for the truth");
+    } finally {
+      await home.cleanup();
+    }
+  });
+
+  it("says nothing about routing when nothing is routed", async () => {
+    const home = await tempHome();
+    try {
+      const env = envFor(home);
+      await recordSession(
+        {
+          profile: "work",
+          account: "me@x.y",
+          pid: process.pid,
+          startToken: await startToken(process.pid),
+          configDir: "/x",
+          cwd: "/repo",
+        },
+        { env, now: NOW },
+      );
+      const result = await sessions(env);
+      assert.doesNotMatch(result.out, /routed/u);
+      assert.doesNotMatch(result.err, /per request/u);
+    } finally {
+      await home.cleanup();
+    }
+  });
+
   it("warns when one account is carrying several sessions", async () => {
     const home = await tempHome();
     try {

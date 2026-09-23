@@ -58,8 +58,12 @@ export async function cmdSessions({ options, env }, { now = Date.now(), security
     const state = STATE_TEXT[session.state] ?? session.state;
     const last = session.tracked ? elapsed(session.lastActiveAt || session.startedAt, now) : "";
     const where = session.cwd ? grey(` ${session.cwd}`) : "";
+    // A routed session is not spending the account its profile names, so the
+    // profile column alone would mislead anybody reading this to decide where
+    // to start the next one.
+    const via = session.routed ? grey(" routed") : "";
     process.stdout.write(
-      `${name}  ${state.padEnd(22)} ${grey(`pid ${String(session.pid).padEnd(7)}`)}${last ? grey(last.padEnd(10)) : " ".repeat(10)}${where}\n`,
+      `${name}  ${state.padEnd(22)} ${grey(`pid ${String(session.pid).padEnd(7)}`)}${last ? grey(last.padEnd(10)) : " ".repeat(10)}${via}${where}\n`,
     );
   }
   const counts = byProfile(sessions);
@@ -69,6 +73,11 @@ export async function cmdSessions({ options, env }, { now = Date.now(), security
     for (const [profile, entry] of crowded) {
       info(`"${profile}" is running ${entry.total} sessions, which share one account's limits.`);
     }
+  }
+  if (sessions.some((session) => session.routed)) {
+    info("");
+    info("A routed session picks its account per request, so its profile name is where it started, not where it is.");
+    info("`zclaude router log` says where each request actually went.");
   }
   return EXIT.OK;
 }

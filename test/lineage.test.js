@@ -78,12 +78,12 @@ async function machine({ slot = null, profiles = {}, refuseWrite = new Set() } =
 }
 
 /** Pretend a profile has a Claude Code session running, by recording our own pid. */
-async function runSessionOn(env, name) {
+async function runSessionOn(env, name, { routed = false, id = "live" } = {}) {
   const dir = join(env.ZCLAUDE_HOME, "sessions");
   await mkdir(dir, { recursive: true });
   await writeFile(
-    join(dir, "live.json"),
-    JSON.stringify({ version: 1, id: "live", profile: name, pid: process.pid, startedAt: NOW }),
+    join(dir, `${id}.json`),
+    JSON.stringify({ version: 1, id, profile: name, pid: process.pid, startedAt: NOW, routed }),
   );
 }
 
@@ -233,6 +233,45 @@ describe("refreshing a login", () => {
       assert.match(result.detail, /global login/u);
       assert.deepEqual(result.written, []);
       assert.equal(stored(items, dirs.work).refreshToken, "sk-ant-ort-alpha");
+    } finally {
+      await home.cleanup();
+    }
+  });
+
+  it("refreshes a profile whose only session is routed, because that one holds no credential", async () => {
+    // A routed session authenticates to the local router with a token zclaude
+    // minted and never reads the profile's OAuth credential, so it cannot be
+    // the refresher this rule protects. Counting it would leave the account's
+    // token to expire while the renewal job politely stood back.
+    const { home, env, security } = await machine({ slot: "alpha", profiles: { work: "beta" } });
+    try {
+      await runSessionOn(env, "work", { routed: true });
+      assert.deepEqual([...(await busyProfiles({ env, now: NOW }))], [], "a routed session makes nobody busy");
+      const result = await refreshLineage(lineageFor("beta"), {
+        env,
+        security,
+        fetchImpl: grant(ROTATED),
+        now: NOW,
+      });
+      assert.equal(result.state, "ok");
+    } finally {
+      await home.cleanup();
+    }
+  });
+
+  it("still stands back when a routed session and an ordinary one share a profile", async () => {
+    const { home, env, security } = await machine({ slot: "alpha", profiles: { work: "beta" } });
+    try {
+      await runSessionOn(env, "work", { routed: true, id: "routed" });
+      await runSessionOn(env, "work", { routed: false, id: "plain" });
+      assert.deepEqual([...(await busyProfiles({ env, now: NOW }))], ["work"]);
+      const result = await refreshLineage(lineageFor("beta"), {
+        env,
+        security,
+        fetchImpl: grant(ROTATED),
+        now: NOW,
+      });
+      assert.equal(result.state, "not-ours");
     } finally {
       await home.cleanup();
     }
