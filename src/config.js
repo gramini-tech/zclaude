@@ -100,7 +100,7 @@ export function flag(env, name) {
 }
 
 /** Strip a Claude Code [1m] suffix and lowercase for lookup. */
-function normalizeModelId(model) {
+export function normalizeModelId(model) {
   return String(model ?? "")
     .trim()
     .replace(/\[1m\]$/iu, "")
