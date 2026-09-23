@@ -32,6 +32,22 @@ local process a dependency of every client on the machine; it is designed, not b
 - `zclaude router on` / `off` turn it on for launches rather than making you
   edit `enabled` by hand. `--session-only` is accepted and is the only mode;
   `--machine-wide` is refused with the reason rather than quietly ignored.
+- **The unified quota headers are a fraction, not a percentage, and reading
+  them raw broke the thing they were added for.** Measured against a live
+  account on 2026-09-23: `anthropic-ratelimit-unified-5h-utilization: "0.03"`
+  on an account the usage endpoint reported at 3%. Every other number in this
+  project is out of a hundred, so a spent window read as 1% used, the `>= 100`
+  checks in `classifyThrottle` could never fire, and every quota 429 was
+  classified as a burst. The router would then have paced a spent account
+  instead of rotating off it, which is the exact mistake the two-kinds-of-429
+  distinction exists to prevent. A value above one is still taken as a
+  percentage, so this survives the scale changing.
+- The weekly window has a reset header of its own
+  (`anthropic-ratelimit-unified-7d-reset`), which an earlier reading assumed it
+  did not; it is read now, and it is fresher than whatever the endpoint last
+  said. Each window also reports its own status, which says *which* window
+  finished, and that is the difference between sitting an account out for
+  twenty minutes and for four days.
 - **`observeUsage` folds the quota headers a routed response already carries
   into the usage cache.** `anthropic-ratelimit-unified-*` arrive on every Max
   response, so a routed session produces a fresh reading of its own account for
@@ -40,7 +56,10 @@ local process a dependency of every client on the machine; it is designed, not b
   headers know two percentages and nothing else, so the scoped per-model limits,
   the credit balance and the weekly reset time that only the endpoint reports
   survive it. A reading older than what is cached is discarded, because
-  responses land out of order.
+  responses land out of order, and it is throttled to a percentage point or
+  thirty seconds per account, because an agentic session produces several
+  responses a second and each write is a lock acquire on a file the menu, the
+  watcher and the editor extension all share.
 - `busyProfiles` now filters out routed sessions. A routed session authenticates with a local token
   and never reads its profile's OAuth credential, so counting it as a refresher would leave that
   account's token to expire while the renewal job stood politely aside. The null-means-everything-is-

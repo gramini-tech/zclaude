@@ -456,9 +456,7 @@ function mergeObserved(previous, observed, now) {
     ...previous,
     state: "ok",
     fiveHour: mergeWindow(observed.fiveHour, previous.fiveHour),
-    // The weekly header carries no reset time, so whatever the endpoint last
-    // said is kept beside the fresher percentage.
-    weekly: mergeWindow(observed.weekly ? { pct: observed.weekly.pct, resetsAt: null } : null, previous.weekly),
+    weekly: mergeWindow(observed.weekly, previous.weekly),
     scoped: previous.scoped ?? [],
     credits: previous.credits ?? null,
     fetchedAt: observed.fetchedAt ?? now,

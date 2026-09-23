@@ -26,7 +26,10 @@ export const QUOTA_HEADERS = Object.freeze({
   fiveHour: "anthropic-ratelimit-unified-5h-utilization",
   weekly: "anthropic-ratelimit-unified-7d-utilization",
   reset: "anthropic-ratelimit-unified-5h-reset",
+  weeklyReset: "anthropic-ratelimit-unified-7d-reset",
   status: "anthropic-ratelimit-unified-status",
+  fiveHourStatus: "anthropic-ratelimit-unified-5h-status",
+  weeklyStatus: "anthropic-ratelimit-unified-7d-status",
 });
 
 /** Statuses worth one retry against the same account before moving on. */
@@ -59,16 +62,37 @@ function numeric(headers, name) {
   return Number.isFinite(value) ? value : null;
 }
 
-/** The utilization the headers report, as a percentage, or null. */
+/**
+ * The utilization the headers report, as a percentage out of a hundred.
+ *
+ * The scale is the trap. Measured against a live account on 2026-09-23:
+ * `anthropic-ratelimit-unified-5h-utilization: "0.03"` on an account the usage
+ * endpoint reported at 3%. The header is a fraction; every other number in this
+ * project is a percentage. Reading it raw made a spent window look 1% used,
+ * which meant the `>= 100` checks below could never fire and every quota 429
+ * was classified as a burst — so the router paced a spent account instead of
+ * rotating off it, which is the exact mistake the two-kinds-of-429 distinction
+ * exists to prevent.
+ *
+ * A value above one is taken as already being a percentage, so this keeps
+ * working if the scale ever changes. Exactly `1` is read as a full window
+ * rather than as one percent: a fraction is what has been measured, and
+ * treating a spent window as spent is the safer of the two errors.
+ */
 function utilization(headers, which) {
-  return numeric(headers, QUOTA_HEADERS[which]);
+  const value = numeric(headers, QUOTA_HEADERS[which]);
+  if (value === null) return null;
+  return value <= 1 ? value * 100 : value;
 }
 
-/** The reset header as epoch seconds, or null when it was not sent. */
-function resetSeconds(headers) {
-  const value = numeric(headers, QUOTA_HEADERS.reset);
+/** A reset header as epoch seconds, or null when it was not sent. */
+function resetSeconds(headers, which = "reset") {
+  const value = numeric(headers, QUOTA_HEADERS[which]);
   return value !== null && value > 0 ? value : null;
 }
+
+/** Whether a window's own status says it is finished rather than merely busy. */
+const spent = (value) => typeof value === "string" && /reject|exhaust|exceed/iu.test(value);
 
 /**
  * Is this 429 the window being spent, or merely too many requests at once?
@@ -79,7 +103,17 @@ function resetSeconds(headers) {
  */
 export function classifyThrottle(headers, bodyText, { quotaThresholdMs = 60_000, now = Date.now() } = {}) {
   const status = header(headers, QUOTA_HEADERS.status);
-  if (typeof status === "string" && /reject|exhaust|exceed/iu.test(status)) return { kind: "quota", why: status };
+  if (spent(status)) return { kind: "quota", why: status };
+  // Each window also reports its own status. The unified one is the aggregate,
+  // so this rarely says anything new, but when it does it says *which* window
+  // finished, which is the difference between sitting an account out for
+  // twenty minutes and sitting it out for four days.
+  if (spent(header(headers, QUOTA_HEADERS.fiveHourStatus))) {
+    return { kind: "quota", why: "the five-hour window is finished" };
+  }
+  if (spent(header(headers, QUOTA_HEADERS.weeklyStatus))) {
+    return { kind: "quota", why: "the weekly window is finished" };
+  }
   const fiveHour = utilization(headers, "fiveHour");
   const weekly = utilization(headers, "weekly");
   if (fiveHour !== null && fiveHour >= 100) return { kind: "quota", why: "the five-hour window is spent" };
@@ -188,11 +222,16 @@ export function readQuotaHeaders(headers, now = Date.now()) {
   const fiveHour = utilization(headers, "fiveHour");
   const weekly = utilization(headers, "weekly");
   if (fiveHour === null && weekly === null) return null;
-  const reset = resetSeconds(headers);
-  const resetsAt = reset === null ? null : new Date(reset * 1000).toISOString();
+  const at = (which) => {
+    const seconds = resetSeconds(headers, which);
+    return seconds === null ? null : new Date(seconds * 1000).toISOString();
+  };
   return {
-    fiveHour: fiveHour === null ? null : { pct: fiveHour, resetsAt },
-    weekly: weekly === null ? null : { pct: weekly, resetsAt: null },
+    fiveHour: fiveHour === null ? null : { pct: fiveHour, resetsAt: at("reset") },
+    // The weekly window has a reset header of its own. An earlier reading of
+    // these headers assumed it did not and kept whatever the usage endpoint
+    // last said; it is sent, and it is fresher.
+    weekly: weekly === null ? null : { pct: weekly, resetsAt: at("weeklyReset") },
     status: header(headers, QUOTA_HEADERS.status),
     fetchedAt: now,
   };

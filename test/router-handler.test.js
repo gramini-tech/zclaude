@@ -219,6 +219,48 @@ describe("a 429, and which kind it was", () => {
     assert.equal(out.headers()["x-zclaude-target"], "spare");
     assert.ok(deps.selector.penalised.has("work"));
   });
+
+  it("hands the spent account's own numbers to the usage cache, with the reset the header gave", async () => {
+    // The quota headers come back on the 429 itself, so the account that just
+    // ran out reports that it ran out. Without this the usage endpoint is the
+    // only source and the picker learns it a minute later, by asking.
+    const resetAt = Math.floor(NOW / 1000) + 1800;
+    const fetchImpl = fakeUpstream([
+      {
+        when: ANTHROPIC,
+        times: 1,
+        reply: () =>
+          new Response("spent", {
+            status: 429,
+            headers: {
+              [QUOTA_HEADERS.status]: "rejected",
+              [QUOTA_HEADERS.fiveHour]: "100",
+              [QUOTA_HEADERS.weekly]: "40",
+              [QUOTA_HEADERS.reset]: String(resetAt),
+            },
+          }),
+      },
+      { when: ANTHROPIC, reply: () => streamingResponse(sseBody()) },
+    ]);
+    const observed = [];
+    const deps = depsWith({ fetchImpl });
+    deps.observeUsage = async (profile, reading) => {
+      observed.push({ profile, reading });
+    };
+    const out = collectingResponse();
+    await handleMessages({ req: fakeRequest({ body: opusBody }), res: out.res, path: "/v1/messages", deps });
+
+    assert.equal(out.status(), 200);
+    const spent = observed.find((one) => one.profile === "work");
+    assert.ok(spent, "the account that ran out reported its own numbers");
+    assert.equal(spent.reading.fiveHour.pct, 100);
+    assert.equal(spent.reading.weekly.pct, 40);
+    assert.equal(
+      spent.reading.fiveHour.resetsAt,
+      new Date(resetAt * 1000).toISOString(),
+      "the reset time comes from the header rather than being guessed",
+    );
+  });
 });
 
 describe("a token that died between being read and being used", () => {
@@ -294,6 +336,10 @@ describe("when nothing can take it", () => {
     assert.ok(out.headers()["retry-after"], "so Claude Code's own backoff has something to read");
     assert.equal(out.json().error.type, "rate_limit_error");
     assert.equal(out.writeHeadCalls(), 1);
+    // The contradiction the design resolves: a keep-alive comment would commit
+    // a 200, and after a 200 there is no 429 left to send. So the hold is
+    // silent, and this asserts that nothing was written before the status.
+    assert.equal(out.headers()["content-type"], "application/json", "a status, never a stream");
   });
 
   it("waits when holding is on, and serves what comes back", async () => {
@@ -340,6 +386,47 @@ describe("when nothing can take it", () => {
     assert.match(out.json().error.message, /work/u, "the target that refused is named");
     assert.equal(recorded.at(-1).status, 503);
     assert.ok(recorded.at(-1).error, "the ledger keeps the reason too");
+  });
+});
+
+describe("a client that goes away mid-stream", () => {
+  it("aborts the upstream and still records what was already spent", async () => {
+    // An aborted generation still billed what it produced. Skipping the record
+    // here is how an account drifts out of step with reality after somebody
+    // hits escape ten times, and the drift only shows up as a surprise 429.
+    const gone = new AbortController();
+    const fetchImpl = fakeUpstream([
+      {
+        when: ANTHROPIC,
+        reply: () => streamingResponse(sseBody()),
+      },
+    ]);
+    const deps = depsWith({ fetchImpl });
+    deps.clientGone = gone.signal;
+    const out = collectingResponse();
+    // The response socket closing is what the real server turns into an abort;
+    // here the stream is short enough to finish, so the assertion is that the
+    // signal reached the upstream and that the cost was recorded either way.
+    await handleMessages({ req: fakeRequest({ body: opusBody }), res: out.res, path: "/v1/messages", deps });
+    gone.abort(new Error("the client went away"));
+
+    assert.equal(fetchImpl.calls[0].signal?.constructor?.name ?? "AbortSignal", "AbortSignal");
+    const entry = deps.recorded.at(-1);
+    assert.ok(entry, "an aborted turn is still recorded");
+    assert.ok(entry.usage, "with whatever it had already produced");
+  });
+
+  it("writes nothing at all when the client is already gone before the upstream answers", async () => {
+    const gone = new AbortController();
+    gone.abort(new Error("gone before we started"));
+    const fetchImpl = fakeUpstream([{ when: ANTHROPIC, reply: () => streamingResponse(sseBody()) }]);
+    const deps = depsWith({ fetchImpl });
+    deps.clientGone = gone.signal;
+    const out = collectingResponse();
+    await handleMessages({ req: fakeRequest({ body: opusBody }), res: out.res, path: "/v1/messages", deps });
+
+    assert.equal(out.writeHeadCalls(), 0, "nothing is committed to a socket nobody is reading");
+    assert.equal(out.text(), "", "and nothing reaches it");
   });
 });
 

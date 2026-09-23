@@ -48,6 +48,22 @@ describe("telling the two kinds of 429 apart", () => {
     assert.equal(classifyThrottle(quota(), "", { now: NOW }).kind, "quota");
   });
 
+  it("believes a window's own status, which says which one finished", () => {
+    // The unified status is the aggregate; the per-window ones are the
+    // difference between sitting an account out for twenty minutes and sitting
+    // it out for four days.
+    const weekly = classifyThrottle(
+      new Headers({ [QUOTA_HEADERS.status]: "allowed", [QUOTA_HEADERS.weeklyStatus]: "rejected" }),
+      "",
+      { now: NOW },
+    );
+    assert.equal(weekly.kind, "quota");
+    assert.match(weekly.why, /weekly/u);
+    const fiveHour = classifyThrottle(new Headers({ [QUOTA_HEADERS.fiveHourStatus]: "exhausted" }), "", { now: NOW });
+    assert.equal(fiveHour.kind, "quota");
+    assert.match(fiveHour.why, /five-hour/u);
+  });
+
   it("calls it quota when a window reads full, even without a status", () => {
     const spent = headers({ [QUOTA_HEADERS.fiveHour]: "100" });
     assert.equal(classifyThrottle(spent, "", { now: NOW }).kind, "quota");
@@ -165,6 +181,42 @@ describe("what to do with an upstream response", () => {
 });
 
 describe("the quota headers as free telemetry", () => {
+  it("reads the fraction the provider actually sends as a percentage", () => {
+    // Measured against a live account on 2026-09-23: 5h-utilization "0.03" on
+    // an account the usage endpoint reported at 3%. Reading it raw made a spent
+    // window look 1% used, so the >= 100 checks never fired and every quota 429
+    // was classified as a burst — the router would pace a spent account instead
+    // of rotating off it.
+    const read = readQuotaHeaders(
+      new Headers({
+        [QUOTA_HEADERS.fiveHour]: "0.03",
+        [QUOTA_HEADERS.weekly]: "0.65",
+        [QUOTA_HEADERS.reset]: "1790184600",
+        [QUOTA_HEADERS.weeklyReset]: "1790190000",
+      }),
+      NOW,
+    );
+    assert.equal(read.fiveHour.pct, 3);
+    assert.equal(read.weekly.pct, 65);
+    assert.equal(read.fiveHour.resetsAt, new Date(1_790_184_600_000).toISOString());
+    assert.equal(read.weekly.resetsAt, new Date(1_790_190_000_000).toISOString(), "the weekly window has its own");
+  });
+
+  it("takes a value above one as already being a percentage", () => {
+    // So this keeps working if the scale ever changes under us.
+    const read = readQuotaHeaders(new Headers({ [QUOTA_HEADERS.fiveHour]: "42" }), NOW);
+    assert.equal(read.fiveHour.pct, 42);
+  });
+
+  it("reads exactly one as a window that is finished", () => {
+    // A fraction is what has been measured, so 1 is full. Treating a spent
+    // window as spent is the safer of the two readings.
+    const read = readQuotaHeaders(new Headers({ [QUOTA_HEADERS.fiveHour]: "1" }), NOW);
+    assert.equal(read.fiveHour.pct, 100);
+    const decision = classifyThrottle(new Headers({ [QUOTA_HEADERS.fiveHour]: "1" }), "", { now: NOW });
+    assert.equal(decision.kind, "quota");
+  });
+
   it("reads the windows and the reset into the shape the usage cache uses", () => {
     const read = readQuotaHeaders(quota({ [QUOTA_HEADERS.weekly]: "62" }), NOW);
     assert.equal(read.fiveHour.pct, 100);

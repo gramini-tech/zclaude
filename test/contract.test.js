@@ -178,6 +178,52 @@ describe("claude config boundary", () => {
   });
 });
 
+describe("the router pins no model version", () => {
+  // The whole point of the catalogue. A model id written into the router is a
+  // route that means something different the day the provider ships, and the
+  // failure is a 404 an hour later rather than an error anybody can read.
+  const CONCRETE = /(?<!`)\b(?:claude-(?:opus|sonnet|haiku|fable)-\d|glm-\d)/u;
+
+  it("has no concrete model id in any of its source, outside a comment", async () => {
+    const dir = join(root, "src", "router");
+    const files = (await readdir(dir, { recursive: true })).filter((name) => name.endsWith(".js"));
+    assert.ok(files.length >= 15, "the router is where it was");
+    for (const file of [...files, join("..", "router-commands.js")]) {
+      const text = await readFile(join(dir, file), "utf8");
+      for (const [index, line] of text.split("\n").entries()) {
+        // A comment may name one, because explaining why `latest` used to
+        // resolve to the oldest GLM requires saying which one.
+        const code = line.replace(/^\s*(\/\/|\*).*$/u, "");
+        assert.doesNotMatch(code, CONCRETE, `src/router/${file}:${index + 1} pins a model version`);
+      }
+    }
+  });
+
+  it("has no concrete model id in the local page either, where a dropdown would freeze one in", async () => {
+    for (const name of ["app.js", "app.html", "app.css"]) {
+      const text = await readFile(join(root, "src", "router", "ui", name), "utf8");
+      assert.doesNotMatch(text, CONCRETE, `${name} pins a model version`);
+    }
+  });
+
+  it("never reaches a provider to find out, so a release cannot break the suite", async () => {
+    // The tests below this one do use real-looking ids, and should: they are
+    // inputs to a parser and a classifier, where the id is the thing under
+    // test. What would make a release break the suite is a test that asked a
+    // provider what it has. Every catalogue test injects its own fetch instead.
+    const text = await readFile(join(root, "test", "catalogue.test.js"), "utf8");
+    const calls = text.match(/listModels\(|listAllModels\(/gu) ?? [];
+    assert.ok(calls.length >= 8, "the catalogue is exercised");
+    const lines = text.split("\n");
+    for (const [index, line] of lines.entries()) {
+      // A call that is expected to reject never gets as far as a request.
+      if (!/listModels\(|listAllModels\(/u.test(line) || line.includes("assert.rejects")) continue;
+      const window = lines.slice(index, index + 6).join(" ");
+      assert.match(window, /fetchImpl/u, `catalogue.test.js:${index + 1} may call a real provider`);
+    }
+  });
+});
+
 describe("documentation contract", () => {
   it("every flag parsed by the CLI is described in --help and the README", async () => {
     const cli = await readFile(join(root, "src", "cli.js"), "utf8");

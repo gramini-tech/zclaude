@@ -14,6 +14,7 @@ import { after, before, describe, it } from "node:test";
 import { parseCookies } from "../src/router/control.js";
 import {
   ensureRouter,
+  throttledObserver,
   probe,
   readRouterState,
   routerDir,
@@ -303,6 +304,63 @@ describe("the control plane", () => {
     const response = await get("/__zclaude/api/state", { authorization: `Bearer ${router.token}` });
     const body = await response.json();
     assert.equal(body.config.path, join(home, "router.json"));
+  });
+});
+
+describe("throttledObserver", () => {
+  // These headers arrive on every answer, and an agentic session produces
+  // several a second. Writing each one is a lock acquire and a rewrite of a
+  // file the menu, the watcher and the editor extension all share.
+  const reading = (fiveHour, weekly = 0) => ({ fiveHour: { pct: fiveHour }, weekly: { pct: weekly } });
+
+  it("writes the first reading it sees", async () => {
+    const seen = [];
+    const observe = throttledObserver(async (profile, one) => {
+      seen.push([profile, one.fiveHour.pct]);
+    });
+    await observe("work", reading(10), { now: 0 });
+    assert.deepEqual(seen, [["work", 10]]);
+  });
+
+  it("skips a reading that has barely moved and is barely older", async () => {
+    const seen = [];
+    const observe = throttledObserver(async (profile, one) => {
+      seen.push(one.fiveHour.pct);
+    });
+    await observe("work", reading(10), { now: 0 });
+    await observe("work", reading(10.4), { now: 1000 });
+    await observe("work", reading(10.9), { now: 5000 });
+    assert.deepEqual(seen, [10], "three responses, one write");
+  });
+
+  it("writes when a percentage actually moves", async () => {
+    const seen = [];
+    const observe = throttledObserver(async (profile, one) => {
+      seen.push(one.fiveHour.pct);
+    });
+    await observe("work", reading(10), { now: 0 });
+    await observe("work", reading(12), { now: 500 });
+    assert.deepEqual(seen, [10, 12]);
+  });
+
+  it("writes eventually even when nothing moves, so a reading is never stale for long", async () => {
+    const seen = [];
+    const observe = throttledObserver(async (profile, one) => {
+      seen.push(one.fiveHour.pct);
+    });
+    await observe("work", reading(10), { now: 0 });
+    await observe("work", reading(10), { now: 40_000 });
+    assert.equal(seen.length, 2);
+  });
+
+  it("keeps one account's traffic from silencing another's", async () => {
+    const seen = [];
+    const observe = throttledObserver(async (profile) => {
+      seen.push(profile);
+    });
+    await observe("work", reading(10), { now: 0 });
+    await observe("spare", reading(10), { now: 10 });
+    assert.deepEqual(seen, ["work", "spare"]);
   });
 });
 

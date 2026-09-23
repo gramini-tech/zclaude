@@ -102,6 +102,39 @@ export async function probe(url, { fetchImpl = fetch, timeoutMs = PROBE_MS } = {
   }
 }
 
+/** Least a percentage must move before it is worth a write. */
+const OBSERVE_STEP = 1;
+/** And how often it is written when it barely moves at all. */
+const OBSERVE_MS = 30_000;
+
+/**
+ * `observeUsage`, but not on every single response.
+ *
+ * These headers arrive on every answer, and an agentic session produces several
+ * a second. Writing each one means a lock acquire, a read and a rewrite of
+ * `usage.json` per request, against a file the menu, the watcher and the editor
+ * extension all share. The numbers move slowly enough that a percentage point
+ * or half a minute is plenty of resolution, and skipping the rest costs nothing
+ * anybody can see.
+ */
+export function throttledObserver(impl = observeUsage) {
+  /** @type {Map<string, {at: number, fiveHour: number | null, weekly: number | null}>} */
+  const last = new Map();
+  return (profile, reading, options = {}) => {
+    const now = options.now ?? Date.now();
+    const seen = last.get(profile);
+    const fiveHour = reading?.fiveHour?.pct ?? null;
+    const weekly = reading?.weekly?.pct ?? null;
+    const moved =
+      !seen ||
+      Math.abs((fiveHour ?? 0) - (seen.fiveHour ?? 0)) >= OBSERVE_STEP ||
+      Math.abs((weekly ?? 0) - (seen.weekly ?? 0)) >= OBSERVE_STEP;
+    if (!moved && now - seen.at < OBSERVE_MS) return Promise.resolve(null);
+    last.set(profile, { at: now, fiveHour, weekly });
+    return impl(profile, reading, options);
+  };
+}
+
 /**
  * Everything one request needs, built once per router.
  *
@@ -128,7 +161,7 @@ function buildDeps({ env, config, security, fetchImpl, ledger }) {
       // Free telemetry: a routed response carries this account's own quota
       // headers, so the usage endpoint becomes the fallback rather than the
       // only source.
-      observeUsage,
+      observeUsage: throttledObserver(),
       catalogue: {
         list: (options) => listModels({ security, fetchImpl, ...options }),
         resolve: resolveModel,
