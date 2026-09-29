@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+**The README opens the way the site does: the limit first, the tool second.**
+It led with an abstract table describing how zclaude narrows the choice of
+account, which only reads as interesting once you already know why you would
+want that. It now opens with `claude` stopping at a five-hour window and the same
+work continuing on a second account, then the four things people use it for, then
+a "What it does not do" list that says plainly it gets you no extra quota. Quick
+start went with it, having become a duplicate of the opening; its one unique
+point, that anything zclaude does not recognise is passed straight to `claude`,
+moved under Install where somebody has just finished installing.
+
+The auto section bolded a lead-in on seven consecutive paragraphs and outweighed
+the router it is a smaller feature than. Rewritten without the tic, 692 words to
+about 450, losing no facts.
+
+Sample output across the whole README used real addresses and organization names.
+It now uses the same `work` / `personal` / `client` / `glm` cast as the website,
+with `work` and `personal` sharing one address to keep the example that explains
+why a company seat and a personal subscription need separate profiles.
+
+The VS Code extension README told you to run `npm install -g zclaude`. That
+package is not on the registry, so the command either failed or installed
+somebody else's; it now matches the install commands the rest of the project
+documents, and says that the status bar moves the machine's login while routing
+is a separate thing that lives in the terminal.
+
 **The website is rewritten around the problem instead of the feature list.**
 It opened by describing what zclaude is; it now opens with what stops you: one
 login per machine, and a five-hour window that ends your afternoon. A

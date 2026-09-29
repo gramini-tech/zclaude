@@ -1,7 +1,7 @@
 # zclaude
 
-Run [Claude Code](https://claude.com/claude-code) on several accounts at once, and route a single
-session across all of them.
+Run [Claude Code](https://claude.com/claude-code) on more than one account, and keep one session
+going across them.
 
 <p align="center">
   <img src="site/logo.svg" alt="zclaude" width="560">
@@ -9,72 +9,103 @@ session across all of them.
 
 <p align="center"><a href="https://gramini-tech.github.io/zclaude/">gramini-tech.github.io/zclaude</a></p>
 
-## What it does
+## The thing it fixes
 
-Claude Code keeps one login per machine. Sign in with a second account and the first is signed out,
-the VS Code extension included, so a work account and a personal one mean logging in and out all day.
-When you are near a limit there is nothing that tells you which of your accounts still has room. And
-whichever account you start a session on is the account you finish it on, however full it gets.
+Claude Code keeps one login per machine. Sign in to a second account and the first is signed out,
+the VS Code extension along with it, so a work seat and a personal plan mean signing in and out all
+day. And every plan has a rolling five-hour window that ends without warning, with nothing to tell
+you which of your other accounts still has room.
 
-zclaude answers all three by making the account a finer and finer choice:
+```console
+$ claude
+…
+✗ 5-hour limit reached. Resets at 7:50 pm.
 
-| The account is chosen | by                                                               |
-| --------------------- | ---------------------------------------------------------------- |
-| once per machine      | Claude Code, and `zclaude switch` when you want to move it       |
-| once per terminal     | a profile: `zclaude work`                                        |
-| **once per request**  | **the router, by class of model, across accounts and providers** |
+$ # you have a personal plan too, but using it
+$ # means signing out of work until tomorrow
+```
 
-**Run several accounts at once.** Each account gets a profile with its own credentials and its own
-Claude Code configuration directory, scoped to the terminal you start it from. Three terminals, three
-accounts, at the same time, and the login you already had keeps working everywhere else.
+With zclaude, the request that would have failed goes to another account you already pay for:
+
+```console
+$ zclaude work
+…
+  work's window fills up mid-task
+… and it keeps going
+
+$ zclaude router log
+19:32  200  opus  any→work       8129ms
+19:41  200  opus  any→personal   7204ms  2 tries
+```
+
+Same session, same terminal, nothing restarted.
+
+## What people use it for
+
+**Two accounts, both live.** A company seat in one terminal and your personal plan in another, at
+the same time. Each gets its own login and its own Claude Code configuration directory. The account
+you were already signed into carries on working in VS Code and in plain `claude`.
 
 ```sh
-zclaude profile add work        # a second account, with its own login
-zclaude work                    # this terminal runs on it
+zclaude profile add work         # sign in to each, once
+zclaude profile add personal
+zclaude work                     # terminal one
+zclaude personal                 # terminal two
 ```
 
-**See what is left before you choose.** Every account's rolling 5-hour window, its week, each model
-window metered separately, when each comes back in your own time zone, and any pay-as-you-go credit.
-The menu shows it while you pick; `profile list --usage` spells it out.
-
-```
-gramini    anthropic vipinr@gramini.com · Hoomanely Inc    shares config + history
-           5 hours       80%  resets in 2h 30m (07:50 pm)
-           week          21%  resets in 6d 7h (Thu, 24 Sept, 12:30 am)
-           Fable week    33%  resets in 6d 7h (Thu, 24 Sept, 12:30 am)
-           credits spent
-```
-
-**Route one session across all of them.** A local proxy sits in front of the session and sends each
-request to whichever account or provider a route table names for that class of model. The main turn
-rotates across your Anthropic accounts as they fill up; the subagent turns go to a GLM model; it is
-one Claude Code session and you changed nothing inside it. When an account's window is spent the next
-request goes elsewhere, without restarting anything.
+**Carry on past a limit.** Turn the router on and a session picks an account for every request
+instead of once at startup. When one account's window fills, the next request goes to another.
 
 ```sh
-zclaude router route sonnet glm    # sonnet-class work goes to a Z.ai model
-zclaude router on                  # and sessions zclaude starts are routed
+zclaude router on
+zclaude work
 ```
 
-**Move the global login.** Profiles and routing cover the sessions you start with zclaude. `switch`
-moves the one login that plain `claude`, the VS Code extension and anything else shelling out to
-Claude Code all share, credential and identity together, with the previous one captured back and
-backed up first, and everything else in `~/.claude.json` left exactly as it was.
+**Send the small work somewhere cheaper.** Subagent turns, file searches and summaries do not need
+your most expensive model. Point that class of work at a [Z.ai GLM Coding Plan](https://z.ai/subscribe)
+and keep the hard reasoning on Anthropic, and your Claude window lasts through a lot more work.
 
 ```sh
-zclaude switch work             # everything on this machine is now work's account
-zclaude switch --restore        # put the previous one back
+zclaude router route haiku glm-fast     # helpers go to GLM
+zclaude router route sonnet glm any     # subagents too, then fall back
+zclaude router route opus work          # the hard turns stay on Claude
 ```
 
-Around those: a VS Code status bar item that shows the same table and switches from a hover, a count
-of what is already running on each account, a renewal job that keeps a rarely-used login from going
-stale, and a one-key repair when one has expired anyway.
+**Know what is left before you start.** Claude Code says nothing about your remaining quota until it
+stops you. This is every account's five-hour window, its week, each model metered separately, and
+when each one comes back in your own time zone.
 
-A profile really holds a billing context. A company seat and a personal Max subscription on the same
-email address are two accounts with separate usage, so each gets its own profile, and `profile list`
-prints the organization next to the address to keep them apart. A
-[Z.ai GLM Coding Plan](https://z.ai/subscribe) is one more provider a profile can have, and it works
-the same way from the outside.
+```console
+$ zclaude profile list --usage
+work      anthropic  you@company.com · Acme Inc
+          5 hours       80%  resets in 2h 30m (07:50 pm)
+          week          21%  resets in 6d 7h (Thu, 24 Sept, 12:30 am)
+          Fable week    33%  resets in 6d 7h (Thu, 24 Sept, 12:30 am)
+          credits spent
+personal  anthropic  you@company.com · personal
+          5 hours        3%  resets in 4h 10m (09:30 pm)
+          week          12%
+```
+
+Around those: a VS Code status bar item showing the same table, a count of what is already running on
+each account, a renewal job that keeps a rarely-used login from going stale, and a one-key repair
+when one has expired anyway.
+
+## What it does not do
+
+- **It gets you no extra quota.** It uses the plans you already pay for and makes the ones you have
+  easier to use together. With a single account the usage display and the VS Code item are still
+  worth having; the routing is not.
+- **Routing covers the sessions you start with zclaude.** Plain `claude`, your editor and anything
+  else on the machine go straight to Anthropic as before. Routing everything would mean writing your
+  Claude Code settings and making a local process something every editor window depends on. That is
+  [designed and not built](#session-mode-and-what-is-not-built).
+- **It never logs your prompts.** The router records the class, the account, the model id, the
+  status, the duration and the token counts. No prompts, no responses, and no flag that changes it.
+- **macOS and Linux are the tested platforms.** Windows works through the npm install; the scheduled
+  token renewal is something you set up yourself there.
+- **It is nobody's official product.** Independent and MIT licensed, using the environment variables
+  Claude Code documents and the browser sign-in Z.ai's own desktop app uses.
 
 ## Install
 
@@ -144,25 +175,11 @@ with the file as it is now. `raw.githubusercontent.com`, the obvious place to re
 copy that can be several minutes old, so it is only the fallback for when the API's rate limit is
 reached. If a check still says you are current when you know better, `--force` installs anyway.
 
-## Quick start
+### Then what
 
-```sh
-zclaude                                    # menu of everything you have set up
-zclaude profile add work                   # a second account, with its own login
-zclaude work                               # this terminal runs on that account
-```
-
-That is the whole idea. `zclaude` on its own shows a menu; naming a profile skips it. Anything else
-you type is passed to `claude`, so `zclaude mcp list` and `zclaude -p "hi"` still work, and profile
-names can never be one of claude's own commands.
-
-Once you have two accounts, routing is three more lines:
-
-```sh
-zclaude router config init                 # the route table, with its own explanation in it
-zclaude router on                          # sessions zclaude starts are routed from here
-zclaude work                               # and this one picks an account per request
-```
+`zclaude` on its own shows a menu of everything you have set up; naming a profile skips it. Anything
+else you type is passed straight to `claude`, so `zclaude mcp list` and `zclaude -p "hi"` work as
+you would expect, and a profile can never be named after one of claude's own commands.
 
 ## Several accounts at once
 
@@ -241,14 +258,14 @@ is checked against it. One that lands somewhere else is **undone**: the previous
 identity go back, and nothing is left changed.
 
 ```console
-$ zclaude profile login max
-· "max" is for vipinr@hoomanely.com · personal.
-· Signing in to "max". Claude Code will open your browser.
-! Refused: "max" is for vipinr@hoomanely.com · personal, and that sign-in landed on
-  vipinr@hoomanely.com · Hoomanely Inc.
+$ zclaude profile login personal
+· "personal" is for you@company.com · personal.
+· Signing in to "personal". Claude Code will open your browser.
+! Refused: "personal" is for you@company.com · personal, and that sign-in landed on
+  you@company.com · Acme Inc.
 ·   One address can hold two accounts. Pick the other organisation on the consent screen,
-    or run `zclaude profile login max --rebind` to move "max" to this account.
-·   Nothing was changed; "max" still holds the login it had.
+    or run `zclaude profile login personal --rebind` to move "personal" to this account.
+·   Nothing was changed; "personal" still holds the login it had.
 ```
 
 A sign-in onto an account another profile already means is refused the same way, because two profiles
@@ -305,15 +322,15 @@ item exists, without ever reading the secret. A locked Keychain reports `unknown
 pretending you are signed out.
 
 ```
-gramini    anthropic vipinr@gramini.com · Hoomanely Inc    shares config + history
-hoomanely  anthropic vipinr@hoomanely.com · Hoomanely Inc  shares config + history
-max        anthropic vipinr@hoomanely.com · personal       shares config + history
-chinese    zai       signed out                            shares config + history
+work      anthropic you@company.com · Acme Inc    shares config + history
+personal  anthropic you@company.com · personal     shares config
+client    anthropic you@client.com · Client Ltd    shares nothing
+glm       zai       z.ai coding plan               shares config
 ```
 
-The last two Anthropic rows are one login and two accounts: a team seat billed to the company, and a
-personal subscription billed to the individual. They have separate usage, so they get separate
-profiles, and the organization is what tells them apart at a glance. A personal organization, which
+`work` and `personal` are one email address and two accounts: a team seat billed to the company, and
+a subscription billed to you. They have separate usage, so they get separate profiles, and the
+organization after the address is what tells them apart at a glance. A personal organization, which
 Claude names after the account that owns it, is shown as `personal`.
 
 ## How much of each plan is left
@@ -329,7 +346,7 @@ zclaude profile list --usage --force   # skip the cache
 ```
 
 ```
-gramini    anthropic vipinr@gramini.com · Hoomanely Inc    shares config + history
+work      anthropic you@company.com · Acme Inc    shares config + history
            5 hours       80%  resets in 2h 30m (07:50 pm)
            week          21%  resets in 6d 7h (Thu, 24 Sept, 12:30 am)
            Fable week    33%  resets in 6d 7h (Thu, 24 Sept, 12:30 am)
@@ -370,12 +387,12 @@ zclaude router log                  # what went where
 ```
 
 ```
-19:32:45  200  sonnet  any→hoomanely    3454ms  2in/3out +24124c
-19:32:45  200  sonnet  any→gramini      1380ms  2in/5out
-19:31:02  200  haiku   glm-fast→zai      412ms  2in/9out
+19:32:45  200  sonnet  any→work          3454ms  2in/3out +24124c
+19:32:45  200  sonnet  any→personal      1380ms  2in/5out
+19:31:02  200  haiku   glm-fast→zai       412ms  2in/9out
 ```
 
-`any→hoomanely` is the route table entry and then the account that actually answered; the real output
+`any→work` is the route table entry and then the account that actually answered; the real output
 carries the model id between them. Two sessions running at the same moment landed on different
 accounts because the ranking looks at what is left on each. The last line is a helper model answered
 by a different provider, in the same session as the ones above it.
@@ -521,9 +538,9 @@ token at all reads as `sign in to see usage`. Neither is fixed by waiting, so ev
 shows the state also shows the way out of it.
 
 ```
-gramini    anthropic vipinr@gramini.com · Hoomanely Inc    shares config + history
+work      anthropic you@company.com · Acme Inc    shares config + history
            login expired
-           fix it: run `zclaude profile login gramini`
+           fix it: run `zclaude profile login client`
 ```
 
 In the launch menu the same thing appears on the detail line under the highlighted row, and **`s`
@@ -641,7 +658,7 @@ zclaude sessions --json   # the same, for scripts
 ```
 work     active                  pid 41233  just now  /Users/you/work/api
 work     idle                    pid 39980  42m ago   /Users/you/work/docs
-gramini  not tracked (outside zclaude)  pid 65767
+client   not tracked (outside zclaude)  pid 65767
 
 "work" is running 2 sessions, which share one account's limits.
 ```
@@ -691,7 +708,7 @@ profile you use is left alone entirely. Where it lives depends on the system: a 
 `~/.config/systemd/user/` on Linux, and a marked `crontab` line where systemd is not in charge. On
 Windows it prints the `schtasks` command rather than running it.
 
-Because it runs unattended it is deliberately timid. It works one profile at a time; the first
+Because it runs unattended it is timid by design. It works one profile at a time; the first
 refresh token the server rejects ends the run and that profile is quarantined rather than retried on
 a timer, until you sign it in again; and a Keychain that will not answer stops the run with a message
 instead of being asked again every six hours. `zclaude renew status` shows the last run, anything
@@ -782,54 +799,45 @@ itself.
 
 ### Auto is a profile you can pick
 
-**Auto** is the first row in the launch menu, a row in the editor's hover beside
-the accounts, and an entry in its click list.
-Choosing it is the same kind of choice as choosing a profile, said differently:
-"whichever account has the most room" instead of naming one. It resolves at
-launch, tells you which account it picked and why, and turns rotation on for
-that session — picking Auto is saying you do not want to think about which
-account this runs on, and that includes later, when the one it picked fills up.
+Auto is the first row in the launch menu, a row in the editor's hover beside the accounts, and an
+entry in its click list. Choosing it is the same kind of choice as choosing a profile, said
+differently: "whichever account has the most room" instead of naming one. It resolves at launch,
+says which account it picked and why, and turns rotation on for that session. Picking Auto is saying
+you would rather not think about which account this runs on, and that includes later, when the one
+it picked fills up.
 
-Least-used is measured in work rather than percentage, because 3% of a Max 20x
-seat is nine times the room left in 55% of a 5x seat. `zclaude auto pick` prints
-the answer without launching anything.
+Least-used is measured in work rather than percentage, because 3% of a Max 20x seat is nine times
+the room left in 55% of a 5x seat. `zclaude auto pick` prints the answer without launching anything.
+It never refuses: when nothing has room it still names the account that comes back first, and if no
+account can be read at all it falls back to the global login rather than standing between you and
+Claude Code.
 
-It never refuses. When nothing has room it still names the account that comes
-back first, and if no account can be read at all it falls back to the global
-login rather than standing between you and Claude Code.
+`zclaude --auto <profile>` launches a session that has asked to be rotated, holding a lease for as
+long as Claude Code runs, so nothing has to remember to clean up. `zclaude auto run --dry-run` runs
+the whole loop in the foreground and prints every decision without making any of them; it spends no
+quota and moves no login, which is how the policy earns trust on real accounts before it is allowed
+to act on them.
 
-**`zclaude --auto <profile>`** launches a session that has asked to be rotated.
-It holds a lease for as long as Claude Code runs, so nothing has to remember to
-clean up: when the session ends the process goes and the lease with it. Auto mode
-never blocks a launch — a watcher that cannot start is a reason to say so and
-carry on, not a reason to refuse to run Claude Code.
-
-**`zclaude auto run --dry-run`** runs the whole loop in the foreground and
-prints every decision without making any of them. It spends no quota and moves
-no login, and it is how the policy earns trust on real accounts before it is
-allowed to act on them.
-
-`auto run` starts a detached watcher that holds its own lease. The watcher exits when the last lease lapses, and `auto run --daemon`
-is the form it runs as inside that process. Detaching is a safety requirement
-rather than a convenience: every output path here writes to stderr, and the
-launcher's stderr is Claude Code's own terminal, so a rotation warning would
-scribble over a full-screen TUI. A `^C` reaches the whole foreground process
-group too, and that signal landing between writing a credential and splicing an
-identity would leave the slot holding one account's token under another's name.
+`auto run` starts a detached watcher holding its own lease, and exits when the last lease lapses.
+Detaching is a requirement rather than a convenience. Every output path here writes to stderr, the
+launcher's stderr is Claude Code's own terminal, and a rotation warning would scribble over a
+full-screen TUI. A `^C` reaches the whole foreground process group too, and that signal landing
+between writing a credential and splicing an identity would leave the slot holding one account's
+token under another's name.
 
 ```
 rotating    no — not built yet. This is what it would do.
 model       opus
-holding     gramini
+holding     client
 leave at    95%  (everyone still has room)
 
-  profile   plan                     tightest       capacity    why not
-  chinese   unknown plan              90% weekly                its login is an endpoint and a key…
-  gramini   default_claude_max_5x    dead                       its login expired
-  hoomanely default_claude_max_5x     55% weekly    2.00 left
-  max       default_claude_max_20x     3% weekly    18.40 left
+  profile   plan                      tightest      capacity    why not
+  glm       unknown plan              90% weekly                its login is an endpoint and a key…
+  client    default_claude_max_5x     dead                      its login expired
+  work      default_claude_max_5x     55% weekly    2.00 left
+  personal  default_claude_max_20x     3% weekly   18.40 left
 
-would       switch to max — gramini cannot be used: its login expired
+would       switch to personal — client cannot be used: its login expired
 ```
 
 Four things in that table are the whole design.
@@ -846,7 +854,7 @@ one blocks every prompt, whatever the model, so the constraint is always the
 worst window rather than the model's own.
 
 **The model class binds too.** Run the same command with `--class fable` and
-`hoomanely` drops to `0.00 left`, because its Fable window is at 100%, while its Opus
+`work` drops to `0.00 left`, because its Fable window is at 100%, while its Opus
 headroom is untouched. Work never drops to a weaker model to keep going: a Fable
 task waits rather than landing on Opus.
 
@@ -861,13 +869,13 @@ Run against three real accounts, with the ladder temporarily lowered so a
 rotation was due immediately:
 
 ```
-before: gramini
-  tick: wait — gramini is at 50% of its weekly; something is mid-answer
+before: client
+  tick: wait — client is at 50% of its weekly; something is mid-answer
   … (90 seconds of that, because the session never stopped writing)
-  tick: switched — gramini → max
+  tick: switched — client → personal
   tick: stay — 3% of its weekly
   tick: stay — 4% of its Fable
-after:  max
+after:  personal
 ```
 
 Three things in that trace are the design working. It waited rather than landing
@@ -974,7 +982,7 @@ the `[1m]` suffix Claude Code expects.
 
 `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and `CLAUDE_CODE_OAUTH_TOKEN` inherited from your shell
 override an account login. zclaude reports them and carries on, because you may have set them
-deliberately. It never sets `CLAUDE_CODE_OAUTH_TOKEN` itself: Claude Code deletes the default
+on purpose. It never sets `CLAUDE_CODE_OAUTH_TOKEN` itself: Claude Code deletes the default
 Keychain item when that variable is present
 ([claude-code#37512](https://github.com/anthropics/claude-code/issues/37512)).
 
