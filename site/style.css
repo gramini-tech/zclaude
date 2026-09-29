@@ -8,6 +8,7 @@
   --faint: #6f6d7a;
   --accent: #ff9f6b;
   --accent-2: #ec6654;
+  --on-accent: #1b1a21;
   --cool: #6fb8ff;
   --ok: #7ed4a1;
   --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
@@ -26,6 +27,7 @@
     --muted: #5d5b68;
     --faint: #8d8a96;
     --accent: #c9562f;
+    --on-accent: #ffffff;
     --accent-2: #b8432f;
     --cool: #2f6fd1;
     --ok: #217a4a;
@@ -43,6 +45,7 @@
   --faint: #8d8a96;
   --accent: #c9562f;
   --accent-2: #b8432f;
+  --on-accent: #ffffff;
   --cool: #2f6fd1;
   --ok: #217a4a;
   color-scheme: light;
@@ -307,7 +310,9 @@ section.wrap {
 
 .terminals {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+  /* `min(330px, 100%)` rather than a bare 330px: on a narrow phone the track
+     would otherwise be wider than the screen and take the page with it. */
+  grid-template-columns: repeat(auto-fit, minmax(min(330px, 100%), 1fr));
   gap: 14px;
   align-items: start;
 }
@@ -317,6 +322,11 @@ section.wrap {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
+  /* A grid item defaults to min-width:auto, which means "never narrower than
+     my content". A terminal's content is an unwrappable <pre>, so without this
+     the longest line in it sets the width of the page. The pre's own
+     overflow-x then never gets a chance to scroll. */
+  min-width: 0;
 }
 
 .terminal-bar {
@@ -367,9 +377,66 @@ section.wrap {
   color: #8d8a96;
 }
 
+.terminal .err {
+  color: #ff8098;
+}
+
 .after {
   color: var(--muted);
   margin: 16px 0 0;
+}
+
+/* A plain list that reads as prose, for the section on what zclaude will not
+   do. Wider than the feature grid on purpose: each item is a sentence or two
+   rather than a label. */
+
+ul.plain {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+ul.plain li {
+  border-left: 2px solid var(--border);
+  padding: 2px 0 2px 16px;
+  margin: 0 0 18px;
+  color: var(--muted);
+  max-width: 78ch;
+}
+
+ul.plain li strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 20px;
+  margin: 28px 0 0;
+}
+
+.cta a {
+  color: var(--muted);
+}
+
+.cta a:hover {
+  color: var(--text);
+}
+
+.cta .cta-main {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+  padding: 10px 20px;
+  border-radius: var(--radius);
+  text-decoration: none;
+}
+
+.cta .cta-main:hover {
+  background: var(--accent-2);
+  color: #fff;
 }
 
 /* --------------------------------------------------------------- features */
@@ -379,8 +446,16 @@ section.wrap {
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(230px, 100%), 1fr));
   gap: 14px;
+}
+
+.grid li {
+  min-width: 0;
+}
+
+.grid li code {
+  overflow-wrap: anywhere;
 }
 
 .grid li {

@@ -233,6 +233,17 @@ describe("a 429, and which kind it was", () => {
     assert.equal(fetchImpl.calls[1].authorization, "Bearer oat-spare", "the next account in the chain answered");
     assert.equal(out.headers()["x-zclaude-target"], "spare");
     assert.ok(deps.selector.penalised.has("work"));
+    // Recorded, because otherwise a rotation leaves no trace anybody can look
+    // at afterwards: the log would show one clean 200 and nothing else.
+    assert.equal(deps.recorded.at(-1).attempts, 2);
+  });
+
+  it("records a single attempt for the ordinary case", async () => {
+    const fetchImpl = fakeUpstream([{ when: ANTHROPIC, reply: () => streamingResponse(sseBody()) }]);
+    const deps = depsWith({ fetchImpl });
+    const out = collectingResponse();
+    await handleMessages({ req: fakeRequest({ body: opusBody }), res: out.res, path: "/v1/messages", deps });
+    assert.equal(deps.recorded.at(-1).attempts, 1);
   });
 
   it("hands the spent account's own numbers to the usage cache, with the reset the header gave", async () => {

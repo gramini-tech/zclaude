@@ -2,7 +2,24 @@
 
 ## Unreleased
 
-**The README and the website are reframed around the router rather than
+**The website is rewritten around the problem instead of the feature list.**
+It opened by describing what zclaude is; it now opens with what stops you: one
+login per machine, and a five-hour window that ends your afternoon. A
+side-by-side of `claude` hitting the limit and the same work continuing on a
+second account says more in three seconds than the old page said in a screen and
+a half. Then four things people actually do with it, each with the commands. The
+page went from 5,730 words to 2,230, the feature grid from twelve cards to six,
+and the FAQ from thirty-one entries to thirteen, all shorter. A new section says
+what zclaude does not do, including that it gets you no extra quota, because a
+page that only lists strengths is not useful to someone deciding.
+
+The router log now records how many targets a request took, so a rotation leaves
+a trace. Before this a request that failed on one account and succeeded on the
+next logged one clean 200, and there was no way to see afterwards that anything
+had happened. `zclaude router log` prints `2 tries` when it was more than one and
+says nothing when it was one.
+
+**The README is reframed around the router rather than
 carrying a section about it.** zclaude was described as an account manager; it
 now makes the account a steadily finer choice — once per machine with `switch`,
 once per terminal with a profile, once per request with the router — and the

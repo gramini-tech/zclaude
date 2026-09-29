@@ -216,8 +216,11 @@ async function cmdLog({ env, options }) {
     const tokens = entry.usage ? `${entry.usage.input ?? 0}in/${entry.usage.output ?? 0}out${cached}` : grey("—");
     const where =
       entry.via && entry.via !== entry.target ? `${entry.target}${grey("→")}${entry.via}` : (entry.target ?? "—");
+    // Shown only when it happened: "1 try" on every line would be noise, and a
+    // request that took two is the one worth noticing.
+    const tries = entry.attempts > 1 ? grey(`  ${entry.attempts} tries`) : "";
     process.stdout.write(
-      `${grey(when)}  ${String(entry.status).padEnd(4)} ${entry.klass.padEnd(7)} ${where.padEnd(18)} ${String(entry.model ?? "").padEnd(28)} ${String(entry.ms).padStart(6)}ms  ${tokens}\n`,
+      `${grey(when)}  ${String(entry.status).padEnd(4)} ${entry.klass.padEnd(7)} ${where.padEnd(18)} ${String(entry.model ?? "").padEnd(28)} ${String(entry.ms).padStart(6)}ms  ${tokens}${tries}\n`,
     );
     if (entry.error) warn(`  ${entry.error}`);
   }

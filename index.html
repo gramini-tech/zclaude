@@ -3,21 +3,18 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>zclaude — run Claude Code on several accounts, and route one session across them</title>
+    <title>zclaude — run Claude Code on more than one account</title>
     <meta
       name="description"
-      content="Run several Claude Code accounts at once, one per terminal, and route a single session across all of them by class of model — Anthropic accounts and Z.ai GLM plans together."
+      content="Claude Code keeps one login. zclaude runs your accounts side by side, shows what is left on each, and carries a session across them when a five-hour limit hits."
     />
     <meta name="color-scheme" content="dark light" />
     <link rel="canonical" href="https://gramini-tech.github.io/zclaude/" />
     <link rel="icon" href="site/favicon.svg" type="image/svg+xml" />
-    <meta
-      property="og:title"
-      content="zclaude — run Claude Code on several accounts, and route one session across them"
-    />
+    <meta property="og:title" content="zclaude — run Claude Code on more than one account" />
     <meta
       property="og:description"
-      content="Several accounts at once, one per terminal. A local router that picks an account or provider per request. Every plan's remaining usage before you choose. Open source, MIT licensed."
+      content="Two Claude plans you can only use one at a time, and a five-hour limit that stops you. zclaude runs every account at once and keeps a session going across them. Open source, MIT."
     />
     <meta property="og:url" content="https://gramini-tech.github.io/zclaude/" />
     <meta property="og:type" content="website" />
@@ -38,13 +35,9 @@
         </a>
         <nav aria-label="Sections">
           <a href="#install">Install</a>
-          <a href="#profiles">Accounts</a>
-          <a href="#router">Router</a>
-          <a href="#quota">Usage</a>
+          <a href="#uses">What it's for</a>
           <a href="#commands">Commands</a>
-          <a href="#switch">Switch</a>
-          <a href="#auto">Auto</a>
-          <a href="#zai">Z.ai</a>
+          <a href="#limits">Limits</a>
           <a href="#faq">FAQ</a>
           <a href="https://github.com/gramini-tech/zclaude">GitHub</a>
         </nav>
@@ -54,18 +47,12 @@
     <main id="top">
       <section class="hero wrap">
         <img class="logo" src="site/logo.svg" alt="zclaude" width="670" height="130" />
-        <h1>Several accounts. One session across all of them.</h1>
+        <h1>Run Claude Code on more than one account</h1>
         <p class="lede">
-          Claude Code keeps one login per machine, so signing in to a second account signs you out of the first, VS Code
-          included. Whichever account you start a session on is the one you finish it on, however full it gets. And
-          nothing tells you which of your accounts still has room. zclaude answers all three by making the account a
-          finer choice: <strong>one per terminal</strong>, with a profile that carries its own credentials and config
-          directory; <strong>one per request</strong>, with a local router that sends each class of model wherever a
-          route table says, across your accounts and across providers, inside a single session; and
-          <strong>one per machine</strong> when you want it, with a switch that moves the login plain
-          <code>claude</code> and the VS Code extension share. Every plan's five-hour window, week and per-model limits
-          are on screen while you choose. A company seat and a personal subscription on one email count as two accounts,
-          and a <a href="https://z.ai/subscribe">Z.ai GLM Coding Plan</a> is one more provider a route can name.
+          Claude Code keeps one login. If you have a work seat and a personal plan, you sign in and out all day to use
+          both. And when the five-hour window runs out, you wait for it. zclaude runs your accounts side by side, shows
+          what is left on each, and can carry one session across them, so work continues on the next account instead of
+          stopping.
         </p>
 
         <div class="install" id="install">
@@ -83,22 +70,21 @@
               <pre><code id="cmd-curl">curl -fsSL https://gramini-tech.github.io/zclaude/install | bash</code></pre>
               <button class="copy" type="button" data-copy="cmd-curl">Copy</button>
               <p class="hint">
-                For a new Mac or Linux machine. Uses your Node.js when it is 20.17 or newer and brings a private copy
-                only when it is missing or older. Installs Claude Code too if you do not have it.
+                macOS or Linux. Brings Node.js only if yours is older than 20.17, and installs Claude Code if you do not
+                have it.
               </p>
             </div>
             <div class="panel" data-for="tab-npx">
               <pre><code id="cmd-npx">npx github:gramini-tech/zclaude self-install</code></pre>
               <button class="copy" type="button" data-copy="cmd-npx">Copy</button>
               <p class="hint">
-                Node.js already installed. <code>npx github:gramini-tech/zclaude</code> on its own runs it once without
-                keeping anything.
+                Node.js already installed. Drop <code>self-install</code> to run it once and keep nothing.
               </p>
             </div>
             <div class="panel" data-for="tab-npm">
               <pre><code id="cmd-npm">npm install -g github:gramini-tech/zclaude</code></pre>
               <button class="copy" type="button" data-copy="cmd-npm">Copy</button>
-              <p class="hint">A regular global npm install straight from GitHub.</p>
+              <p class="hint">A regular global install. This is the one to use on Windows.</p>
             </div>
             <div class="panel" data-for="tab-git">
               <pre><code id="cmd-git">git clone https://github.com/gramini-tech/zclaude.git &amp;&amp; cd zclaude &amp;&amp; npm install &amp;&amp; ln -s "$PWD/zclaude" ~/.local/bin/zclaude</code></pre>
@@ -111,547 +97,233 @@
         <p class="then">Then open a new terminal and type <code>zclaude</code>.</p>
       </section>
 
-      <section class="wrap demo" id="how" aria-labelledby="how-title">
-        <h2 id="how-title">Two accounts, two terminals, at the same time</h2>
+      <section class="wrap demo" id="why" aria-labelledby="why-title">
+        <h2 id="why-title">The thing it fixes</h2>
         <div class="terminals">
-          <div class="terminal" role="img" aria-label="Terminal one, running the work profile">
+          <div class="terminal" role="img" aria-label="Claude Code stopping at the five-hour limit">
             <div class="terminal-bar"><span></span><span></span><span></span></div>
-            <pre><span class="prompt">$</span> zclaude profile add work --provider anthropic
-<span class="q">?</span> What should this profile share with your main setup? <span class="ans">Settings and history</span>
-<span class="ok">✓</span> Created profile "work" (Anthropic account).
-<span class="dim">· Signing in to "work". Claude Code will open your browser.</span>
-<span class="ok">✓</span> "work" is signed in as you@company.com.
-
-<span class="prompt">$</span> zclaude work
-<span class="dim">· claude · you@company.com · ~/.zclaude/profiles/work/home</span></pre>
-          </div>
-          <div class="terminal" role="img" aria-label="Terminal two, running the personal profile">
-            <div class="terminal-bar"><span></span><span></span><span></span></div>
-            <pre><span class="prompt">$</span> zclaude personal
-<span class="dim">· claude · you@gmail.com · ~/.zclaude/profiles/personal/home</span>
-
-<span class="prompt">$</span> zclaude profile list
-<span class="sel">work</span>      anthropic  you@company.com · Acme Inc  <span class="dim">shares config + history</span>
-<span class="sel">max</span>       anthropic  you@company.com · personal  <span class="dim">shares config</span>
-<span class="sel">personal</span>  anthropic  you@gmail.com · personal    <span class="dim">shares nothing</span>
-<span class="sel">glm</span>       zai        z.ai coding plan            <span class="dim">shares config</span>
-
+            <pre><span class="dim">// today</span>
 <span class="prompt">$</span> claude
-<span class="dim">· your original login, untouched</span></pre>
+<span class="dim">…</span>
+<span class="err">✗ 5-hour limit reached.</span> <span class="dim">Resets at 7:50 pm.</span>
+
+<span class="dim">You have a personal plan too. Using it means</span>
+<span class="dim">signing out of work, and back in tomorrow.</span>
+
+<span class="prompt">$</span> <span class="dim">(two hours of waiting)</span></pre>
+          </div>
+          <div class="terminal" role="img" aria-label="The same work continuing on a second account">
+            <div class="terminal-bar"><span></span><span></span><span></span></div>
+            <pre><span class="dim">// with zclaude</span>
+<span class="prompt">$</span> zclaude work
+<span class="dim">…</span>
+<span class="dim">  work's window fills up mid-task</span>
+<span class="dim">…</span> <span class="ok">and it keeps going</span>
+
+<span class="prompt">$</span> zclaude router log
+<span class="dim">19:32</span> <span class="ok">200</span> opus  any<span class="dim">→</span><span class="sel">work</span>      8129ms
+<span class="dim">19:41</span> <span class="ok">200</span> opus  any<span class="dim">→</span><span class="sel">personal</span>  7204ms</pre>
           </div>
         </div>
         <p class="after">
-          A third terminal running plain <code>claude</code>, and the VS Code extension, stay on the login you already
-          had. Nothing is switched; the sessions simply do not see each other.
+          Same session, same terminal, no restart. The request that would have failed went to your other account
+          instead.
+        </p>
+      </section>
+
+      <section class="wrap usage" id="uses" aria-labelledby="uses-title">
+        <h2 id="uses-title">What people use it for</h2>
+
+        <h3>Two accounts, both live</h3>
+        <p>
+          A company seat in one terminal, your personal plan in another, at the same time. Each gets its own login and
+          its own config directory. The account you were already signed into carries on working in VS Code and in plain
+          <code>claude</code>.
+        </p>
+        <pre class="code"><code>zclaude profile add work     # sign in, once
+zclaude work                 # terminal one
+zclaude personal             # terminal two</code></pre>
+
+        <h3>Carry on past a limit</h3>
+        <p>
+          Turn the router on and a session picks an account for every request instead of once at startup. When one
+          account's window fills, the next request goes to another. You do not restart anything, and you do not lose the
+          conversation.
+        </p>
+        <pre class="code"><code>zclaude router on
+zclaude work</code></pre>
+
+        <h3>Send the small work somewhere cheaper</h3>
+        <p>
+          Subagent turns, file searches and summaries do not need your most expensive model. Point that class of work at
+          a <a href="https://z.ai/subscribe">Z.ai GLM Coding Plan</a> and keep the hard reasoning on Anthropic. Your
+          Claude window then lasts through a lot more work.
+        </p>
+        <pre class="code"><code>zclaude router route haiku glm-fast     # helpers go to GLM
+zclaude router route sonnet glm any    # subagents too, then fall back
+zclaude router route opus work         # the hard turns stay on Claude</code></pre>
+
+        <h3>Know what is left before you start</h3>
+        <p>
+          Claude Code says nothing about your remaining quota until it stops you. This is every account's five-hour
+          window, its week, each model metered separately, and the time each one comes back in your own zone.
+        </p>
+        <pre class="code"><code>$ zclaude profile list --usage
+work      anthropic  you@company.com · Acme Inc
+          5 hours       80%  resets in 2h 30m (07:50 pm)
+          week          21%  resets in 6d 7h (Thu, 24 Sept, 12:30 am)
+          Fable week    33%  resets in 6d 7h (Thu, 24 Sept, 12:30 am)
+personal  anthropic  you@gmail.com · personal
+          5 hours        3%  resets in 4h 10m (09:30 pm)
+          week          12%</code></pre>
+        <p>
+          The same table is in the menu while you pick a profile, and in a VS Code status bar item that switches
+          accounts from a hover.
         </p>
       </section>
 
       <section class="wrap demo" id="router" aria-labelledby="router-title">
-        <h2 id="router-title">And one session across every account you have</h2>
+        <h2 id="router-title">How the routing works</h2>
         <p>
-          A profile picks an account when the session starts. The router picks one for every request. It is a small
-          proxy on <code>127.0.0.1</code> that Claude Code points at for the length of a session, and each class of
-          model (opus, sonnet, haiku, fable) goes wherever a route table says. The main turn rotates across your
-          Anthropic accounts as their windows fill; the subagent turns are answered by a GLM model. One Claude Code
-          session, nothing changed inside it, and nothing to restart when an account runs out.
+          A small proxy runs on <code>127.0.0.1</code> for the length of a session. Every request Claude Code sends
+          already says which class of model it wants, so the router reads that, looks it up in a table you control, and
+          sends it to the account or provider named there.
         </p>
         <div class="terminals">
-          <div class="terminal" role="img" aria-label="Setting up and turning on the router">
+          <div class="terminal" role="img" aria-label="Setting up the route table">
             <div class="terminal-bar"><span></span><span></span><span></span></div>
-            <pre><span class="prompt">$</span> zclaude router config init
-<span class="ok">✓</span> Wrote ~/.zclaude/router.json.
-
-<span class="prompt">$</span> zclaude router route sonnet glm any
-<span class="ok">✓</span> sonnet now goes to glm, then any.
-
-<span class="prompt">$</span> zclaude router on
-<span class="ok">✓</span> Routing is on for sessions started by zclaude.
-<span class="dim">· Plain claude, other terminals and the editor extension are untouched.</span>
-
-<span class="prompt">$</span> zclaude router status
+            <pre><span class="prompt">$</span> zclaude router status
 <span class="dim">mode      session</span>
-<span class="dim">serving   http://127.0.0.1:34317   pid 9496, 14 served</span>
-  opus     work <span class="dim">then</span> any
-  <span class="sel">sonnet</span>   <span class="sel">glm</span> <span class="dim">then</span> any
-  haiku    glm-fast  <span class="dim">(pinned)</span></pre>
+<span class="dim">serving   http://127.0.0.1:34317</span>
+  opus     <span class="sel">work</span> <span class="dim">then</span> any
+  sonnet   <span class="sel">glm</span> <span class="dim">then</span> any
+  haiku    <span class="sel">glm-fast</span> <span class="dim">(pinned)</span>
+  fable    any</pre>
           </div>
-          <div class="terminal" role="img" aria-label="The router log, showing where each request went">
+          <div class="terminal" role="img" aria-label="The router log showing where each request went">
             <div class="terminal-bar"><span></span><span></span><span></span></div>
             <pre><span class="prompt">$</span> zclaude router log
-<span class="dim">19:32:45</span>  <span class="ok">200</span>  sonnet  any<span class="dim">→</span><span class="sel">hoomanely</span>   3454ms  2in/3out <span class="dim">+24124c</span>
-<span class="dim">19:32:45</span>  <span class="ok">200</span>  sonnet  any<span class="dim">→</span><span class="sel">gramini</span>     1380ms  2in/5out
-<span class="dim">19:31:02</span>  <span class="ok">200</span>  haiku   glm-fast<span class="dim">→</span><span class="sel">zai</span>     412ms  2in/9out
-<span class="dim">19:30:51</span>  <span class="ok">200</span>  opus    work<span class="dim">→</span><span class="sel">work</span>      8129ms  4in/612out <span class="dim">+91002c</span></pre>
+<span class="dim">19:41:07</span> <span class="ok">200</span> opus    any<span class="dim">→</span><span class="sel">personal</span>   7204ms <span class="dim">2 tries</span>
+<span class="dim">19:32:45</span> <span class="ok">200</span> sonnet  any<span class="dim">→</span><span class="sel">work</span>       3454ms
+<span class="dim">19:32:45</span> <span class="ok">200</span> sonnet  any<span class="dim">→</span><span class="sel">personal</span>   1380ms
+<span class="dim">19:31:02</span> <span class="ok">200</span> haiku   glm-fast<span class="dim">→</span><span class="sel">zai</span>  412ms
+<span class="dim">19:30:51</span> <span class="ok">200</span> opus    work<span class="dim">→</span><span class="sel">work</span>       8129ms</pre>
           </div>
         </div>
         <p class="after">
-          The left of each arrow is the route table entry, the right is the account or provider that actually answered.
-          Two sessions running at the same moment land on different accounts because the ranking looks at what is left
-          on each. No model version appears in the route table: a Z.ai target names <code>latest</code> or
-          <code>latest:fast</code>, resolved against what the provider publishes at the moment the request is sent.
+          Left of the arrow is the entry in your table, right of it is the account that answered. The top line took two
+          tries: <code>work</code> came back rate limited, so the request went to <code>personal</code> and the user saw
+          an answer rather than an error. The two at 19:32:45 are separate sessions running at once.
         </p>
         <p>
-          A <em>quota</em> 429 moves the request to the next account in the chain. A <em>burst</em> 429 does not, and
-          that distinction is most of the value: rotating to dodge a two-second pace throws away a warm prompt cache,
-          which on an agentic turn is most of the input tokens. When nothing in a class&rsquo;s chain can take a request
-          it holds quietly for up to four minutes and then returns a real <code>429</code> with a
-          <code>retry-after</code>, because a keep-alive would have to commit a <code>200</code> first and after that
-          there is no 429 left to send.
-        </p>
-        <p>
-          It changes nothing outside the session it serves. It never calls <code>switch</code>, never writes your
-          settings, and never refreshes a token something else might be holding. <code>zclaude router open</code> gives
-          you a page on loopback to edit the table, see what each selector resolves to right now, and watch the log
-          arrive: metadata only, no prompts and no responses, with no setting that turns that on.
-        </p>
-      </section>
-
-      <section class="wrap usage" id="profiles" aria-labelledby="profiles-title">
-        <h2 id="profiles-title">Several accounts, side by side</h2>
-        <p>
-          A profile is a name, a provider (an Anthropic account or a Z.ai coding plan), its own Claude Code config
-          directory, and a choice about what it borrows from your main setup. Credentials are keyed by that directory,
-          which is what keeps the accounts apart. A profile holds a billing context as much as a login: a company seat
-          and a personal subscription on one email address are metered separately, so they get a profile each, and
-          <code>profile list</code> shows the organization beside the address to tell them apart.
-        </p>
-        <div class="table-scroll">
-          <table>
-            <tbody>
-              <tr>
-                <td><code>zclaude profile add work</code></td>
-                <td>Create one. The wizard asks for the provider, sharing, MCP servers, trust and sign-in.</td>
-              </tr>
-              <tr>
-                <td><code>zclaude work</code></td>
-                <td>Launch Claude Code on that account, for this terminal only.</td>
-              </tr>
-              <tr>
-                <td><code>zclaude profile shell work</code></td>
-                <td>A subshell where plain <code>claude</code> is that account.</td>
-              </tr>
-              <tr>
-                <td><code>zclaude profile list</code></td>
-                <td>Every profile with its signed-in identity and what it shares.</td>
-              </tr>
-              <tr>
-                <td><code>zclaude profile show work</code></td>
-                <td>Its directory, credential item, identity and shared items.</td>
-              </tr>
-              <tr>
-                <td><code>zclaude profile login work</code></td>
-                <td>Sign in, or sign in again. <code>--sso</code> and <code>--console</code> pass straight through.</td>
-              </tr>
-              <tr>
-                <td><code>zclaude profile logout work</code></td>
-                <td>Sign that profile out. The others are untouched.</td>
-              </tr>
-              <tr>
-                <td><code>zclaude profile remove work</code></td>
-                <td>Delete the profile, its login and its directory.</td>
-              </tr>
-              <tr>
-                <td><code>zclaude profile doctor</code></td>
-                <td>Check every profile, this shell, and any machine-wide policy that applies.</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <h3>What a profile shares</h3>
-        <p>
-          By default a new profile borrows your settings and your history, so it works straight away. Shared settings
-          are your agents, commands, skills, rules, output styles, workflows, themes and <code>CLAUDE.md</code>, plus a
-          filtered copy of <code>settings.json</code> that drops anything which would hand the profile another account's
-          credentials or models. Shared history is <code>projects/</code> and <code>history.jsonl</code>, so
-          <code>/resume</code> spans profiles. Pick <code>--share config</code>, <code>--share history</code> or
-          <code>--share none</code> instead, and change your mind later.
-        </p>
-        <p>
-          Credentials, <code>.claude.json</code>, installed plugins, caches and telemetry are never shared. Nor is
-          anything about your identity copied into a new profile: it starts signed out and earns its own login.
-        </p>
-      </section>
-
-      <section class="wrap usage" id="quota" aria-labelledby="quota-title">
-        <h2 id="quota-title">How much of each plan is left</h2>
-        <p>
-          Picking an account is usually a question about quota, so every surface answers it: the launch menu while you
-          choose, <code>profile list --usage</code> spelled out, and the editor&rsquo;s status bar. A row carries the
-          rolling five-hour window, the week, and each model window metered separately &mdash; Fable has its own ceiling
-          &mdash; plus any pay-as-you-go credit.
-        </p>
-        <div class="terminal" role="img" aria-label="Usage for one account, window by window">
-          <div class="terminal-bar"><span></span><span></span><span></span></div>
-          <pre><span class="prompt">$</span> zclaude profile list --usage
-<span class="sel">work</span>      anthropic  you@company.com &middot; Acme Inc  <span class="dim">shares config + history</span>
-          <span class="dim">5 hours       80%  resets in 2h 30m (07:50 pm)</span>
-          <span class="dim">week          21%  resets in 6d 7h (Thu, 24 Sept, 12:30 am)</span>
-          <span class="dim">Fable week    33%  resets in 6d 7h (Thu, 24 Sept, 12:30 am)</span>
-          <span class="dim">credits $37.66 left</span></pre>
-        </div>
-        <p>
-          Reset times arrive in UTC and are shown in your own zone and clock format, because nobody plans their
-          afternoon in UTC. Both forms are there on purpose: &ldquo;in 2h 30m&rdquo; answers how long, &ldquo;07:50
-          pm&rdquo; answers when. A window under half full carries no clock, since nobody is waiting for it.
-        </p>
-        <p>
-          A lookup costs a network call per account, so it never happens on the launch path and never without a
-          terminal. Answers are cached for a minute and a <code>Retry-After</code> is obeyed across every surface, so
-          the CLI and the editor cannot saturate the endpoint between them. A login that has expired says so, and says
-          what to run &mdash; or, in the menu, offers <code>s</code> to sign it in where you are looking at it.
-        </p>
-      </section>
-
-      <section class="wrap usage" id="switch" aria-labelledby="switch-title">
-        <h2 id="switch-title">Switching the login everything else uses</h2>
-        <p>
-          Profiles cover the terminals you start with zclaude. Plain <code>claude</code>, the Claude Code extension in
-          your editor, and anything else that shells out to Claude Code all use the machine&rsquo;s one global login.
-          <code>zclaude switch</code> moves that login to a profile&rsquo;s account, in place, and leaves your projects,
-          history, sessions and MCP logins exactly where they are.
-        </p>
-        <div class="table-scroll">
-          <table>
-            <tbody>
-              <tr>
-                <td><code>zclaude switch work</code></td>
-                <td>The global login is now that profile&rsquo;s account.</td>
-              </tr>
-              <tr>
-                <td><code>zclaude switch --status</code></td>
-                <td>Who holds it, since when, and what can be restored.</td>
-              </tr>
-              <tr>
-                <td><code>zclaude switch --restore</code></td>
-                <td>Put the previous one back.</td>
-              </tr>
-              <tr>
-                <td><code>zclaude switch work --dry-run</code></td>
-                <td>Say what would change, change nothing.</td>
-              </tr>
-              <tr>
-                <td><code>zclaude vscode install</code></td>
-                <td>Put the <code>zc</code> item in the status bar of every editor found here.</td>
-              </tr>
-              <tr>
-                <td><code>zclaude sessions</code></td>
-                <td>What is running, on which account, and whether it is busy or idle.</td>
-              </tr>
-              <tr>
-                <td><code>zclaude renew status</code></td>
-                <td>Is the background token renewal scheduled, and what did it do.</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p>
-          Two things move and nothing else: the credential in the Keychain item Claude Code reads, and the
-          <code>oauthAccount</code> block of <code>~/.claude.json</code>. Both are backed up and read back before
-          anything is overwritten, the login being replaced is captured back into the profile it belongs to so a token
-          Claude Code rotated is not stranded, and Claude Code&rsquo;s own refresh locks are held throughout so a switch
-          cannot land in the middle of one.
-        </p>
-
-        <h3>The status bar item</h3>
-        <p>
-          A small extension puts <code>zc</code> in the VS Code status bar with the signed-in account beside it. One
-          click lists every profile with its 5-hour, weekly and per-model usage, so you can pick the account that has
-          quota left for the job; a window near its ceiling also carries the time it comes back, in your own time zone.
-          The same list adds a profile, removes one, restores the previous login and re-fetches usage. It works in VS
-          Code, Insiders, Cursor, Windsurf and VSCodium, and it holds no credential logic of its own: it asks
-          <code>zclaude</code> for JSON and renders the answer.
-        </p>
-
-        <h3>Who is already using that account</h3>
-        <p>
-          Two terminals on one account share its five-hour window, so the menu marks a profile that is already busy
-          before you pick it, and <code>zclaude sessions</code> lists what is running and where. A session counts as
-          live only when its process id exists <em>and</em> that process still started when the record says it did
-          &mdash; without the second check a recycled id would leave an account looking busy for ever. Busy and merely
-          open are different questions: Claude Code appends to its transcript as a conversation goes, so a session quiet
-          for five minutes is reported as idle rather than active. It never blocks a launch; it is there so the decision
-          is yours.
-        </p>
-
-        <h3>Logins that do not go stale</h3>
-        <p>
-          An account you open twice a term expires quietly between uses. <code>zclaude renew install</code> schedules a
-          job &mdash; a LaunchAgent on macOS, a systemd user timer or a crontab line on Linux &mdash; that refreshes
-          only what is within two hours of lapsing, one profile at a time, and stops at the first token the server
-          rejects rather than hammering it on a timer. Removing the last Anthropic profile removes the schedule, and so
-          does any uninstall.
-        </p>
-      </section>
-
-      <section class="wrap usage" id="auto" aria-labelledby="auto-title">
-        <h2 id="auto-title">Rotating by usage</h2>
-        <p>
-          Long work ends the same way every time: one account hits a wall while the others still have room.
-          <code>zclaude --auto &lt;profile&gt;</code> starts a session that may be moved between accounts as they fill
-          up, and <code>zclaude auto status</code> says which one it would use and why. Rotation only ever happens for a
-          session that asked for it &mdash; an open editor window is not consent to move the login everything else on
-          the machine shares.
-        </p>
-        <p>
-          This moves the <em>machine&rsquo;s</em> login, which is why it waits, settles and keeps a budget. The
-          <a href="#router">router</a> answers the same complaint at a different scope: it picks per request and changes
-          nothing outside the one session, so it needs none of that caution. Use the router for the session you are
-          working in, and auto for everything on the machine that is not routed.
-        </p>
-        <div class="terminal" role="img" aria-label="One real rotation between three accounts">
-          <div class="terminal-bar"><span></span><span></span><span></span></div>
-          <pre><span class="prompt">$</span> zclaude auto run --dry-run
-<span class="dim">  wait — gramini is at 50% of its weekly; something is mid-answer</span>
-<span class="dim">  …ninety seconds of that, because the session never stopped writing</span>
-<span class="ok">  switched</span> <span class="dim">— gramini → max</span>
-<span class="dim">  stay — 3% of its weekly</span>
-<span class="dim">  stay — 4% of its Fable</span></pre>
-        </div>
-        <p>
-          Four things in that trace are the whole design. It <strong>waited rather than landing mid-answer</strong>, and
-          gave up waiting after ninety seconds because a session that never goes quiet is one long turn. It
-          <strong>settled once it arrived</strong> instead of hopping back. And the class it reasons about changed from
-          Opus to Fable partway through, because that is what the transcripts said was in use &mdash; work never drops
-          to a weaker model to keep going, so the ceiling that binds followed it.
-        </p>
-        <p>
-          Accounts are compared in units of work rather than percentages, because 3% used on a Max 20x seat is nine
-          times the room left in 55% used on a 5x seat. The plan size comes off the credential, so there is nothing to
-          configure. A login that failed is never read as an empty account: the cache keeps serving its last good
-          numbers when a lookup fails, which is right for a display and a trap for a scheduler.
-        </p>
-        <p>
-          <code>zclaude auto run --dry-run</code> runs the entire loop and makes none of the decisions, which is how a
-          thing that moves your login while you are not watching earns the right to do it. Everything it owns says when
-          it is dead rather than relying on cleanup: a watcher killed outright, or a machine that loses power, leaves a
-          lock that reads as stale to whoever looks next.
+          It tells apart the two kinds of rate limit. When a window is spent the request moves to the next account. When
+          it is just too many requests in a minute it waits a second and asks the same account again, because moving
+          would throw away the prompt cache, which is most of what an agent turn costs. No model version appears in the
+          table: a Z.ai target says <code>latest</code> or <code>latest:fast</code>, resolved against what the provider
+          publishes at the moment you send the request.
         </p>
       </section>
 
       <section class="wrap features" aria-labelledby="features-title">
-        <h2 id="features-title">What it does for you</h2>
+        <h2 id="features-title">Also in the box</h2>
         <ul class="grid">
           <li>
-            <h3>An account per request</h3>
+            <h3>A status bar item for VS Code</h3>
             <p>
-              The router sends each class of model wherever the route table says, and moves on when an account&rsquo;s
-              window is spent. One session, no restart, no switching.
+              Shows the signed-in account and every plan's usage. One click moves the global login. Installs into VS
+              Code, Insiders, Cursor, Windsurf and VSCodium.
             </p>
           </li>
           <li>
-            <h3>Two providers in one session</h3>
+            <h3>What is already running</h3>
             <p>
-              Sonnet-class work to a GLM model while Opus work rotates across your Anthropic accounts. The response body
-              is never rewritten, so each turn is attributed to the provider that answered it.
+              <code>zclaude sessions</code> lists the sessions on this machine and which account each is spending, so
+              you do not start a third one on an account two are already using.
             </p>
           </li>
           <li>
-            <h3>No model version written down</h3>
-            <p>
-              A route names <code>latest</code> or <code>latest:fast</code>, resolved against what the provider
-              publishes when the request is sent. A route you wrote last year still means the current model.
-            </p>
-          </li>
-          <li>
-            <h3>Accounts side by side</h3>
-            <p>
-              Each profile gets its own config directory, so Claude Code stores its credentials under a separate
-              Keychain item. No switching, no signing out.
-            </p>
-          </li>
-          <li>
-            <h3>What is left, before you pick</h3>
-            <p>
-              The five-hour window, the week and every model metered separately, with the time each comes back in your
-              own zone. Shown while you choose, not after the limit arrives.
-            </p>
-          </li>
-          <li>
-            <h3>Numbers that improve as you work</h3>
-            <p>
-              Every routed response carries that account&rsquo;s own quota headers, so the usage you see is refreshed by
-              traffic you were sending anyway rather than by polling.
-            </p>
-          </li>
-          <li>
-            <h3>One email, two plans</h3>
-            <p>
-              A company seat and a personal subscription bill and meter separately. Each gets a profile, and the list
-              shows the organization so you can see which is which.
-            </p>
-          </li>
-          <li>
-            <h3>Scoped to the terminal</h3>
-            <p>
-              A profile lives in the environment of the one <code>claude</code> process it starts. Your default login
-              and the VS Code extension carry on unchanged, until you ask for a switch.
-            </p>
-          </li>
-          <li>
-            <h3>Usable from the first run</h3>
-            <p>
-              A new profile borrows your settings, skills and commands by default, so it behaves like your normal setup
-              without copying your secrets.
-            </p>
-          </li>
-          <li>
-            <h3>Z.ai coding plans too</h3>
-            <p>
-              Browser sign-in issues a coding-plan key, stored in the Keychain, with the GLM models you pick for the
-              main agent, subagents and helpers.
-            </p>
-          </li>
-          <li>
-            <h3>Nothing written to ~/.claude, unless you ask</h3>
-            <p>
-              zclaude reads your Claude Code files. The one exception is the switch you name: it moves the credential
-              and one key of <code>~/.claude.json</code>, backs both up, and can put them back.
-            </p>
-          </li>
-          <li>
-            <h3>A switch, and a button for it</h3>
-            <p>
-              <code>zclaude switch work</code> moves the global login that plain <code>claude</code> uses. The VS Code
-              status bar item does the same thing in one click, with each plan's usage on the list.
-            </p>
-          </li>
-          <li>
-            <h3>Logins kept alive</h3>
+            <h3>Logins that do not go stale</h3>
             <p>
               A scheduled job refreshes a profile's token before it lapses, so an account you open twice a term is still
               signed in when you come back to it.
             </p>
           </li>
           <li>
-            <h3>Honest about the edges</h3>
+            <h3>A switch for the whole machine</h3>
             <p>
-              <code>profile doctor</code> reports a shell that pins a config directory, a share that detached, and any
-              machine-wide policy no profile can escape.
+              <code>zclaude switch work</code> moves the one login plain <code>claude</code> and the extension share.
+              Backed up first, and <code>--restore</code> puts it back.
             </p>
           </li>
           <li>
-            <h3>Run logs</h3>
+            <h3>Straight answers when something is off</h3>
             <p>
-              Each run writes a redacted JSON log. <code>zclaude log</code> shows the last one when something needs a
-              closer look.
+              <code>zclaude profile doctor</code> names a shell that pins a config directory, a share that came
+              unlinked, and any employer policy no profile can escape.
             </p>
           </li>
           <li>
             <h3>Updates itself</h3>
             <p>
-              Every push is a new version. A daily check tells you when one is out, and
-              <code>zclaude self-update</code> installs it.
+              A daily check tells you when a new version is out. <code>zclaude self-update</code> installs it the same
+              way you installed it.
             </p>
           </li>
         </ul>
       </section>
 
-      <section class="wrap demo" id="zai" aria-labelledby="zai-title">
-        <h2 id="zai-title">A Z.ai coding plan, with models you choose</h2>
-        <div
-          class="terminal"
-          role="img"
-          aria-label="Terminal session showing the zclaude menu, Z.ai sign-in, model choices and launch"
-        >
-          <div class="terminal-bar"><span></span><span></span><span></span></div>
-          <pre><span class="prompt">$</span> zclaude
-<span class="q">?</span> What do you want to launch?
-  Claude Code
-<span class="sel">❯ Claude Code + Z.ai GLM Coding Plan</span>
-<span class="dim">· Sign in to Z.ai in your browser to authorize zclaude.</span>
-<span class="ok">✓</span> Signed in as you@example.com. Key "zclaude" created and stored in keychain.
-<span class="q">?</span> Primary model (what you talk to): <span class="ans">glm-5.3  (1M context)</span>
-<span class="q">?</span> Subagent model (background agents, Task tool): <span class="ans">glm-5.3-flash  (1M context)</span>
-<span class="q">?</span> Fast model (haiku-class helpers, summaries): <span class="ans">glm-5.3-flash  (1M context)</span>
-<span class="q">?</span> Save these choices? <span class="ans">This project</span>
-<span class="ok">✓</span> Saved to ./.zclaude/env
-<span class="dim">· Z.ai GLM Coding Plan (max) · 5h credits 12% · weekly credits 17%</span>
-<span class="dim">· Launching claude on glm-5.3 (subagents: glm-5.3-flash, fast: glm-5.3-flash)</span></pre>
-        </div>
-        <p class="after">
-          The key goes to the macOS Keychain, or a 0600 file elsewhere, never into a shell rc file or Claude Code's
-          settings. More than one Z.ai account works the same way as more than one Claude account: give each plan its
-          own profile and each keeps its own key and quota.
-        </p>
-      </section>
-
       <section class="wrap usage" id="commands" aria-labelledby="commands-title">
-        <h2 id="commands-title">Commands</h2>
+        <h2 id="commands-title">The commands you will actually type</h2>
         <div class="table-scroll">
           <table>
             <tbody>
               <tr>
                 <td><code>zclaude</code></td>
-                <td>Menu of every profile you have set up, then launch.</td>
+                <td>Menu of your profiles, with usage, then launch.</td>
               </tr>
               <tr>
                 <td><code>zclaude work</code></td>
-                <td>Name a profile to skip the menu. Everything after it goes to <code>claude</code>.</td>
+                <td>Skip the menu. Anything after the name goes to <code>claude</code>.</td>
               </tr>
               <tr>
-                <td><code>zclaude -p "explain this repo"</code></td>
-                <td>Any arguments after zclaude's own options go to <code>claude</code>.</td>
+                <td><code>zclaude profile add</code></td>
+                <td>Set up another account and sign in to it.</td>
               </tr>
               <tr>
-                <td><code>zclaude --profile work</code></td>
-                <td>The explicit form, for scripts. <code>--profile claude</code> is your normal Claude Code.</td>
-              </tr>
-              <tr>
-                <td><code>zclaude --reconfigure</code></td>
-                <td>Choose the Z.ai models again and save them per project or as your default.</td>
-              </tr>
-              <tr>
-                <td><code>zclaude login</code></td>
-                <td>Sign in to Z.ai now, then optionally pick models and launch.</td>
+                <td><code>zclaude profile list --usage</code></td>
+                <td>Every account, with what is left on each.</td>
               </tr>
               <tr>
                 <td><code>zclaude router on</code></td>
-                <td>Route the sessions zclaude starts. <code>router off</code> stops.</td>
+                <td>Route the sessions you start. <code>router off</code> stops.</td>
               </tr>
               <tr>
                 <td><code>zclaude router route sonnet glm</code></td>
                 <td>Send a class of model somewhere. One target pins it there.</td>
               </tr>
               <tr>
-                <td><code>zclaude router serve</code></td>
-                <td>Hold a terminal as the shared router. Launches elsewhere use it.</td>
-              </tr>
-              <tr>
                 <td><code>zclaude router log</code></td>
-                <td>Where each request actually went. Metadata only.</td>
+                <td>Where each request went. Metadata only.</td>
               </tr>
               <tr>
                 <td><code>zclaude router open</code></td>
-                <td>The local page: edit the table, watch the log, see live models.</td>
+                <td>A page on loopback to edit the table and watch the log.</td>
               </tr>
               <tr>
-                <td><code>zclaude status</code></td>
-                <td>Profiles, key, quota, models, config files and the current log file.</td>
+                <td><code>zclaude switch work</code></td>
+                <td>Move the machine's login. <code>switch --restore</code> undoes it.</td>
+              </tr>
+              <tr>
+                <td><code>zclaude sessions</code></td>
+                <td>What is running now, and on which account.</td>
               </tr>
               <tr>
                 <td><code>zclaude models</code></td>
-                <td>Models your Z.ai plan can use.</td>
+                <td>What each provider publishes today, asked live.</td>
               </tr>
               <tr>
-                <td><code>zclaude log</code></td>
-                <td>The last run's log, for post-mortems. Add <code>--json</code> to share it.</td>
-              </tr>
-              <tr>
-                <td><code>zclaude self-update</code></td>
-                <td>Update the same way zclaude was installed.</td>
-              </tr>
-              <tr>
-                <td><code>zclaude logout</code></td>
-                <td>Forget the stored Z.ai key on this machine.</td>
-              </tr>
-              <tr>
-                <td><code>zclaude work --resume &lt;session-id&gt;</code></td>
-                <td>Resume one of that profile's sessions. Claude's own options follow the name.</td>
-              </tr>
-              <tr>
-                <td><code>zclaude -- [claude args...]</code></td>
-                <td>Everything after <code>--</code> is claude's, whether or not you named a profile.</td>
+                <td><code>zclaude profile doctor</code></td>
+                <td>Check every profile and this shell.</td>
               </tr>
               <tr>
                 <td><code>zclaude -- --help</code></td>
@@ -660,179 +332,100 @@
             </tbody>
           </table>
         </div>
+      </section>
 
-        <h3>Saved choices</h3>
-        <pre class="code"><code># ./.zclaude/env  (or ~/.zclaude/settings for your default)
-ZCLAUDE_MODEL=glm-5.3
-ZCLAUDE_SUBAGENT_MODEL=glm-5.3-flash
-ZCLAUDE_FAST_MODEL=glm-5.3-flash
-ZCLAUDE_PROFILE=work       # optional: pick a profile for this project</code></pre>
-        <p>
-          A command-line flag beats the environment, which beats the project file, which beats your user default. A
-          profile name your teammates do not have falls back to the menu with a warning, so the project file is safe to
-          commit. Every option and variable is listed in the
-          <a href="https://github.com/gramini-tech/zclaude#readme">README</a>.
+      <section class="wrap usage" id="limits" aria-labelledby="limits-title">
+        <h2 id="limits-title">What it does not do</h2>
+        <ul class="plain">
+          <li>
+            <strong>It does not get you more quota.</strong> It uses the plans you already pay for, and it makes the
+            ones you have easier to use together. If you only have one account, the usage display and the VS Code item
+            are still worth having; the routing is not.
+          </li>
+          <li>
+            <strong>Routing covers the sessions you start with zclaude.</strong> Plain <code>claude</code>, your editor
+            and anything else on the machine go straight to Anthropic as before. Routing everything would mean writing
+            your Claude Code settings and making a local process something every editor window depends on. That is
+            designed and not built.
+          </li>
+          <li>
+            <strong>It never logs your prompts.</strong> The router records the class, the account, the model id, the
+            status, the duration and the token counts. No prompts, no responses, no flag that changes it. The page that
+            shows them binds to <code>127.0.0.1</code> only.
+          </li>
+          <li>
+            <strong>macOS and Linux are the tested platforms.</strong> Windows works through the npm install; the
+            scheduled token renewal is something you set up yourself there.
+          </li>
+          <li>
+            <strong>It is not made by Anthropic or Z.ai.</strong> Independent, MIT licensed, and it uses the environment
+            variables Claude Code documents plus the browser sign-in Z.ai's own desktop app uses.
+          </li>
+        </ul>
+        <p class="cta">
+          <a class="cta-main" href="#install">Install it</a>
+          <a href="https://github.com/gramini-tech/zclaude">Read the source</a>
+          <a href="https://github.com/gramini-tech/zclaude#readme">Full documentation</a>
         </p>
       </section>
 
       <section class="wrap faq" id="faq" aria-labelledby="faq-title">
-        <h2 id="faq-title">FAQ</h2>
+        <h2 id="faq-title">Questions</h2>
 
         <details>
-          <summary>What is zclaude?</summary>
+          <summary>How can two accounts run at the same time?</summary>
           <p>
-            A launcher for Claude Code. It starts <code>claude</code> with the profile you pick: your usual login, a
-            second or third account, or a Z.ai GLM Coding Plan. Everything it configures is passed to that one process,
-            so your normal setup stays where it is.
+            Claude Code reads its configuration from <code>CLAUDE_CONFIG_DIR</code> and stores its login keyed by that
+            directory. zclaude gives each profile a directory and sets the variable for the one process it starts, so
+            each terminal has a login of its own. It never sets the variable for your default account, because Claude
+            Code treats the variable being set at all, whatever its value, as a different account.
           </p>
         </details>
 
         <details>
-          <summary>How can several accounts run at once?</summary>
+          <summary>Will this sign me out of VS Code?</summary>
           <p>
-            Claude Code reads its configuration from <code>CLAUDE_CONFIG_DIR</code> and keys its stored credentials by
-            that directory. zclaude gives each profile its own directory and sets that variable for the one process it
-            starts, so each terminal has its own login. It never sets the variable for your default profile, because
-            Claude Code treats the presence of the variable, and not its value, as a different account.
+            No. The extension uses your default login, which adding a profile and signing in to it never touch. The one
+            thing that moves it is <code>zclaude switch</code>, which you ask for by name and can undo with
+            <code>zclaude switch --restore</code>.
           </p>
         </details>
 
         <details>
-          <summary>What does the router actually do?</summary>
+          <summary>Is this against Anthropic's terms?</summary>
           <p>
-            It is a proxy on <code>127.0.0.1</code> that Claude Code points at for the length of a session. Each request
-            already says which class of model it wants, so the router reads that, looks it up in a route table, and
-            sends it to the account or provider named there. Only generation is routed; usage lookups, token counting
-            and everything else pass through untouched. The request and the response stay in Anthropic Messages shape,
-            so Claude Code never learns anything happened.
-          </p>
-        </details>
-
-        <details>
-          <summary>How is routing different from <code>zclaude switch</code>?</summary>
-          <p>
-            Scope. A switch moves one login for the whole machine, so it is deliberate and slow and careful. The router
-            changes nothing outside the session it serves, so two routed sessions can be on two different accounts in
-            the same millisecond while a third terminal running plain <code>claude</code> knows about neither. They
-            answer different questions and you can use both: keep the switch for the login your editor shares, and the
-            router for the session you are working in.
+            It runs accounts you pay for, one session at a time each, on your own machine. It does not share a
+            subscription between people, resell access, or use the API on a plan that does not include it. If your
+            employer's seat has rules about where it can be used, those still apply; zclaude does not change them.
           </p>
         </details>
 
         <details>
           <summary>What happens when an account runs out mid-session?</summary>
           <p>
-            The next request goes to the next target in that class&rsquo;s chain, and the spent account sits out until
-            its window resets. Nothing restarts. There are two kinds of 429 and the router tells them apart: a quota 429
-            moves on, and a burst 429 waits out its <code>retry-after</code> on the same account, because rotating to
-            dodge a two-second pause throws away a warm prompt cache worth most of an agentic turn&rsquo;s input tokens.
-            If nothing in the chain can take it, the request holds quietly for up to four minutes and then gets a real
-            429 with a <code>retry-after</code> that Claude Code&rsquo;s own retry handles.
+            The next request goes to the next account in that class's list, and the spent one sits out until its window
+            resets. If nothing in the list can take it, the request waits quietly for up to four minutes and then comes
+            back as a normal rate-limit error that Claude Code already knows how to retry. Nothing is written to the
+            response until an upstream has answered, so a request either succeeds or fails cleanly.
           </p>
         </details>
 
         <details>
-          <summary>Do I have to name a model version in the route table?</summary>
+          <summary>Does a routed session lose the conversation?</summary>
           <p>
-            No, and the design goes out of its way to stop you. A Z.ai target names a selector &mdash;
-            <code>latest</code>, <code>latest:fast</code>, or an exact id if you really mean one &mdash; resolved
-            against what the provider publishes at the moment the request is sent. Routes key on the class of model, so
-            a model released tomorrow routes correctly with no edit. An exact id the provider has retired moves forward
-            to the newest with a warning rather than failing an hour later with a 404. A test asserts that no concrete
-            model id appears anywhere in the router&rsquo;s source or in its local page.
+            No. The conversation lives in Claude Code, not in the router, and every request carries it. Moving accounts
+            does cost the prompt cache on the new one, so the router keeps a conversation on the account it started on
+            for five minutes and only moves it when that account cannot take the next request.
           </p>
         </details>
 
         <details>
-          <summary>Does the router log my prompts?</summary>
+          <summary>Do I have to keep the route table up to date with new models?</summary>
           <p>
-            No. It records the class, the target, the account that answered, the model id, the status, the duration and
-            the token counts. No prompts and no responses, not behind a flag, and there is no setting that turns it on.
-            It lives in memory, capped, and goes when the process does. The page that shows it binds to loopback only,
-            checks the <code>Host</code> header on every request, and the proxied paths ignore cookies entirely, so a
-            page in your browser cannot make the browser spend your quota.
-          </p>
-        </details>
-
-        <details>
-          <summary>Can the router route everything on the machine, not just zclaude sessions?</summary>
-          <p>
-            Not yet, and the reason is stated rather than hidden. Machine-wide interception means writing
-            <code>ANTHROPIC_BASE_URL</code> into Claude Code&rsquo;s own user settings, which makes a local process a
-            dependency of every Claude Code on the machine &mdash; and a router that is down does not read as down, it
-            reads as a connection refused inside somebody&rsquo;s editor. That mode is designed and not built.
-            <code>zclaude router status</code> says <code>session</code> and will keep saying it until it is.
-          </p>
-        </details>
-
-        <details>
-          <summary>Does signing in to a profile sign me out of VS Code?</summary>
-          <p>
-            No. The extension uses the default login, which adding or signing in to a profile never touches. That is
-            checked end to end: create a profile, sign in, and plain <code>claude</code> in a fresh terminal still
-            reports the original account. The one thing that does move it is <code>zclaude switch</code>, which you ask
-            for by name and can undo with <code>zclaude switch --restore</code>.
-          </p>
-        </details>
-
-        <details>
-          <summary>What does a switch do to a session that is already running?</summary>
-          <p>
-            Nothing immediately. Claude Code keeps the credential it read at startup, and on macOS that cache lasts
-            about half a minute, so a running session moves to the new account shortly rather than mid-answer. A switch
-            also takes Claude Code&rsquo;s own refresh locks first, so it cannot land inside a token refresh.
-          </p>
-        </details>
-
-        <details>
-          <summary>Can I switch a Z.ai profile globally?</summary>
-          <p>
-            No, and it is not a gap in the implementation. A GLM plan is an endpoint and a key, which reach Claude Code
-            through the environment rather than through its credential store, so the only way to make it global would be
-            to write your <code>settings.json</code>. zclaude will not do that. Run
-            <code>zclaude &lt;profile&gt;</code> in a terminal instead.
-          </p>
-        </details>
-
-        <details>
-          <summary>Can it tell me an account is already in use?</summary>
-          <p>
-            On this machine, yes. Every session zclaude starts is recorded and verified against the process that claims
-            to be it, so the menu can mark a busy profile and <code>zclaude sessions</code> can list them with how long
-            each has been quiet. Sessions started outside zclaude are counted too: they cannot have a config directory
-            of their own, so they are all on the global login and are attributed to whichever profile holds it. What it
-            cannot see is another machine &mdash; your laptop and your desktop spend the same account and neither knows
-            about the other.
-          </p>
-        </details>
-
-        <details>
-          <summary>Can I see when my limit resets?</summary>
-          <p>
-            Yes. The menu, <code>zclaude profile list --usage</code> and the status bar item all show the reset time for
-            any window at half its limit or more &mdash; both as a countdown and as a wall-clock time in your own zone,
-            converted from the UTC the API answers in. A window at 4% is left bare, because a clock on every row buries
-            the numbers. Pay-as-you-go credit shows up on the same line when the account has it switched on.
-          </p>
-        </details>
-
-        <details>
-          <summary>How do I get the status bar item?</summary>
-          <p>
-            The installer offers it when it finds an editor, or run <code>zclaude vscode install</code> yourself; it
-            goes into VS Code, Insiders, Cursor, Windsurf and VSCodium. Reload the window afterwards. It is not on the
-            Marketplace: the packaged <code>.vsix</code> ships with zclaude and is installed from disk.
-          </p>
-        </details>
-
-        <details>
-          <summary>Work and personal on one machine: what stays separate?</summary>
-          <p>
-            Credentials, the signed-in identity, transcripts and project memory, MCP servers, tool permissions, folder
-            trust and installed plugins. Shared, only if you ask for it, are your settings and your history.
-            Machine-wide policy from an employer's MDM applies to every profile, and the device key file Claude Code
-            writes in your home directory is shared too. <code>zclaude profile doctor</code> tells you when either
-            applies.
+            No, and it is built to stop you trying. Routes are written against the class of model, so a model released
+            tomorrow is routed correctly with no edit. A Z.ai target names <code>latest</code> or
+            <code>latest:fast</code> and is resolved against what the provider publishes when the request goes out.
+            <code>zclaude models</code> shows what each one means today.
           </p>
         </details>
 
@@ -840,159 +433,69 @@ ZCLAUDE_PROFILE=work       # optional: pick a profile for this project</code></p
           <summary>I use one email for a company seat and a personal plan. One profile or two?</summary>
           <p>
             Two. They are separate organizations with separate billing and separate usage, and Claude Code stores them
-            as different logins, so a profile each is what keeps their sessions and quotas apart. Both rows show the
-            same address in <code>zclaude profile list</code>, followed by the organization: the company name for the
-            seat, and <code>personal</code> for the subscription billed to you.
-          </p>
-        </details>
-
-        <details>
-          <summary>Can I share my skills and commands with a new profile?</summary>
-          <p>
-            Yes, that is the default. Agents, commands, skills, rules, output styles, workflows, themes and
-            <code>CLAUDE.md</code> are linked, and your <code>settings.json</code> is copied through a filter that drops
-            authentication and, for a Z.ai profile, the model keys that would fight your GLM choices. Edits to the
-            originals follow. <code>--share none</code> gives you a clean profile instead.
-          </p>
-        </details>
-
-        <details>
-          <summary>What happens to <code>/resume</code> across profiles?</summary>
-          <p>
-            With shared history, <code>projects/</code> and <code>history.jsonl</code> are shared, so
-            <code>/resume</code> and <code>claude --continue</code> can reach a session started under a different
-            profile. Handy for one person with several accounts, and the wrong default if the profiles are for different
-            clients. <code>--share config</code> keeps the settings and separates the transcripts.
-          </p>
-        </details>
-
-        <details>
-          <summary>Is it made by Anthropic or Z.ai?</summary>
-          <p>
-            No. zclaude is an independent open-source project under the MIT license. It uses the environment variables
-            Claude Code documents and the same browser sign-in that Z.ai's ZCode desktop app uses.
-          </p>
-        </details>
-
-        <details>
-          <summary>What do I need?</summary>
-          <p>
-            A Mac or Linux machine and Claude Code. The curl installer adds Claude Code if it is missing, and Node.js
-            only if yours is missing or older than 20.17. A Z.ai profile needs a GLM Coding Plan subscription. On
-            Windows, install with npm; the Z.ai sign-in asks you to paste the redirect URL.
+            as different logins. <code>zclaude profile list</code> prints the organization after the address, so the
+            company name and <code>personal</code> tell the two rows apart.
           </p>
         </details>
 
         <details>
           <summary>Does it change my Claude Code settings?</summary>
           <p>
-            zclaude never writes to <code>~/.claude/settings.json</code> or your project&rsquo;s
-            <code>.claude</code> folder. It reads them, to seed a profile you asked for and to spot an
-            <code>env</code> block that would override your session. The single exception is the switch you ask for by
-            name, which replaces the stored credential and the <code>oauthAccount</code> block of
-            <code>~/.claude.json</code> &mdash; both backed up first, both restorable, and the only key of that file
-            that moves. Claude Code itself writes <code>~/.claude/.device-keys.json</code> whatever config directory it
-            is given, so that one file appears even for a profile. The test suite hashes the directory before and after
-            a run.
+            It never writes <code>~/.claude/settings.json</code> or your project's <code>.claude</code> folder. It reads
+            them, to set a new profile up like your normal one and to warn you about an <code>env</code> block that
+            would override a session. The exception is the switch you ask for by name, which replaces the stored
+            credential and one key of <code>~/.claude.json</code>, both backed up and both restorable. A test hashes the
+            directory before and after a run.
           </p>
         </details>
 
         <details>
-          <summary>My settings.json already sets ANTHROPIC_* variables. What happens?</summary>
+          <summary>Can I share my skills and commands with a new profile?</summary>
           <p>
-            Claude Code applies the <code>env</code> block of its settings over the process environment, which would
-            quietly undo the session zclaude set up. So zclaude shows each conflicting variable with both values and
-            asks whether to stop so you can edit the file, or launch anyway. It checks your user settings, the project
-            file, the project-local file and machine-wide policy, and it does not edit any of them for you.
+            That is the default. Agents, commands, skills, rules, output styles, workflows, themes and
+            <code>CLAUDE.md</code> are linked to your originals, so edits follow. Your <code>settings.json</code> is
+            copied through a filter that drops anything holding a credential. <code>--share none</code> gives you a
+            clean profile instead.
           </p>
         </details>
 
         <details>
-          <summary>My company enforces a policy. Will a personal profile escape it?</summary>
+          <summary>Where are my credentials kept?</summary>
           <p>
-            No, and zclaude will not pretend otherwise. Managed settings live outside your home directory and apply to
-            every Claude Code session on the machine. <code>zclaude profile doctor</code> names the file that applies so
-            you know where the rule comes from.
+            Anthropic logins are stored by Claude Code itself, in the macOS Keychain, one item per profile. zclaude
+            reads one only to move it where you asked or to ask how much quota is left. A Z.ai key goes in the Keychain
+            under the service name <code>zclaude</code>, written over stdin so it never appears in a process listing. On
+            Linux, both fall back to a 0600 file inside the profile.
           </p>
         </details>
 
         <details>
-          <summary>Where is my key, and how do I remove it?</summary>
+          <summary>What do I need to run it?</summary>
           <p>
-            A Z.ai key goes in the macOS Keychain under the service name <code>zclaude</code>, one item per profile, or
-            in a 0600 file on Linux. <code>zclaude logout</code> and <code>zclaude profile logout</code> remove the
-            local copy; the key also exists on your Z.ai account until you revoke it there. Anthropic logins are stored
-            by Claude Code itself, and zclaude only ever asks whether an item exists.
+            A Mac or a Linux machine and Claude Code. The curl installer adds Claude Code if it is missing, and Node.js
+            only if yours is older than 20.17. Routing to GLM models needs a Z.ai Coding Plan; everything else works
+            with Claude accounts alone.
           </p>
         </details>
 
         <details>
-          <summary>Which Z.ai models can I pick?</summary>
+          <summary>How do I remove it?</summary>
           <p>
-            Whatever Z.ai's model list returns for your plan, such as <code>glm-5.3</code>,
-            <code>glm-5.3-flash</code> and <code>glm-4.7</code>. The wizard also accepts a custom model id. Models with
-            a 1M context window are passed to Claude Code with the <code>[1m]</code> suffix it expects.
+            <code>zclaude self-uninstall</code>, or
+            <code>curl -fsSL https://gramini-tech.github.io/zclaude/install | bash -s -- --uninstall</code> if the
+            command is already gone. It takes out zclaude, the scheduled renewal and the VS Code item. Note that it also
+            signs every profile out, because each profile's login lives outside <code>~/.zclaude</code> and has to be
+            removed by name; <code>--keep-config</code> keeps the profiles and their logins. Your original Claude Code
+            account is untouched either way.
           </p>
         </details>
 
         <details>
-          <summary>How do I pass claude's own options, like resuming a session?</summary>
+          <summary>Something went wrong. Where do I look?</summary>
           <p>
-            Put them after the profile name: <code>zclaude work --resume &lt;session-id&gt;</code>,
-            <code>zclaude work -c</code>, <code>zclaude work -p "explain this"</code>. The name ends zclaude's own
-            options, so everything after it is claude's, including flags zclaude also defines. Without a profile name,
-            <code>--</code> does the same job: <code>zclaude -- --resume &lt;session-id&gt;</code>, and
-            <code>zclaude -- --help</code> for claude's help. Session ids belong to a config directory, so they follow
-            the profile; with shared history a session started under one profile can be resumed from another.
-          </p>
-        </details>
-
-        <details>
-          <summary>What if a profile is named like one of claude's commands?</summary>
-          <p>
-            It cannot be. <code>zclaude mcp list</code> has to reach claude's MCP command, so claude's own command names
-            are reserved and a profile cannot take one. The first word after <code>zclaude</code> is treated as a
-            profile only when a profile by that name exists; anything else is passed straight through, and a name that
-            matches nothing brings up the menu with your arguments intact.
-          </p>
-        </details>
-
-        <details>
-          <summary>How do I go back to my usual Claude Code?</summary>
-          <p>
-            Pick "Claude Code" in the menu, run <code>zclaude --profile claude</code>, or just run
-            <code>claude</code> as before. Nothing about your usual setup was changed.
-          </p>
-        </details>
-
-        <details>
-          <summary>Will the installer replace my Node.js?</summary>
-          <p>
-            No. If <code>node</code> is 20.17 or newer it is used as is. If it is missing or older, the installer
-            downloads an official, checksum-verified build into <code>~/.zclaude/node</code> for zclaude alone and
-            leaves your system Node and your PATH for Node untouched.
-          </p>
-        </details>
-
-        <details>
-          <summary>How do I update or uninstall?</summary>
-          <p>
-            <code>zclaude self-update</code> updates it the same way it was installed.
-            <code>zclaude self-uninstall</code> removes it: the files, the command, the profiles, settings and logs in
-            <code>~/.zclaude</code>, your stored Z.ai keys and the Claude Code login each profile earned. Add
-            <code>--keep-config</code> to keep <code>~/.zclaude</code>. The installer can do the same directly with
-            <code>curl -fsSL https://gramini-tech.github.io/zclaude/install | bash -s -- --uninstall</code>. Installing
-            and removing it repeatedly is fine.
-          </p>
-        </details>
-
-        <details>
-          <summary>Something went wrong. What should I look at?</summary>
-          <p>
-            Run <code>zclaude log</code>. Every run records the profile, config files, key source and validation, each
-            HTTP call with its status and timing, and how Claude Code was started and exited. Keys are redacted, so
-            <code>zclaude log --json</code> is safe to attach to an issue. For anything profile-shaped, start with
-            <code>zclaude profile doctor</code>.
+            Every run writes a redacted JSON log and the error line tells you its path. <code>zclaude log</code> opens
+            the last one, <code>--json</code> makes it easy to attach to an issue, and secrets are masked in every line
+            before anything is written.
           </p>
         </details>
       </section>

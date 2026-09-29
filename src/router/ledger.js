@@ -20,6 +20,7 @@ export const DEFAULT_CAP = 500;
  * @property {string} klass
  * @property {string | null} target the name in the route table
  * @property {string | null} via the account or provider profile that answered
+ * @property {number} attempts how many targets were tried; above one is a rotation
  * @property {string | null} model the id that actually answered
  * @property {number} status
  * @property {number} ms
@@ -42,6 +43,7 @@ export function createLedger({ cap = DEFAULT_CAP } = {}) {
           klass: entry.klass ?? "unknown",
           target: entry.target ?? null,
           via: entry.via ?? null,
+          attempts: entry.attempts ?? 1,
           model: entry.model ?? null,
           status: entry.status ?? 0,
           ms: Math.round(entry.ms ?? 0),

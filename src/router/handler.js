@@ -333,6 +333,10 @@ async function commit({ res, answer, target, request, deps, startedAt, attemptIn
       klass: request.klass,
       target: target.name,
       via,
+      // How many targets this took. One is the ordinary case; more means the
+      // chain moved, and without recording it a rotation leaves no trace
+      // anybody can look at afterwards.
+      attempts: attemptIndex + 1,
       model: read?.model ?? answer.resolved ?? request.normalized,
       status: upstream.status,
       ms: now() - startedAt,
@@ -360,6 +364,7 @@ async function commit({ res, answer, target, request, deps, startedAt, attemptIn
       klass: request.klass,
       target: target.name,
       via,
+      attempts: attemptIndex + 1,
       model: seen.model ?? answer.resolved ?? request.normalized,
       status: upstream.status,
       ms: now() - startedAt,
