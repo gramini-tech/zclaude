@@ -5,7 +5,7 @@ import { accessSync, constants, statSync } from "node:fs";
 import { constants as osConstants, homedir } from "node:os";
 import { delimiter, isAbsolute, join, resolve as resolvePath } from "node:path";
 
-import { contextWindowFor, formatModelForClaude } from "./config.js";
+import { autoCompactWindowFor, formatModelForClaude } from "./config.js";
 import { canonicalConfigDir } from "./profiles/paths.js";
 import { EXIT, noClaudeError, ZclaudeError } from "./errors.js";
 import { log } from "./logger.js";
@@ -130,7 +130,7 @@ export function buildZaiEnv({ baseEnv = process.env, apiKey, config, models, ext
   env.ANTHROPIC_DEFAULT_SONNET_MODEL = subagent;
   env.CLAUDE_CODE_SUBAGENT_MODEL = subagent;
   env.ANTHROPIC_DEFAULT_HAIKU_MODEL = fast;
-  env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = String(contextWindowFor(models.primary));
+  env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = String(autoCompactWindowFor(models.primary));
   if (configDir) env.CLAUDE_CONFIG_DIR = canonicalConfigDir(configDir);
   return env;
 }

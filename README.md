@@ -977,8 +977,8 @@ A named profile also gets `CLAUDE_CONFIG_DIR`, set last so nothing in your confi
 it. `ANTHROPIC_API_KEY` is removed from the Z.ai child environment to avoid Claude Code's
 auth-conflict prompt. `CLAUDE_SECURESTORAGE_CONFIG_DIR`, `ANTHROPIC_CONFIG_DIR` and
 `ANTHROPIC_PROFILE` are removed from every child environment, because each of them would quietly
-repoint a profile's credentials. Models with a 1M context (`glm-5.3`, `glm-5.3-flash`, `glm-5.2`) get
-the `[1m]` suffix Claude Code expects.
+repoint a profile's credentials. Models with a 1M context (`glm-5.4`, `glm-5.3`, `glm-5.3-flash`,
+`glm-5.2`) get the `[1m]` suffix Claude Code expects.
 
 `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and `CLAUDE_CODE_OAUTH_TOKEN` inherited from your shell
 override an account login. zclaude reports them and carries on, because you may have set them
@@ -1015,7 +1015,8 @@ anthropic  (live: 12 models)
   claude-opus-5-5             1M context   Claude Opus 5.5  2026-09-21
   claude-sonnet-5             1M context   Claude Sonnet 5  2026-06-29
   ...
-zai  (live: 11 models)
+zai  (live: 12 models)
+  glm-5.4                     1M context
   glm-5.3                     1M context
   glm-5.3-flash               1M context
   ...
@@ -1250,7 +1251,7 @@ Two dotenv files, no secrets in either:
 ```
 
 ```sh
-ZCLAUDE_MODEL=glm-5.3
+ZCLAUDE_MODEL=glm-5.4
 ZCLAUDE_SUBAGENT_MODEL=glm-5.3-flash
 ZCLAUDE_FAST_MODEL=glm-5.3-flash
 ZCLAUDE_PROFILE=zai          # optional: skip the menu for this project

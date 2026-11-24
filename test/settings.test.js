@@ -79,7 +79,7 @@ describe("resolveModels", () => {
   });
   it("falls back to defaults", () => {
     const result = resolveModels({ env: {}, layered: { project: { values: {} }, user: { values: {} } } });
-    assert.deepEqual([result.primary, result.subagent, result.fast], ["glm-5.3", "glm-5.3-flash", "glm-5.3-flash"]);
+    assert.deepEqual([result.primary, result.subagent, result.fast], ["glm-5.4", "glm-5.3-flash", "glm-5.3-flash"]);
     assert.equal(result.sources.primary, "default");
   });
   it("fileConfiguresModels needs all three slots", () => {

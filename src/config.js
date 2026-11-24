@@ -24,6 +24,7 @@ export const CALLBACK_SCHEME = "zcode";
 // Model context windows, copied from Z.ai's own @z_ai/coding-helper
 // model-registry. The models endpoint does not report them.
 export const MODEL_CONTEXT_WINDOWS = {
+  "glm-5.4": 1_048_576,
   "glm-5.3-flash": 1_048_576,
   "glm-5.3": 1_048_576,
   "glm-5.2": 1_048_576,
@@ -33,10 +34,15 @@ export const MODEL_CONTEXT_WINDOWS = {
   "glm-4.7": 200_000,
   "glm-4.5-air": 128_000,
 };
+// Z.ai's registry caps glm-5.4's auto-compact window at half its context; every other
+// model compacts at its full context window.
+const AUTO_COMPACT_WINDOWS = {
+  "glm-5.4": 512_000,
+};
 const FALLBACK_CONTEXT_WINDOW = 200_000;
 
 export const DEFAULT_MODELS = Object.freeze({
-  primary: "glm-5.3",
+  primary: "glm-5.4",
   subagent: "glm-5.3-flash",
   fast: "glm-5.3-flash",
 });
@@ -111,6 +117,13 @@ export function contextWindowFor(model) {
   const key = normalizeModelId(model);
   if (!key) return FALLBACK_CONTEXT_WINDOW;
   return MODEL_CONTEXT_WINDOWS[key] ?? FALLBACK_CONTEXT_WINDOW;
+}
+
+/** Claude Code's auto-compact window: Z.ai compacts some models before their context runs out. */
+export function autoCompactWindowFor(model) {
+  const key = normalizeModelId(model);
+  if (!key) return FALLBACK_CONTEXT_WINDOW;
+  return AUTO_COMPACT_WINDOWS[key] ?? contextWindowFor(key);
 }
 
 /** Claude Code enables its 1M-context path only for ids ending in [1m]. */

@@ -112,11 +112,11 @@ describe("end to end", () => {
     assert.deepEqual(got.argv, ["-p", "hello world"]);
     assert.equal(got.env.ANTHROPIC_AUTH_TOKEN, GOOD_KEY);
     assert.equal(got.env.ANTHROPIC_BASE_URL, `${zai.base}/api/anthropic`);
-    assert.equal(got.env.ANTHROPIC_MODEL, "glm-5.3[1m]");
+    assert.equal(got.env.ANTHROPIC_MODEL, "glm-5.4[1m]");
     assert.equal(got.env.CLAUDE_CODE_SUBAGENT_MODEL, "glm-5.3-flash[1m]");
     assert.equal(got.env.ANTHROPIC_API_KEY, undefined);
     assert.match(result.stderr, /Z\.ai GLM Coding Plan \(pro\) .* tokens 42%/u);
-    assert.match(result.stderr, /Launching claude on glm-5\.3/u);
+    assert.match(result.stderr, /Launching claude on glm-5\.4/u);
     assert.doesNotMatch(result.stderr, new RegExp(GOOD_KEY, "u"), "key never printed");
   });
 

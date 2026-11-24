@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+**glm-5.4 is the default primary model, with Z.ai's own auto-compact cap for it.**
+Z.ai's coding plan now serves glm-5.4 with a 1M context window, so it joins
+`MODEL_CONTEXT_WINDOWS` — the one table behind the `[1m]` suffix, the wizard's listing and
+`CLAUDE_CODE_AUTO_COMPACT_WINDOW` — and becomes the primary model a fresh setup lands on.
+Subagents and the fast helper stay on glm-5.3-flash, which Z.ai has not refreshed. Their own
+`@z_ai/coding-helper` registry caps glm-5.4's auto-compact window at 512,000 rather than its
+full context, and zclaude applies that override too (`AUTO_COMPACT_WINDOWS`), so a 5.4
+session compacts where Z.ai expects it to instead of at 1M.
+
 **The README opens the way the site does: the limit first, the tool second.**
 It led with an abstract table describing how zclaude narrows the choice of
 account, which only reads as interesting once you already know why you would

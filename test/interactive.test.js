@@ -150,7 +150,7 @@ describe("interactive (pseudo-terminal)", { skip: !hasScript() && "needs macOS s
       assert.match(out, /Primary model/u);
       assert.match(out, /Saved to .*settings/u);
       assert.equal((await readFile(capture, "utf8")).trim(), "ran");
-      assert.match(await readFile(join(env.ZCLAUDE_HOME, "settings"), "utf8"), /ZCLAUDE_MODEL=glm-5\.3\n/u);
+      assert.match(await readFile(join(env.ZCLAUDE_HOME, "settings"), "utf8"), /ZCLAUDE_MODEL=glm-5\.4\n/u);
     } finally {
       zai.close();
     }

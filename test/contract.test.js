@@ -53,7 +53,7 @@ describe("protocol contract", () => {
   });
 
   it("pins the default models and known context windows", () => {
-    assert.deepEqual(DEFAULT_MODELS, { primary: "glm-5.3", subagent: "glm-5.3-flash", fast: "glm-5.3-flash" });
+    assert.deepEqual(DEFAULT_MODELS, { primary: "glm-5.4", subagent: "glm-5.3-flash", fast: "glm-5.3-flash" });
     for (const id of Object.values(DEFAULT_MODELS))
       assert.ok(Object.hasOwn(MODEL_CONTEXT_WINDOWS, id), `${id} has a known context window`);
   });
